@@ -62,13 +62,14 @@ class FastMathFlags(AttributeSet):
 
 class CallInstr(Instruction):
     def __init__(self, parent, func, args, name='', cconv=None, tail=False,
-                 fastmath=()):
+                 fastmath=(), tags=None):
         self.cconv = (func.calling_convention
                       if cconv is None and isinstance(func, Function)
                       else cconv)
         self.tail = tail
         self.fastmath = FastMathFlags(fastmath)
         self.attributes = CallInstrAttributes()
+        self.tags = tags
 
         # Fix and validate arguments
         args = list(args)
@@ -124,7 +125,7 @@ class CallInstr(Instruction):
         callee_ref = "{0} {1}".format(ty, self.callee.get_reference())
         if self.cconv:
             callee_ref = "{0} {1}".format(self.cconv, callee_ref)
-        buf.append("{tail}{op}{fastmath} {callee}({args}){attr}{meta}\n".format(
+        buf.append("{tail}{op}{fastmath} {callee}({args}){attr}{meta}{tags}\n".format(
             tail='tail ' if self.tail else '',
             op=self.opname,
             callee=callee_ref,
@@ -133,6 +134,7 @@ class CallInstr(Instruction):
             attr=''.join([" " + attr for attr in self.attributes]),
             meta=(self._stringify_metadata(leading_comma=True)
                   if add_metadata else ""),
+            tags=(" " + self.tags if self.tags is not None else "")
         ))
 
     def descr(self, buf):
@@ -485,6 +487,8 @@ class AllocaInstr(Instruction):
         if self.metadata:
             buf.append(self._stringify_metadata(leading_comma=True))
 
+    def get_decl(self):
+        return '{0} %"{1}"'.format(self.type, self._get_name())
 
 class GEPInstr(Instruction):
     def __init__(self, parent, ptr, indices, inbounds, name):
