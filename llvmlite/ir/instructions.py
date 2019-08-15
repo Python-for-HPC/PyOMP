@@ -125,16 +125,16 @@ class CallInstr(Instruction):
         callee_ref = "{0} {1}".format(ty, self.callee.get_reference())
         if self.cconv:
             callee_ref = "{0} {1}".format(self.cconv, callee_ref)
-        buf.append("{tail}{op}{fastmath} {callee}({args}){attr}{meta}{tags}\n".format(
+        buf.append("{tail}{op}{fastmath} {callee}({args}){attr}{tags}{meta}\n".format(
             tail='tail ' if self.tail else '',
             op=self.opname,
             callee=callee_ref,
             fastmath=''.join([" " + attr for attr in self.fastmath]),
             args=args,
             attr=''.join([" " + attr for attr in self.attributes]),
+            tags=(" " + self.tags if self.tags is not None else ""),
             meta=(self._stringify_metadata(leading_comma=True)
-                  if add_metadata else ""),
-            tags=(" " + self.tags if self.tags is not None else "")
+                  if add_metadata else "")
         ))
 
     def descr(self, buf):
