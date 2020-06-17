@@ -27,7 +27,7 @@ source activate $CONDA_ENV
 set -v
 
 # Install llvmdev (separate channel, for now)
-$CONDA_INSTALL -c numba llvmdev="8.0*"
+$CONDA_INSTALL -c numba llvmdev="9.0*"
 
 # Install the compiler toolchain, for osx, bootstrapping needed
 # which happens in build.sh
@@ -45,9 +45,6 @@ if [ "$PYTHON" == "pypy" ]; then
   $PIP_INSTALL sphinx==1.5.1 sphinx_rtd_theme pygments
 else
   $CONDA_INSTALL sphinx sphinx_rtd_theme pygments
-  if [ "x$PYTHON" != "x" -a "$PYTHON" \< "3.4" -a "$WHEEL" != "yes" ]; then
-    $CONDA_INSTALL enum34
-  fi
 fi
 
 # Install dependencies for code coverage (codecov.io)

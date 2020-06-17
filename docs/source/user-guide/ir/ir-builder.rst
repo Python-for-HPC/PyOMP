@@ -205,6 +205,16 @@ Integer
 
      Arithmetic, signed, right-shift *lhs* by *rhs* bits.
 
+* .. method:: IRBuilder.cttz(value, flag)
+
+     Counts trailing zero bits in *value*. Boolean *flag* indicates whether the
+     result is defined for ``0``.
+
+* .. method:: IRBuilder.ctlz(value, flag)
+
+     Counts leading zero bits in *value*. Boolean *flag* indicates whether the
+     result is defined for ``0``.
+
 * .. method:: IRBuilder.add(lhs, rhs, name='', flags=())
 
      Integer add *lhs* and *rhs*.
@@ -546,7 +556,7 @@ The following methods are all :ref:`terminators <terminator>`:
      To add non-default targets, use the
      :meth:`~SwitchInstr.add_case` method on the return value.
 
-* .. method:: IRBuilder.indirectbr(address)
+* .. method:: IRBuilder.branch_indirect(address)
 
      Jump to the basic block with the address *address*, a value
      of type `IntType(8).as_pointer()`.
@@ -647,7 +657,7 @@ Inline assembler
 
         fty = FunctionType(IntType(64), [IntType(64),IntType(64)])
         add = builder.asm(fty, "mov $2, $0\nadd $1, $0", "=r,r,r",
-                          (arg_0, arg_1), name="asm_add")
+                          (arg_0, arg_1), True, name="asm_add")
 
 
 * .. method:: IRBuilder.load_reg(reg_type, reg_name, name='')
