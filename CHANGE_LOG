@@ -1,7 +1,109 @@
-v0.31.0
+v0.34.0
 -------
 
-In development.
+In development
+
+
+v0.33.0 (June 10, 2020)
+-----------------------
+
+This release upgrades to LLVM 9 and drops support for older LLVM versions.
+
+Pull requests:
+
+* PR #593: Fix CUDA with LLVM9
+* PR #592: Fix meta.yaml
+* PR #591: buildscripts: Unpin wheel
+* PR #590: add python_requires to setup.py
+* PR #582: Adds override for LLVM version check, re-formats docs.
+* PR #581: Add FAQ entry on LLVM version support.
+* PR #580: Trove classifiers may be out of date.
+* PR #577: llvmlite wheel building fixes
+* PR #575: Update the release date
+* PR #548: Upgrade to LLVM9
+* PR #521: Allow instructions to be removed from blocks
+
+Authors:
+
+* Graham Markall
+* Jan Vesely
+* Siu Kwan Lam  (core dev)
+* Stuart Archibald  (core dev)
+* Tim Babb
+* Valentin Haenel  (core dev)
+
+
+v0.32.1 (May 7, 2020)
+---------------------
+
+This is a small patch release that addresses some packaging issues:
+
+Pull requests:
+
+* PR 580: Trove classifiers may be out of date.
+* PR 581: Add FAQ entry on LLVM version support.
+* PR 582: Adds override for LLVM version check, re-formats docs.
+
+Authors:
+
+* Stuart Archibald (core dev)
+* Valentin Haenel (core dev)
+
+
+v0.32.0 (Apr 16, 2020)
+----------------------
+
+The main changes in this release are the removal of specific code for Python 2
+and Python <3.6, and making the code base PEP8 compliant.
+
+Pull requests:
+
+* PR #577: llvmlite wheel building fixes
+* PR #560: ENH: Better error message
+* PR #558: update install docs
+* PR #556: binding: Allow empty features list
+* PR #555: travis: Cleanup
+* PR #554: azure-pipelines: Bump VM images.
+* PR #552: Add paragraph on installing from sdist and on non-traditional
+  platforms.
+* PR #551: Remove python 2, python < 3.6, fix up, add flake8
+* PR #549: Miscalled method and missing parameter in the documentation
+* PR #547: Permit building on Visual Studio 2017
+* PR #543: Update error message in LLVM version check.
+* PR #540: update to final release date for 0.31.0
+
+Authors:
+
+* Arik Funke
+* Eric Larson
+* Jan Vesely
+* Shan Sikdar
+* Siu Kwan Lam  (core dev)
+* Stan Seibert (core dev)
+* Stuart Archibald (core dev)
+* Vladislav Hrčka
+
+
+v0.31.0 (Jan 2, 2020)
+---------------------
+
+This release switches memset/memcpy to use the 4 argument style as per LLVM 7+
+and updates some documentation.
+
+Commits:
+
+* PR #485: Revert "Revert "LLVM 7 changed memset intrinsic signature, adjust
+  it""
+* PR #520: Begin development of 0.31.0
+* PR #528: Add cttz and ctlz to irbuilder docs.
+* PR #533: Update deprecation docs with full deprecation of 5 arg memset/memcpy
+* PR #535: Update docs to not report LLVM 3.8 as latest!
+
+Authors:
+
+* Isaac Virshup
+* Siu Kwan Lam (core dev)
+* Stuart Archibald (core dev)
 
 
 v0.30.0 (Oct 9, 2019)
