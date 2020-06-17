@@ -98,6 +98,10 @@ class Type(object):
     def void():
         return ir.VoidType()
 
+    @staticmethod
+    def token():
+        return ir.TokenType()
+
 
 class Constant(object):
     @staticmethod

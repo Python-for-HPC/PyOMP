@@ -133,19 +133,22 @@ def main_posix(kind, library_ext):
         print(msg)
         print(warning + '\n')
     else:
-
-        if not out.startswith('9.0.'):
-            msg = ("Building llvmlite requires LLVM 9.0.x, got "
-                   "{!r}. Be sure to set LLVM_CONFIG to the right executable "
-                   "path.\nRead the documentation at "
-                   "http://llvmlite.pydata.org/ for more information about "
-                   "building llvmlite.\n".format(out.strip()))
+        if not (out.startswith('8.0.') or out.startswith('7.0.')
+                or out.startswith('7.1.') or out.startswith('9.0.')
+                or out.startswith('10.0.')):
+            msg = (
+                "Building llvmlite requires LLVM 7.0+ Be sure to "
+                "set LLVM_CONFIG to the right executable path.\n"
+                "Read the documentation at http://llvmlite.pydata.org/ for more "
+                "information about building llvmlite.\n"
+                )
             raise RuntimeError(msg)
 
     # Get LLVM information for building
     libs = run_llvm_config(llvm_config, "--system-libs --libs all".split())
     # Normalize whitespace (trim newlines)
-    os.environ['LLVM_LIBS'] = ' '.join(libs.split())
+    libs_str = ' '.join(libs.split())
+    os.environ['LLVM_LIBS'] = " " + libs_str + " " + libs_str + " "
 
     cxxflags = run_llvm_config(llvm_config, ["--cxxflags"])
     # on OSX cxxflags has null bytes at the end of the string, remove them
@@ -160,6 +163,10 @@ def main_posix(kind, library_ext):
         print('SVML detected')
     else:
         print('SVML not detected')
+    cxxflags = cxxflags + ['-DINTEL_CUSTOMIZATION=1']
+    cxxflags = cxxflags + ['-DINTEL_COLLAB=1']
+    cxxflags = cxxflags + ['-DINTEL_SPECIFIC_CILKPLUS=1']
+    cxxflags = cxxflags + ['-DINTEL_SPECIFIC_OPENMP=1']
 
     os.environ['LLVM_CXXFLAGS'] = ' '.join(cxxflags)
 
