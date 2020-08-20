@@ -135,7 +135,8 @@ def main_posix(kind, library_ext):
     else:
         if not (out.startswith('8.0.') or out.startswith('7.0.')
                 or out.startswith('7.1.') or out.startswith('9.0.')
-                or out.startswith('10.0.')):
+                or out.startswith('10.0.') or out.startswith('11.0.')
+                or out.startswith('12.0.')):
             msg = (
                 "Building llvmlite requires LLVM 7.0+ Be sure to "
                 "set LLVM_CONFIG to the right executable path.\n"
