@@ -234,6 +234,7 @@ class Target(ffi.ObjectRef):
         assert 0 <= opt <= 3
         assert reloc in RELOC
         assert codemodel in CODEMODEL
+        assert printmc == False
         triple = self._triple
         # MCJIT under Windows only supports ELF objects, see
         # http://lists.llvm.org/pipermail/llvm-dev/2013-December/068341.html
@@ -247,7 +248,6 @@ class Target(ffi.ObjectRef):
                                                 opt,
                                                 _encode_string(reloc),
                                                 _encode_string(codemodel),
-                                                int(printmc),
                                                 int(jit),
                                                 )
         if tm:
@@ -399,8 +399,6 @@ ffi.lib.LLVMPY_CreateTargetMachine.argtypes = [
     c_char_p,
     # CodeModel
     c_char_p,
-    # PrintMC
-    c_int,
     # JIT
     c_int,
 ]

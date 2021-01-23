@@ -4,6 +4,7 @@
 #include "llvm-c/Object.h"
 
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/FileSystem.h"
 
 #include <stdio.h>
 
