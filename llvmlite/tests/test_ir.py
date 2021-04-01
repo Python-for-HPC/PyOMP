@@ -645,14 +645,16 @@ my_block:
     def test_unary_ops(self):
         block = self.block(name='my_block')
         builder = ir.IRBuilder(block)
-        a, b = builder.function.args[:2]
-        builder.neg(a, 'c')
-        builder.not_(b, 'd')
+        a, b, c = builder.function.args[:3]
+        builder.neg(a, 'd')
+        builder.not_(b, 'e')
+        builder.fneg(c, 'f')
         self.assertFalse(block.is_terminated)
         self.check_block(block, """\
             my_block:
-                %"c" = sub i32 0, %".1"
-                %"d" = xor i32 %".2", -1
+                %"d" = sub i32 0, %".1"
+                %"e" = xor i32 %".2", -1
+                %"f" = fneg double %".3"
             """)
 
     def test_replace_operand(self):
@@ -1141,6 +1143,10 @@ my_block:
         res_f_readonly.attributes.add('readonly')
         builder.call(f, (a, b), 'res_fast', fastmath='fast')
         builder.call(f, (a, b), 'res_nnan_ninf', fastmath=('nnan', 'ninf'))
+        builder.call(f, (a, b), 'res_noinline', attrs='noinline')
+        builder.call(f, (a, b), 'res_alwaysinline', attrs='alwaysinline')
+        builder.call(f, (a, b), 'res_noinline_ro', attrs=('noinline',
+                                                          'readonly'))
         self.check_block(block, """\
         my_block:
             %"res_f" = call float @"f"(i32 %".1", i32 %".2")
@@ -1150,7 +1156,10 @@ my_block:
             %"res_f_readonly" = call float @"f"(i32 %".1", i32 %".2") readonly
             %"res_fast" = call fast float @"f"(i32 %".1", i32 %".2")
             %"res_nnan_ninf" = call ninf nnan float @"f"(i32 %".1", i32 %".2")
-        """)
+            %"res_noinline" = call float @"f"(i32 %".1", i32 %".2") noinline
+            %"res_alwaysinline" = call float @"f"(i32 %".1", i32 %".2") alwaysinline
+            %"res_noinline_ro" = call float @"f"(i32 %".1", i32 %".2") noinline readonly
+        """) # noqa E501
 
     def test_call_metadata(self):
         """
@@ -2063,6 +2072,10 @@ class TestConstant(TestBase):
         vec_repr = "<8 x i32> <{}>".format(
             ', '.join(map('i32 {}'.format, vals)))
         self.assertEqual(str(vec), vec_repr)
+
+    def test_non_nullable_int(self):
+        constant = ir.Constant(ir.IntType(32), None).constant
+        self.assertEqual(constant, 0)
 
     def test_structs(self):
         st1 = ir.LiteralStructType((flt, int1))
