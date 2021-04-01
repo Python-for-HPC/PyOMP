@@ -21,6 +21,39 @@ from distutils.spawn import spawn
 import os
 import sys
 
+
+_version_module = None
+try:
+    from packaging import version as _version_module
+except ImportError:
+    try:
+        from setuptools._vendor.packaging import version as _version_module
+    except ImportError:
+        pass
+
+
+min_python_version = "3.6"
+max_python_version = "3.10"  # exclusive
+
+
+def _guard_py_ver():
+    if _version_module is None:
+        return
+
+    parse = _version_module.parse
+
+    min_py = parse(min_python_version)
+    max_py = parse(max_python_version)
+    cur_py = parse('.'.join(map(str, sys.version_info[:3])))
+
+    if not min_py <= cur_py < max_py:
+        msg = ('Cannot install on Python version {}; only versions >={},<{} '
+               'are supported.')
+        raise RuntimeError(msg.format(cur_py, min_py, max_py))
+
+
+_guard_py_ver()
+
 if os.environ.get('READTHEDOCS', None) == 'True':
     sys.exit("setup.py disabled on readthedocs: called with %s"
              % (sys.argv,))
@@ -41,9 +74,11 @@ build = cmdclass.get('build', build)
 build_ext = cmdclass.get('build_ext', build_ext)
 
 
-def build_library_files(dry_run, pic=False):
+def build_library_files(dry_run):
     cmd = [sys.executable, os.path.join(here_dir, 'ffi', 'build.py')]
-    if pic:
+    # Turn on -fPIC for building on Linux, BSD, and OS X
+    plt = sys.platform
+    if 'linux' in plt or 'bsd' in plt or 'darwin' in plt:
         os.environ['CXXFLAGS'] = os.environ.get('CXXFLAGS', '') + ' -fPIC'
     spawn(cmd, dry_run=dry_run)
 
@@ -95,6 +130,7 @@ class LlvmliteInstall(install):
         self.install_libbase = self.install_platlib
         self.install_lib = self.install_platlib
 
+
 class LlvmliteClean(clean):
     """Custom clean command to tidy up the project root."""
     def run(self):
@@ -125,9 +161,7 @@ if bdist_wheel:
         def run(self):
             # Ensure the binding file exist when running wheel build
             from llvmlite.utils import get_library_files
-            # Turn on -fPIC for wheel building on Linux
-            pic = sys.platform.startswith('linux')
-            build_library_files(self.dry_run, pic=pic)
+            build_library_files(self.dry_run)
             self.distribution.package_data.update({
                 "llvmlite.binding": get_library_files(),
             })
@@ -178,6 +212,7 @@ setup(name='llvmlite',
           "Programming Language :: Python :: 3.6",
           "Programming Language :: Python :: 3.7",
           "Programming Language :: Python :: 3.8",
+          "Programming Language :: Python :: 3.9",
           "Topic :: Software Development :: Code Generators",
           "Topic :: Software Development :: Compilers",
       ],
@@ -190,5 +225,6 @@ setup(name='llvmlite',
       license="BSD",
       cmdclass=cmdclass,
       long_description=long_description,
-      python_requires=">=3.6",
+      python_requires=">={},<{}".format(min_python_version,
+                                        max_python_version),
       )

@@ -13,6 +13,8 @@ build:
   number: {{ environ.get('GIT_DESCRIBE_NUMBER', 0) }}
   script_env:
     - PY_VCRUNTIME_REDIST
+    - LLVMLITE_SHARED
+    - LLVMLITE_USE_CMAKE
 
 requirements:
   build:
@@ -28,8 +30,10 @@ requirements:
   host:
     - python
     # On channel https://anaconda.org/numba/
-    # LLVM 10.0.0 and 10.0.1 had issues on aarch64
-    - llvmdev 10.0.* # [not aarch64]
+    # Build using LLVM (llvmdev) 10.0.1-1 on most platforms
+    - llvmdev 10.0.1 *1 # [not aarch64 and not win]
+    - llvmdev 10.0.1 2 # [win]
+    # Build using LLVM (llvmdev) 9.0.* on aarch64
     - llvmdev 9.0.* # [aarch64]
     - vs2015_runtime # [win]
     # llvmdev is built with libz compression support

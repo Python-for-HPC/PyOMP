@@ -13,6 +13,19 @@ _CMP_MAP = {
 }
 
 
+def _unop(opname, cls=instructions.Instruction):
+    def wrap(fn):
+        @functools.wraps(fn)
+        def wrapped(self, arg, name='', flags=()):
+            instr = cls(self.block, arg.type, opname, [arg], name, flags)
+            self._insert(instr)
+            return instr
+
+        return wrapped
+
+    return wrap
+
+
 def _binop(opname, cls=instructions.Instruction):
     def wrap(fn):
         @functools.wraps(fn)
@@ -541,6 +554,13 @@ class IRBuilder(object):
         """
         return self.sub(values.Constant(value.type, 0), value, name=name)
 
+    @_unop('fneg')
+    def fneg(self, arg, name=''):
+        """
+        Floating-point negative:
+            name = -arg
+        """
+
     #
     # Comparison APIs
     #
@@ -856,13 +876,15 @@ class IRBuilder(object):
 
     # Call APIs
 
-    def call(self, fn, args, name='', cconv=None, tail=False, fastmath=(), tags=None):
+    def call(self, fn, args, name='', cconv=None, tail=False, fastmath=(),
+             attrs=(), tags=None):
         """
         Call function *fn* with *args*:
             name = fn(args...)
         """
         inst = instructions.CallInstr(self.block, fn, args, name=name,
-                                      cconv=cconv, tail=tail, fastmath=fastmath, tags=tags)
+                                      cconv=cconv, tail=tail, fastmath=fastmath,
+                                      attrs=attrs, tags=tags)
         self._insert(inst)
         return inst
 

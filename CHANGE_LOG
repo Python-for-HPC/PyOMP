@@ -1,7 +1,85 @@
-v0.35.0dev
+v0.37.0dev0
 -----------
 
 In development
+
+v0.36.0 (March 11, 2021)
+------------------------
+
+The main feature in this release is Python 3.9 support. Also, some changes to
+the build scripts were included: the llvmdev recipe now supports compilation on
+Windows 10 and llvmlite may now be compiled with cmake on POSIX systems.
+Additionally, both the timings from the LLVM passes themselves and the time
+spent within the LLVM thread-safe access lock are now available for diagnostic
+purposes. Lastly, several minor cosmetic changes to the documentation and
+project files are included.
+
+Pull requests:
+
+* PR #624: Expose pass timings
+* PR #655: Switch encoding to UTF-8 from latin1
+* PR #662: Delete ``requirements.txt``
+* PR #666: fix rst syntax in install docs
+* PR #668: Modify cmake options to work with VS2019
+* PR #670: Llvmdev windows 10
+* PR #671: Python 3.9 support
+* PR #673: use build 2 on windows
+* PR #677: Support building with CMake on posix systems
+* PR #682: slight rearrangement of intro
+* PR #685: Added fneg instruction
+* PR #687: Cleanup public CI configuration and badge
+* PR #689: fixup azure badge to point at master branch
+* PR #690: Callback to track when the llvm lock is acquired and released
+* PR #699: adapt Python version clamp from Numba
+* PR #701: Improve llvm not found error
+
+Authors:
+
+* Graham Markall
+* John Kirkham
+* Peter-Jan Gootzen
+* Siu Kwan Lam (core dev)
+* Stan Seibert (core dev)
+* Stuart Archibald (core dev)
+* Uwe L. Korn
+* Valentin Haenel (core dev)
+* ``@ARF1``
+* ``@abebeos``
+* ``@0x5h4un``
+
+v0.35.0 (November 30, 2020)
+---------------------------
+
+The main feature in this release is a Numba specific LLVM pass for pruning
+reference-count operations. We plan to generalize this custom LLVM pass
+once it is proven stable so that it can be configured for other uses.
+In addition, this release contains an updated SVML patch that fixes an issue
+for AVX512, and a patch that fixes build issues on Linux and BSD.
+
+Pull requests:
+
+* PR #617: Fix wheel building.
+* PR #618: Fix changelog on master
+* PR #626: Update SVML patch
+* PR #627: Always build with -fPIC on Linux and BSD
+* PR #633: Fix Issue #632 - obj file section contents truncated
+* PR #634: Implement reference count pruner LLVM pass
+* PR #635: Fixes #629: Default to 0 if None is passed as a value for Int32
+* PR #637: Fix appveyor
+* PR #640: Backport llvm refop pass for LLVM 9.
+* PR #641: fix llvmdev build number
+* PR #642: pin to correct version of llvmdev
+* PR #644: Fix refprune fanout_raise case getting stuck on large graphs
+* PR #647: Add support for general attrs on call and loop-rotate pass
+
+Authors:
+
+* Graham Markall
+* Ivan Butygin
+* NavyaZaveri
+* Siu Kwan Lam (core dev)
+* Stuart Archibald (core dev)
+* Valentin Haenel (core dev)
 
 v0.34.0 (August 12, 2020)
 -------------------------
