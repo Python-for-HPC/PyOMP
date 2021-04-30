@@ -21,6 +21,8 @@ from numba.misc.inspection import disassemble_elf_to_cfg
 from numba.misc.llvm_pass_timings import PassTimingsCollection
 
 
+import sys
+
 _x86arch = frozenset(['x86', 'i386', 'i486', 'i586', 'i686', 'i786',
                       'i886', 'i986'])
 
@@ -655,17 +657,22 @@ class CPUCodeLibrary(CodeLibrary):
         """
         # Enforce data layout to enable layout-specific optimizations
         ll_module.data_layout = self._codegen._data_layout
-        with self._codegen._function_pass_manager(ll_module) as fpm:
+
+    def _optimize_final_module(self):
+        """
+        Internal: optimize this library's final module.
+        """
+        # there is an issue in xmain when optimizing functions twice.  openmp Todd
+        with self._codegen._function_pass_manager(self._final_module) as fpm:
             # Run function-level optimizations to reduce memory usage and improve
             # module-level optimization.
-            for func in ll_module.functions:
+            for func in self._final_module.functions:
                 k = f"Function passes on {func.name!r}"
                 with self._recorded_timings.record(k):
                     fpm.initialize()
                     fpm.run(func)
                     fpm.finalize()
 
-    def _optimize_final_module(self):
         """
         Internal: optimize this library's final module.
         """
@@ -801,9 +808,13 @@ class CPUCodeLibrary(CodeLibrary):
 
         if config.DUMP_OPTIMIZED:
             dump("OPTIMIZED DUMP %s" % self.name, self.get_llvm_str(), 'llvm')
+            sys.stdout.flush()
 
         if config.DUMP_ASSEMBLY:
-            dump("ASSEMBLY %s" % self.name, self.get_asm_str(), 'asm')
+            asm = self.get_asm_str()
+            if asm:
+                dump("ASSEMBLY %s" % self.name, asm, 'asm')
+                sys.stdout.flush()
 
     def get_defined_functions(self):
         """
@@ -824,10 +835,16 @@ class CPUCodeLibrary(CodeLibrary):
                           'Invalid result is returned.')
 
     def get_llvm_str(self):
+        """
+        Get the human-readable form of the LLVM module.
+        """
         self._sentry_cache_disable_inspection()
         return str(self._final_module)
 
     def get_asm_str(self):
+        """
+        Get the human-readable assembly.
+        """
         self._sentry_cache_disable_inspection()
         return str(self._codegen._tm.emit_assembly(self._final_module))
 
@@ -1410,6 +1427,7 @@ def initialize_llvm():
     ll.initialize()
     ll.initialize_native_target()
     ll.initialize_native_asmprinter()
+    ll.initialize_all_targets()
 
 
 def get_host_cpu_features():

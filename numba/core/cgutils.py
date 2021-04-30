@@ -359,6 +359,21 @@ class Structure(object):
     # __iter__ is derived by Python from __len__ and __getitem__
 
 
+alloca_callbacks = []
+
+
+def push_alloca_callbacks(callback, data):
+    alloca_callbacks.append((callback, data))
+
+
+def pop_alloca_callbacks():
+    alloca_callbacks.pop()
+
+
+def in_openmp_region():
+    return len(alloca_callbacks) > 0
+
+
 def alloca_once(builder, ty, size=None, name='', zfill=False):
     """Allocate stack memory at the entry block of the current function
     pointed by ``builder`` withe llvm type ``ty``.  The optional ``size`` arg
@@ -377,6 +392,10 @@ def alloca_once(builder, ty, size=None, name='', zfill=False):
     # Also zero-fill at the use-site
     if zfill:
         builder.store(ptr.type.pointee(None), ptr)
+
+    for cb in alloca_callbacks:
+        cb[0](cb[1], ptr, ty)
+
     return ptr
 
 

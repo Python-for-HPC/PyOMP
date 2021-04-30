@@ -581,7 +581,6 @@ class DefaultPassBuilder(object):
             pm.add_pass(TranslateByteCode, "analyzing bytecode")
             pm.add_pass(FixupArgs, "fix up args")
         pm.add_pass(IRProcessing, "processing IR")
-        pm.add_pass(WithLifting, "Handle with contexts")
 
         # inline closures early in case they are using nonlocal's
         # see issue #6585.
@@ -607,6 +606,8 @@ class DefaultPassBuilder(object):
 
         pm.add_pass(FindLiterallyCalls, "find literally calls")
         pm.add_pass(LiteralUnroll, "handles literal_unroll")
+
+        pm.add_pass(WithLifting, "Handle with contexts")
 
         if state.flags.enable_ssa:
             pm.add_pass(ReconstructSSA, "ssa")

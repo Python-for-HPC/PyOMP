@@ -88,6 +88,7 @@ class DefaultOptions:
     fastmath = _mapping("fastmath")
     error_model = _mapping("error_model")
     inline = _mapping("inline")
+    enable_ssa = _mapping("enable_ssa")
 
 
 def include_default_options(*args):

@@ -31,7 +31,7 @@ from numba.np.numpy_support import as_dtype
 from numba.core.typing.templates import infer_global, AbstractTemplate
 from numba.stencils.stencilparfor import StencilPass
 from numba.core.extending import register_jitable
-
+#import llvmlite
 
 from numba.core.ir_utils import (
     mk_unique_var,
@@ -93,6 +93,10 @@ from numba.parfors import array_analysis
 import numba.cpython.builtins
 from numba.stencils import stencilparfor
 # circular dependency: import numba.npyufunc.dufunc.DUFunc
+
+def dprint(*s):
+    if config.DEBUG_ARRAY_OPT >= 1:
+        print(*s)
 
 # wrapped pretty print
 _termwidth = 80
@@ -4058,10 +4062,6 @@ def has_cross_iter_dep(parfor):
                 return True
     return False
 
-
-def dprint(*s):
-    if config.DEBUG_ARRAY_OPT >= 1:
-        print(*s)
 
 def get_parfor_pattern_vars(parfor):
     """ get the variables used in parfor pattern information

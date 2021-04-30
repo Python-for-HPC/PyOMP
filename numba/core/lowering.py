@@ -93,6 +93,13 @@ class BaseLower(object):
         """
         Called after all blocks are lowered
         """
+        # Add omp offloading metadata if present.
+        if hasattr(self, 'omp_offload'):
+            print("Has omp_offload")
+            omp_offload_metadata = self.module.get_or_insert_named_metadata('omp_offload.info')
+            for oi in self.omp_offload:
+                omp_offload_metadata.add(oi)
+
         self.debuginfo.finalize()
 
     def pre_block(self, block):
@@ -160,6 +167,13 @@ class BaseLower(object):
             else:
                 print(self.module)
             print('=' * 80)
+            import sys
+            sys.stdout.flush()
+            print("name:", self.fndesc.unique_name)
+            fname = str(self.fndesc.unique_name) + ".bc"
+
+            with open(fname, "w") as llvm_file:
+                llvm_file.write(str(self.module))
 
         # Special optimization to remove NRT on functions that do not need it.
         if self.context.enable_nrt and self.generator_info is None:
@@ -1026,6 +1040,13 @@ class Lower(BaseLower):
 
         elif expr.op == 'call':
             res = self.lower_call(resty, expr)
+            return res
+
+        elif expr.op == 'itercount':
+            val = self.loadvar(expr.value.name)
+            ty = self.typeof(expr.value.name)
+            res = self.context.itercount(self.builder, val, ty)
+            self.incref(resty, res)
             return res
 
         elif expr.op == 'pair_first':

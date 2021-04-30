@@ -353,6 +353,11 @@ class PyLower(BaseLower):
                     self.pyapi.tuple_setitem(pair, 0, self.pyapi.make_none())
             self.pyapi.tuple_setitem(pair, 1, self.pyapi.bool_from_bool(is_valid))
             return pair
+        elif expr.op == 'itercount':
+            pair = self.loadvar(expr.value.name)
+            first = self.pyapi.tuple_getitem(pair, 3)
+            self.incref(first)
+            return first
         elif expr.op == 'pair_first':
             pair = self.loadvar(expr.value.name)
             first = self.pyapi.tuple_getitem(pair, 0)

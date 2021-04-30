@@ -358,7 +358,7 @@ packages = find_packages(include=["numba", "numba.*"])
 
 build_requires = ['numpy >={}'.format(min_numpy_build_version)]
 install_requires = [
-    'llvmlite >={},<{}'.format(min_llvmlite_version, max_llvmlite_version),
+#    'llvmlite >={},<{}'.format(min_llvmlite_version, max_llvmlite_version),
     'numpy >={}'.format(min_numpy_run_version),
     'setuptools',
 ]

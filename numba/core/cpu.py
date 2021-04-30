@@ -18,6 +18,7 @@ from numba.core.cpu_options import (ParallelOptions, FastMathOptions,
                                     InlineOptions)
 from numba.cpython import setobj, listobj
 from numba.np import ufunc_db
+from numba.parfors.parfor_lowering import in_openmp_region
 
 # Keep those structures in sync with _dynfunc.c.
 
@@ -30,6 +31,18 @@ class EnvBody(cgutils.Structure):
         ('globals', types.pyobject),
         ('consts', types.pyobject),
     ]
+
+
+if config.DEBUG_ARRAY_OPT >= 3:
+    ll.set_option('openmp', '-debug')
+    ll.set_option('openmp', '-print-after-all')
+    ll.set_option('openmp', '-print-module-scope')
+ll.set_option('openmp', '-loopopt=0')
+ll.set_option('openmp', '-enable-lv')
+ll.set_option('openmp', '-disable-hir-generate-mkl-call')
+ll.set_option('openmp', '-vpoopt=1')
+ll.set_option('openmp', '-paropt=31')
+ll.set_option('openmp', '-intel-libirc-allowed')
 
 
 class CPUContext(BaseContext):
@@ -69,10 +82,12 @@ class CPUContext(BaseContext):
 
         # Add lower_extension attribute
         self.lower_extensions = {}
-        from numba.parfors.parfor_lowering import _lower_parfor_parallel
+        from numba.parfors.parfor_lowering import _lower_parfor_parallel, _lower_openmp_region_start, _lower_openmp_region_end, openmp_region_start, openmp_region_end
         from numba.parfors.parfor import Parfor
         # Specify how to lower Parfor nodes using the lower_extensions
         self.lower_extensions[Parfor] = _lower_parfor_parallel
+        self.lower_extensions[openmp_region_start] = _lower_openmp_region_start
+        self.lower_extensions[openmp_region_end] = _lower_openmp_region_end
 
     def load_additional_registries(self):
         # Add target specific implementations
@@ -122,9 +137,10 @@ class CPUContext(BaseContext):
                                         self.get_env_name(self.fndesc))
         envarg = builder.load(envgv)
         pyapi = self.get_python_api(builder)
-        pyapi.emit_environment_sentry(
-            envarg, debug_msg=self.fndesc.env_name,
-        )
+        if not in_openmp_region(builder):
+            pyapi.emit_environment_sentry(
+                envarg, debug_msg=self.fndesc.env_name,
+            )
         env_body = self.get_env_body(builder, envarg)
         return pyapi.get_env_manager(self.environment, env_body, envarg)
 
@@ -175,6 +191,12 @@ class CPUContext(BaseContext):
                                 fndesc, env, call_helper=call_helper,
                                 release_gil=release_gil)
         builder.build()
+        if config.DUMP_LLVM:
+            print(("LLVM WRAPPER DUMP %s" % fndesc).center(80, '-'))
+            print(wrapper_module)
+            print('=' * 80)
+            import sys
+            sys.stdout.flush()
         library.add_ir_module(wrapper_module)
 
     def create_cfunc_wrapper(self, library, fndesc, env, call_helper):
@@ -266,6 +288,7 @@ _options_mixin = include_default_options(
     "fastmath",
     "error_model",
     "inline",
+    "enable_ssa",
 )
 
 class CPUTargetOptions(_options_mixin, TargetOptions):

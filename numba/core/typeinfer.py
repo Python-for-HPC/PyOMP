@@ -1616,7 +1616,7 @@ https://numba.pydata.org/numba-doc/latest/user/troubleshoot.html#my-code-has-an-
     def typeof_expr(self, inst, target, expr):
         if expr.op == 'call':
             self.typeof_call(inst, target, expr)
-        elif expr.op in ('getiter', 'iternext'):
+        elif expr.op in ('getiter', 'iternext', 'itercount'):
             self.typeof_intrinsic_call(inst, target, expr.op, expr.value)
         elif expr.op == 'exhaust_iter':
             constraint = ExhaustIterConstraint(target.name, count=expr.count,

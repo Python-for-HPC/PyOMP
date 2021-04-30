@@ -16,7 +16,7 @@ class WithContext(object):
         pass
 
     def mutate_with_body(self, func_ir, blocks, blk_start, blk_end,
-                         body_blocks, dispatcher_factory, extra):
+                         body_blocks, dispatcher_factory, extra, state=None, flags=None):
         """Mutate the *blocks* to implement this contextmanager.
 
         Parameters
@@ -59,7 +59,7 @@ class _ByPassContextType(WithContext):
     of the with-block.
     """
     def mutate_with_body(self, func_ir, blocks, blk_start, blk_end,
-                         body_blocks, dispatcher_factory, extra):
+                         body_blocks, dispatcher_factory, extra, state=None, flags=None):
         assert extra is None
         # Determine variables that need forwarding
         vlt = func_ir.variable_lifetime
@@ -79,7 +79,7 @@ class _CallContextType(WithContext):
     with-block as another function.
     """
     def mutate_with_body(self, func_ir, blocks, blk_start, blk_end,
-                         body_blocks, dispatcher_factory, extra):
+                         body_blocks, dispatcher_factory, extra, state=None, flags=None):
         assert extra is None
         vlt = func_ir.variable_lifetime
 
@@ -282,7 +282,7 @@ class _ObjModeContextType(WithContext):
             raise errors.CompilerError(" ".join(msgbuf), loc=loc)
 
     def mutate_with_body(self, func_ir, blocks, blk_start, blk_end,
-                         body_blocks, dispatcher_factory, extra):
+                         body_blocks, dispatcher_factory, extra, state=None, flags=None):
         cellnames = func_ir.func_id.func.__code__.co_freevars
         closures = func_ir.func_id.func.__closure__
         func_globals = func_ir.func_id.func.__globals__

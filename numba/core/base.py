@@ -22,6 +22,8 @@ from numba.core.imputils import (user_function, user_generator,
                        builtin_registry, impl_ret_borrowed,
                        RegistryLoader)
 from numba.cpython import builtins
+from numba.parfors.parfor_lowering import in_openmp_region
+
 
 GENERIC_POINTER = Type.pointer(Type.int(8))
 PYOBJECT = GENERIC_POINTER
@@ -171,6 +173,15 @@ def _load_global_helpers():
         if isinstance(obj, type) and issubclass(obj, BaseException):
             ll.add_symbol("PyExc_%s" % (obj.__name__), id(obj))
 
+
+def print_overloads(overloads):
+    for o in overloads:
+        print(type(o), o)
+
+def print_defns(defns):
+    for k,v in defns.items():
+        print("Key:", k, v, type(k), type(v))
+        print_overloads(v.versions)
 
 class BaseContext(object):
     """
@@ -434,6 +445,8 @@ class BaseContext(object):
         self.call_conv.decorate_function(fn, fndesc.args, fndesc.argtypes, noalias=fndesc.noalias)
         if fndesc.inline:
             fn.attributes.add('alwaysinline')
+        else:
+            fn.attributes.add('noinline')
         return fn
 
     def declare_external_function(self, module, fndesc):
@@ -609,6 +622,7 @@ class BaseContext(object):
                 return None
             else:
                 pyval = getattr(typ.pymod, attr)
+                #TODD llval = self.get_constant(attrty, pyval)
                 def imp(context, builder, typ, val, attr):
                     llval = self.get_constant_generic(builder, attrty, pyval)
                     return impl_ret_borrowed(context, builder, attrty, llval)
@@ -688,6 +702,13 @@ class BaseContext(object):
 
     def get_data_as_value(self, builder, ty, val):
         return self.data_model_manager[ty].from_data(builder, val)
+
+    def itercount(self, builder, val, ty):
+        """
+        Extract the first element of a heterogeneous pair.
+        """
+        pair = self.make_helper(builder, ty, val)
+        return builder.load(pair.count)
 
     def pair_first(self, builder, val, ty):
         """
@@ -901,8 +922,9 @@ class BaseContext(object):
         emit a call to that function with the given arguments.
         """
         status, res = self.call_internal_no_propagate(builder, fndesc, sig, args)
-        with cgutils.if_unlikely(builder, status.is_error):
-            self.call_conv.return_status_propagate(builder, status)
+        if not in_openmp_region(builder):
+            with cgutils.if_unlikely(builder, status.is_error):
+                self.call_conv.return_status_propagate(builder, status)
 
         res = imputils.fix_returning_optional(self, builder, sig, status, res)
         return res
@@ -956,8 +978,9 @@ class BaseContext(object):
         # Normal call sequence
         status, res = self.call_conv.call_function(builder, fn, sig.return_type,
                                                    sig.args, args)
-        with cgutils.if_unlikely(builder, status.is_error):
-            self.call_conv.return_status_propagate(builder, status)
+        if not in_openmp_region(builder):
+            with cgutils.if_unlikely(builder, status.is_error):
+                self.call_conv.return_status_propagate(builder, status)
 
         res = imputils.fix_returning_optional(self, builder, sig, status, res)
         return res

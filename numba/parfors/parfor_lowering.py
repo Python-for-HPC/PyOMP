@@ -13,17 +13,376 @@ import warnings
 
 import llvmlite.llvmpy.core as lc
 import llvmlite.ir.values as liv
+import llvmlite.ir as lir
+import llvmlite.binding as lb
 
 import numba
 from numba.parfors import parfor
-from numba.core import types, ir, config, compiler, lowering, sigutils, cgutils
-from numba.core.ir_utils import add_offset_to_labels, replace_var_names, remove_dels, legalize_names, mk_unique_var, rename_labels, get_name_var_table, visit_vars_inner, get_definition, guard, find_callname, get_call_table, is_pure, get_np_ufunc_typ, get_unused_var_name, find_potential_aliases, is_const_call
-from numba.core.analysis import compute_use_defs, compute_live_map, compute_dead_maps, compute_cfg_from_blocks
+from numba.core import types, ir, config, compiler, lowering, sigutils, cgutils, funcdesc, typeinfer
+from numba.core.ir_utils import add_offset_to_labels, replace_var_names, remove_dels, legalize_names, mk_unique_var, rename_labels, get_name_var_table, visit_vars_inner, get_definition, guard, find_callname, get_call_table, is_pure, get_np_ufunc_typ, get_unused_var_name, find_potential_aliases, is_const_call, remove_dead, build_definitions, apply_copy_propagate_extensions, replace_vars_inner, visit_vars_extensions
+from numba.core.analysis import compute_use_defs, compute_live_map, compute_dead_maps, compute_cfg_from_blocks, ir_extension_usedefs, _use_defs_result
 from numba.core.typing import signature
 from numba.parfors.parfor import print_wrapped, ensure_parallel_support
 from numba.core.errors import NumbaParallelSafetyWarning, NotDefinedError, CompilerError
 from numba.parfors.parfor_lowering_utils import ParforLoweringBuilder
 
+multi_tile = False
+
+
+#----------------------------------------------------------------------------------------------
+
+class openmp_tag(object):
+    def __init__(self, name, arg=None, load=False):
+        self.name = name
+        self.arg = arg
+        self.load = load
+        self.loaded_arg = None
+
+    def arg_to_str(self, x, lowerer):
+        if isinstance(x, ir.Var):
+            # Make sure the var referred to has been alloc'ed already.
+            lowerer._alloca_var(x.name, lowerer.fndesc.typemap[x.name])
+            if self.load:
+                if not self.loaded_arg:
+                    self.loaded_arg = lowerer.loadvar(x.name)
+                lop = self.loaded_arg.operands[0]
+                loptype = lop.type
+                pointee = loptype.pointee
+                ref = self.loaded_arg._get_reference()
+                decl = str(pointee) + " " + ref
+            else:
+                arg_str = lowerer.getvar(x.name)
+                decl = arg_str.get_decl()
+        elif isinstance(x, lir.instructions.AllocaInstr):
+            decl = x.get_decl()
+        elif isinstance(x, str):
+            lowerer._alloca_var(x, lowerer.fndesc.typemap[x])
+            if self.load:
+                if not self.loaded_arg:
+                    self.loaded_arg = lowerer.loadvar(x)
+                lop = self.loaded_arg.operands[0]
+                loptype = lop.type
+                pointee = loptype.pointee
+                ref = self.loaded_arg._get_reference()
+                decl = str(pointee) + " " + ref
+            else:
+                arg_str = lowerer.getvar(x)
+                decl = arg_str.get_decl()
+        elif isinstance(x, int):
+            decl = "i32 " + str(x)
+        else:
+            print("unknown arg type:", x, type(x))
+
+        return decl
+
+    def lower(self, lowerer, debug):
+        builder = lowerer.builder
+        decl = ""
+        if debug and config.DEBUG_ARRAY_OPT >= 1:
+            print("openmp_tag::lower", self.name, self.arg, type(self.arg))
+
+        if isinstance(self.arg, list):
+            arg_list = self.arg
+        elif self.arg is not None:
+            arg_list = [self.arg]
+        else:
+            arg_list = []
+
+        decl = ",".join([self.arg_to_str(x, lowerer) for x in arg_list])
+
+        return '"' + self.name + '"(' + decl + ')'
+
+    def replace_vars_inner(self, var_dict):
+        if isinstance(self.arg, ir.Var):
+            self.arg = replace_vars_inner(self.arg, var_dict)
+
+    def add_to_use_set(self, use_set):
+        if isinstance(self.arg, ir.Var):
+            use_set.add(self.arg.name)
+
+    def __str__(self):
+        return "openmp_tag(" + str(self.name) + "," + str(self.arg) + ")"
+
+def openmp_tag_list_to_str(tag_list, lowerer, debug):
+    tag_strs = [x.lower(lowerer, debug) for x in tag_list]
+    return '[ ' + ", ".join(tag_strs) + ' ]'
+
+def add_offload_info(lowerer, new_data):
+    if hasattr(lowerer, 'omp_offload'):
+        lowerer.omp_offload.append(new_data)
+    else:
+        lowerer.omp_offload = [new_data]
+
+def get_next_offload_number(lowerer):
+    if hasattr(lowerer, 'offload_number'):
+        cur = lowerer.offload_number
+    else:
+        cur = 0
+    lowerer.offload_number = cur + 1
+    return cur
+
+def list_vars_from_tags(tags):
+    used_vars = []
+    for t in tags:
+        if isinstance(t.arg, ir.Var):
+            used_vars.append(t.arg)
+    return used_vars
+
+def openmp_region_alloca(obj, alloca_instr, typ):
+    obj.alloca(alloca_instr, typ)
+
+def push_alloca_callback(lowerer, callback, data, builder):
+    cgutils.push_alloca_callbacks(callback, data)
+    if not hasattr(builder, '_lowerer_push_alloca_callbacks'):
+        builder._lowerer_push_alloca_callbacks = 0
+    builder._lowerer_push_alloca_callbacks += 1
+
+def pop_alloca_callback(lowerer, builder):
+    cgutils.pop_alloca_callbacks()
+    builder._lowerer_push_alloca_callbacks -= 1
+
+def in_openmp_region(builder):
+    if hasattr(builder, '_lowerer_push_alloca_callbacks'):
+        return builder._lowerer_push_alloca_callbacks > 0
+    else:
+        return False
+
+class openmp_region_start(ir.Stmt):
+    def __init__(self, tags, region_number, loc):
+        self.tags = tags
+        self.region_number = region_number
+        self.loc = loc
+        self.omp_region_var = None
+        self.omp_metadata = None
+        self.tag_vars = set()
+        self.normal_iv = None
+        for tag in self.tags:
+            if isinstance(tag.arg, ir.Var):
+                self.tag_vars.add(tag.arg.name)
+            if isinstance(tag.arg, str):
+                self.tag_vars.add(tag.arg)
+            if tag.name == "QUAL.OMP.NORMALIZED.IV":
+                self.normal_iv = tag.arg
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("tags:", self.tags)
+            print("tag_vars:", self.tag_vars)
+        self.acq_res = False
+        self.acq_rel = False
+        self.alloca_queue = []
+
+    def requires_acquire_release(self):
+        self.acq_res = True
+
+    def requires_combined_acquire_release(self):
+        self.acq_rel = True
+
+    def has_target(self):
+        for t in self.tags:
+            if t.name == "DIR.OMP.TARGET":
+                return True
+        return False
+
+    def list_vars(self):
+        return list_vars_from_tags(self.tags)
+
+    def update_tags(self):
+        with self.builder.goto_block(self.block):
+            cur_instr = -1
+
+            while True:
+                last_instr = self.builder.block.instructions[cur_instr]
+                if isinstance(last_instr, lir.instructions.CallInstr) and len(last_instr.tags) > 0:
+                    break
+                cur_instr -= 1
+
+            last_instr.tags = openmp_tag_list_to_str(self.tags, self.lowerer, False)
+            if config.DEBUG_ARRAY_OPT >= 1:
+                print("last_tags:", last_instr.tags, type(last_instr.tags))
+
+    def alloca(self, alloca_instr, typ):
+        # We can't process these right away since the processing required can
+        # lead to infinite recursion.  So, we just accumulate them in a queue
+        # and then process them later at the end_region marker so that the
+        # variables are guaranteed to exist in their full form so that when we
+        # process them then they won't lead to infinite recursion.
+        self.alloca_queue.append((alloca_instr, typ))
+
+    def process_alloca_queue(self):
+        has_update = False
+        for alloca_instr, typ in self.alloca_queue:
+            has_update = self.process_one_alloca(alloca_instr, typ) or has_update
+        if has_update:
+            self.update_tags()
+
+    def process_one_alloca(self, alloca_instr, typ):
+        avar = alloca_instr.name
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("openmp_region_start process_one_alloca:", alloca_instr, avar, typ, type(alloca_instr))
+
+        has_update = False
+        if self.normal_iv is not None and avar != self.normal_iv and avar.startswith(self.normal_iv):
+            for i in range(len(self.tags)):
+                if config.DEBUG_ARRAY_OPT >= 1:
+                    print("Replacing normalized iv with", avar)
+                self.tags[i].arg = avar
+                has_update = True
+                break
+
+        if not self.needs_implicit_vars():
+            return has_update
+        if avar not in self.tag_vars:
+            self.tags.append(openmp_tag("QUAL.OMP.FIRSTPRIVATE", alloca_instr))
+            self.tag_vars.add(avar)
+            has_update = True
+        return has_update
+
+    def needs_implicit_vars(self):
+        first_tag = self.tags[0]
+        if (first_tag.name == "DIR.OMP.PARALLEL" or
+            first_tag.name == "DIR.OMP.PARALLEL.LOOP" or
+            first_tag.name == "DIR.OMP.TASK"):
+            return True
+        return False
+
+    def lower(self, lowerer):
+        typingctx = lowerer.context.typing_context
+        targetctx = lowerer.context
+        typemap = lowerer.fndesc.typemap
+        context = lowerer.context
+        builder = lowerer.builder
+        library = lowerer.library
+        self.block = builder.block
+        self.builder = builder
+        self.lowerer = lowerer
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("lower:block", self.block, type(self.block))
+
+        if self.has_target():
+            builder.module.device_triples = "spir64"
+
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("push_alloca_callbacks")
+        push_alloca_callback(lowerer, openmp_region_alloca, self, builder)
+
+        llvm_token_t = lc.Type.token()
+        fnty = lir.FunctionType(llvm_token_t, [])
+        tag_str = openmp_tag_list_to_str(self.tags, lowerer, True)
+        pre_fn = builder.module.declare_intrinsic('llvm.directive.region.entry', (), fnty)
+        self.omp_region_var = builder.call(pre_fn, [], tail=False, tags=tag_str)
+        if self.omp_metadata is None and self.has_target():
+            self.omp_metadata = builder.module.add_metadata([
+                 lir.IntType(32)(0),   # Kind of this metadata.  0 is for target.
+                 lir.IntType(32)(lb.getDeviceForFile(self.loc.filename)),   # Device ID of the file with the entry.
+                 lir.IntType(32)(lb.getFileIdForFile(self.loc.filename)),   # File ID of the file with the entry.
+                 lowerer.fndesc.mangled_name,   # Mangled name of the function with the entry.
+                 lir.IntType(32)(self.loc.line),  # Line in the source file where with the entry.
+                 lir.IntType(32)(self.region_number),   # Order the entry was created.
+                 #lir.IntType(32)(get_next_offload_number(lowerer)),   # Order the entry was created.
+                 lir.IntType(32)(0)    # Entry kind.  Should always be 0 I think.
+                ])
+            add_offload_info(lowerer, self.omp_metadata)
+        if self.acq_res:
+            builder.fence("acquire")
+        if self.acq_rel:
+            builder.fence("acq_rel")
+
+    def __str__(self):
+        return "openmp_region_start " + ", ".join([str(x) for x in self.tags])
+
+class openmp_region_end(ir.Stmt):
+    def __init__(self, start_region, tags, loc):
+        self.start_region = start_region
+        self.tags = tags
+        self.loc = loc
+
+    def list_vars(self):
+        return list_vars_from_tags(self.tags)
+
+    def lower(self, lowerer):
+        typingctx = lowerer.context.typing_context
+        targetctx = lowerer.context
+        typemap = lowerer.fndesc.typemap
+        context = lowerer.context
+        builder = lowerer.builder
+        library = lowerer.library
+
+        assert self.start_region.omp_region_var != None
+
+        if self.start_region.acq_res:
+            builder.fence("release")
+
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("pop_alloca_callbacks")
+        pop_alloca_callback(lowerer, builder)
+
+        # Process the accumulated allocas in the start region.
+        self.start_region.process_alloca_queue()
+
+        llvm_token_t = lc.Type.token()
+        fnty = lir.FunctionType(lc.Type.void(), [llvm_token_t])
+        pre_fn = builder.module.declare_intrinsic('llvm.directive.region.exit', (), fnty)
+        builder.call(pre_fn, [self.start_region.omp_region_var], tail=True, tags=openmp_tag_list_to_str(self.tags, lowerer, True))
+
+    def __str__(self):
+        return "openmp_region_end " + ", ".join([str(x) for x in self.tags])
+
+# Callback for ir_extension_usedefs
+def openmp_region_start_defs(region, use_set=None, def_set=None):
+    if use_set is None:
+        use_set = set()
+    if def_set is None:
+        def_set = set()
+#    for tag in region.tags:
+#        tag.add_to_use_set(use_set)
+    return _use_defs_result(usemap=use_set, defmap=def_set)
+
+def openmp_region_end_defs(region, use_set=None, def_set=None):
+    if use_set is None:
+        use_set = set()
+    if def_set is None:
+        def_set = set()
+#    for tag in region.tags:
+#        tag.add_to_use_set(use_set)
+    return _use_defs_result(usemap=use_set, defmap=def_set)
+
+# Extend usedef analysis to suport openmp_region_start/end nodes.
+ir_extension_usedefs[openmp_region_start] = openmp_region_start_defs
+ir_extension_usedefs[openmp_region_end] = openmp_region_end_defs
+
+def openmp_region_start_infer(prs, typeinferer):
+    pass
+
+def openmp_region_end_infer(pre, typeinferer):
+    pass
+
+typeinfer.typeinfer_extensions[openmp_region_start] = openmp_region_start_infer
+typeinfer.typeinfer_extensions[openmp_region_end] = openmp_region_end_infer
+
+def _lower_openmp_region_start(lowerer, prs):
+    prs.lower(lowerer)
+
+def _lower_openmp_region_end(lowerer, pre):
+    pre.lower(lowerer)
+
+def apply_copies_openmp_region(region, var_dict, name_var_table, typemap, calltypes, save_copies):
+    for i in range(len(region.tags)):
+        region.tags[i].replace_vars_inner(var_dict)
+
+apply_copy_propagate_extensions[openmp_region_start] = apply_copies_openmp_region
+apply_copy_propagate_extensions[openmp_region_end] = apply_copies_openmp_region
+
+def visit_vars_openmp_region(region, callback, cbdata):
+    for i in range(len(region.tags)):
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("visit_vars before", region.tags[i], type(region.tags[i].arg))
+        region.tags[i].arg = visit_vars_inner(region.tags[i].arg, callback, cbdata)
+        if config.DEBUG_ARRAY_OPT >= 1:
+            print("visit_vars after", region.tags[i])
+
+visit_vars_extensions[openmp_region_start] = visit_vars_openmp_region
+visit_vars_extensions[openmp_region_end] = visit_vars_openmp_region
+
+#----------------------------------------------------------------------------------------------
 
 def _lower_parfor_parallel(lowerer, parfor):
     """Lowerer that handles LLVM code generation for parfor.
@@ -270,7 +629,9 @@ def _lower_parfor_parallel(lowerer, parfor):
     num_reductions = len(parfor_redvars)
     num_inputs = len(func_args) - len(parfor_output_arrays) - num_reductions
     if config.DEBUG_ARRAY_OPT:
-        print("func_args = ", func_args)
+        print("func", func, type(func))
+        print("func_args", func_args, type(func_args))
+        print("func_sig", func_sig, type(func_sig))
         print("num_inputs = ", num_inputs)
         print("parfor_outputs = ", parfor_output_arrays)
         print("parfor_redvars = ", parfor_redvars)
@@ -1358,6 +1719,15 @@ def _create_gufunc_for_parfor_body(
         if config.DEBUG_ARRAY_OPT:
             print("No aliases found so adding noalias flag.")
         flags.noalias = True
+
+    """
+    remove_dead(gufunc_ir.blocks, gufunc_ir.arg_names, gufunc_ir, typemap)
+
+    if config.DEBUG_ARRAY_OPT:
+        print("gufunc_ir after remove dead")
+        gufunc_ir.dump()
+    """
+
     kernel_func = compiler.compile_ir(
         typingctx,
         targetctx,
@@ -1432,11 +1802,21 @@ def call_parallel_gufunc(lowerer, cres, gu_signature, outer_sig, expr_args, expr
         print("expr_args", expr_args)
         print("expr_arg_types", expr_arg_types)
         print("gu_signature", gu_signature)
+        print("cres", cres, type(cres))
+        print("cres.library", cres.library, type(cres.library))
+        print("cres.fndesc", cres.fndesc, type(cres.fndesc))
 
     # Build the wrapper for GUFunc
     args, return_type = sigutils.normalize_signature(outer_sig)
     llvm_func = cres.library.get_function(cres.fndesc.llvm_func_name)
+
+    if config.DEBUG_ARRAY_OPT:
+        print("llvm_func", llvm_func, type(llvm_func))
     sin, sout = gu_signature
+
+    if config.DEBUG_ARRAY_OPT:
+        print("sin", sin)
+        print("sout", sout)
 
     # These are necessary for build_gufunc_wrapper to find external symbols
     _launch_threads()

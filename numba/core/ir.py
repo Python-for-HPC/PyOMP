@@ -471,6 +471,13 @@ class Expr(Inst):
         return cls(op=op, loc=loc, value=value)
 
     @classmethod
+    def itercount(cls, value, loc):
+        assert isinstance(value, Var)
+        assert isinstance(loc, Loc)
+        op = 'itercount'
+        return cls(op=op, loc=loc, value=value)
+
+    @classmethod
     def iternext(cls, value, loc):
         assert isinstance(value, Var)
         assert isinstance(loc, Loc)

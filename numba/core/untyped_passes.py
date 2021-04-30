@@ -253,6 +253,7 @@ class WithLifting(FunctionPass):
             targetctx=state.targetctx,
             flags=state.flags,
             locals=state.locals,
+            state=state,
         )
         if withs:
             from numba.core.compiler import compile_ir, _EarlyPipelineCompletion

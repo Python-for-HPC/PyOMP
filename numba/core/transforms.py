@@ -315,7 +315,7 @@ def canonicalize_cfg(blocks):
     return canonicalize_cfg_single_backedge(blocks)
 
 
-def with_lifting(func_ir, typingctx, targetctx, flags, locals):
+def with_lifting(func_ir, typingctx, targetctx, flags, locals, state):
     """With-lifting transformation
 
     Rewrite the IR to extract all withs.
@@ -362,7 +362,7 @@ def with_lifting(func_ir, typingctx, targetctx, flags, locals):
         # Mutate the body and get new IR
         sub = cmkind.mutate_with_body(func_ir, blocks, blk_start, blk_end,
                                       body_blocks, dispatcher_factory,
-                                      extra)
+                                      extra, state=state, flags=flags)
         sub_irs.append(sub)
     if not sub_irs:
         # Unchanged
