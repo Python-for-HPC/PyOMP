@@ -33,7 +33,7 @@ class _OpenmpContextType(WithContext):
 
     def mutate_with_body(self, func_ir, blocks, blk_start, blk_end,
                          body_blocks, dispatcher_factory, extra, state=None, flags=None):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("openmp:mutate_with_body")
             dprint_func_ir(func_ir, "func_ir")
             print("blocks:", blocks, type(blocks))
@@ -47,7 +47,7 @@ class _OpenmpContextType(WithContext):
         flags.enable_ssa = False
         flags.release_gil = True
         _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra, state)
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("post-with-removal")
             dump_blocks(blocks)
         dispatcher = dispatcher_factory(func_ir)
@@ -117,7 +117,7 @@ class OpenmpVisitor(Transformer):
         provided data clause.  If so, remove it from the set and add a clause so that the
         SSA form gets the same data clause.
         """
-        if config.DEBUG_ARRAY_OPT >= 2:
+        if config.DEBUG_OPENMP >= 2:
             print("remove_explicit:", varset, vars_in_explicit_clauses)
         diff = set()
         # For each variable inthe set.
@@ -127,7 +127,7 @@ class OpenmpVisitor(Transformer):
             # Skip non-SSA introduced variables (i.e., Python vars).
             if flat == v:
                 continue
-            if config.DEBUG_ARRAY_OPT >= 2:
+            if config.DEBUG_OPENMP >= 2:
                 print("remove_explicit:", v, flat, flat in vars_in_explicit_clauses)
             # If we have the non-SSA form in an explicit data clause.
             if flat in vars_in_explicit_clauses:
@@ -141,7 +141,7 @@ class OpenmpVisitor(Transformer):
                 clauses.append(ccopy)
         # Remove the vars from the set that we added a clause for.
         varset.difference_update(diff)
-        if config.DEBUG_ARRAY_OPT >= 2:
+        if config.DEBUG_OPENMP >= 2:
             print("remove_explicit:", varset)
 
     def remove_explicit_from_io_vars(self, inputs_to_region, def_but_live_out, private_to_region, vars_in_explicit_clauses, clauses, scope, loc):
@@ -166,7 +166,7 @@ class OpenmpVisitor(Transformer):
         live_map = compute_live_map(cfg, self.blocks, usedefs.usemap, usedefs.defmap)
         # Assumes enter_with is first statement in block.
         inputs_to_region = live_map[self.blk_start]
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("usedefs:", usedefs)
             print("live_map:", live_map)
             print("inputs_to_region:", inputs_to_region, type(inputs_to_region))
@@ -180,7 +180,7 @@ class OpenmpVisitor(Transformer):
         def_but_live_out = all_defs.difference(inputs_to_region).intersection(live_map[self.blk_end])
         private_to_region = all_defs.difference(inputs_to_region).difference(live_map[self.blk_end])
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("inputs_to_region:", inputs_to_region)
             print("private_to_region:", private_to_region)
             print("def_but_live_out:", def_but_live_out)
@@ -189,10 +189,10 @@ class OpenmpVisitor(Transformer):
     def get_explicit_vars(self, clauses):
         ret = {}
         for c in clauses:
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("get_explicit_vars:", c, type(c))
             if isinstance(c, openmp_tag):
-                if config.DEBUG_ARRAY_OPT >= 1:
+                if config.DEBUG_OPENMP >= 1:
                     print("arg:", c.arg, type(c.arg))
                 if isinstance(c.arg, str):
                     ret[c.arg] = c
@@ -227,7 +227,10 @@ class OpenmpVisitor(Transformer):
             for ptr in private_to_region:
                 itr_var = ir.Var(scope, ptr, self.loc)
                 if not is_internal_var(itr_var):
-                    start_tags.append(openmp_tag("QUAL.OMP.SHARED", itr_var))
+                    if config.OPENMP_SHARED_PRIVATE_REGION == 0:
+                        start_tags.append(openmp_tag("QUAL.OMP.PRIVATE", itr_var))
+                    else:
+                        start_tags.append(openmp_tag("QUAL.OMP.SHARED", itr_var))
                     keep_alive.append(ir.Assign(itr_var, itr_var, self.loc))
         for ptr in private_to_region:
             itr_var = ir.Var(scope, ptr, self.loc)
@@ -241,13 +244,13 @@ class OpenmpVisitor(Transformer):
 
         clauses = []
         default_shared = True
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("some_for_directive")
         incoming_clauses = [remove_indirections(x) for x in args[first_clause:]]
         # Process all the incoming clauses which can be in singular or list form
         # and flatten them to a list of openmp_tags.
         for clause in incoming_clauses:
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("clause:", clause, type(clause))
             if isinstance(clause, openmp_tag):
                 clauses.append(clause)
@@ -255,16 +258,16 @@ class OpenmpVisitor(Transformer):
                 clauses.extend(remove_indirections(clause))
             elif isinstance(clause, default_shared_val):
                 default_shared = clause.val
-                if config.DEBUG_ARRAY_OPT >= 1:
+                if config.DEBUG_OPENMP >= 1:
                     print("got new default_shared:", clause.val)
             else:
                 assert(0)
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit", main_start_tag, args, type(args), clauses, default_shared)
 
         # Get a dict mapping variables explicitly mentioned in the data clauses above to their openmp_tag.
         vars_in_explicit_clauses = self.get_explicit_vars(clauses)
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("vars_in_explicit_clauses:", vars_in_explicit_clauses, type(vars_in_explicit_clauses))
 
         before_start = []
@@ -277,7 +280,7 @@ class OpenmpVisitor(Transformer):
         usedefs = compute_use_defs(self.blocks)
         live_map = compute_live_map(cfg, self.blocks, usedefs.usemap, usedefs.defmap)
         all_loops = cfg.loops()
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("all_loops:", all_loops)
         loops = {}
         # Find the outer-most loop in this OpenMP region.
@@ -286,7 +289,7 @@ class OpenmpVisitor(Transformer):
                 loops[k] = v
         loops = list(find_top_level_loops(cfg, loops=loops))
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("loops:", loops)
         assert(len(loops) == 1)
 
@@ -307,7 +310,7 @@ class OpenmpVisitor(Transformer):
         exit = list(loop.exits)[0]
 
         loop_blocks_for_io = loop.entries.union(loop.body)
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("loop_blocks_for_io:", loop_blocks_for_io, entry, exit)
 
         found_loop = False
@@ -321,7 +324,7 @@ class OpenmpVisitor(Transformer):
         header_preds = [x[0] for x in cfg.predecessors(header)]
         entry_preds = list(set(header_preds).difference(loop.body))
         back_blocks = list(set(header_preds).intersection(loop.body))
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("header_preds:", header_preds)
             print("entry_preds:", entry_preds)
             print("back_blocks:", back_blocks)
@@ -331,10 +334,10 @@ class OpenmpVisitor(Transformer):
         header_branch = header_block.body[-1]
         post_header = {header_branch.truebr, header_branch.falsebr}
         post_header.remove(exit)
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("post_header:", post_header)
         post_header = self.blocks[list(post_header)[0]]
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("post_header:", post_header)
 
         normalized = True
@@ -344,13 +347,13 @@ class OpenmpVisitor(Transformer):
                     and isinstance(inst.value, ir.Expr)
                     and inst.value.op == 'call'):
                 loop_kind = _get_loop_kind(inst.value.func.name, call_table) 
-                if config.DEBUG_ARRAY_OPT >= 1:
+                if config.DEBUG_OPENMP >= 1:
                     print("loop_kind:", loop_kind)
                 if loop_kind != False and loop_kind == range:
                     found_loop = True
                     range_inst = inst
                     range_args = inst.value.args
-                    if config.DEBUG_ARRAY_OPT >= 1:
+                    if config.DEBUG_OPENMP >= 1:
                         print("found one", loop_kind, inst, range_args)
                     #----------------------------------------------
                     # Find getiter instruction for this range.
@@ -362,11 +365,11 @@ class OpenmpVisitor(Transformer):
                             getiter_inst = entry_inst
                             break
                     assert(getiter_inst)
-                    if config.DEBUG_ARRAY_OPT >= 1:
+                    if config.DEBUG_OPENMP >= 1:
                         print("getiter_inst:", getiter_inst)
                     #----------------------------------------------
                     assert(len(header_block.body) > 3)
-                    if config.DEBUG_ARRAY_OPT >= 1:
+                    if config.DEBUG_OPENMP >= 1:
                         print("header block before removing Numba range vars:")
                         dump_block(header, header_block)
 
@@ -387,12 +390,12 @@ class OpenmpVisitor(Transformer):
                     assert(isinstance(pair_second_inst, ir.Assign) and isinstance(pair_second_inst.value, ir.Expr) and pair_second_inst.value.op == 'pair_second')
                     # Remove those nodes from the IR.
                     header_block.body = header_block.body[:iter_num] + header_block.body[iter_num+3:]
-                    if config.DEBUG_ARRAY_OPT >= 1:
+                    if config.DEBUG_OPENMP >= 1:
                         print("header block after removing Numba range vars:")
                         dump_block(header, header_block)
 
                     loop_index = pair_first_inst.target
-                    if config.DEBUG_ARRAY_OPT >= 1:
+                    if config.DEBUG_OPENMP >= 1:
                         print("loop_index:", loop_index)
                     # The loop_index from Numba's perspective is not what it is from the
                     # programmer's perspective.  The OpenMP loop index is always private so
@@ -410,7 +413,7 @@ class OpenmpVisitor(Transformer):
                             if phinst.value.name == latest_index.name:
                                 latest_index = phinst.target.name
                                 break
-                    if config.DEBUG_ARRAY_OPT >= 1:
+                    if config.DEBUG_OPENMP >= 1:
                         print("latest_index:", latest_index)
                     new_index_clause = openmp_tag("QUAL.OMP.PRIVATE", ir.Var(loop_index.scope, latest_index, inst.loc))
                     clauses.append(new_index_clause)
@@ -576,7 +579,7 @@ class OpenmpVisitor(Transformer):
                         user_defined_inputs = get_user_defined_var(inputs_to_region)
                         user_defined_def_live = get_user_defined_var(def_but_live_out)
                         user_defined_private = get_user_defined_var(private_to_region)
-                        if config.DEBUG_ARRAY_OPT >= 1:
+                        if config.DEBUG_OPENMP >= 1:
                             print("inputs users:", user_defined_inputs)
                             print("def users:", user_defined_def_live)
                             print("private users:", user_defined_private)
@@ -606,7 +609,7 @@ class OpenmpVisitor(Transformer):
         sblk = self.blocks[self.blk_start]
         eblk = self.blocks[self.blk_end]
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit barrier_directive", args, type(args))
         or_start = openmp_region_start([openmp_tag("DIR.OMP.BARRIER")], 0, self.loc)
         or_start.requires_combined_acquire_release()
@@ -617,7 +620,7 @@ class OpenmpVisitor(Transformer):
         sblk = self.blocks[self.blk_start]
         eblk = self.blocks[self.blk_end]
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit taskwait_directive", args, type(args))
         or_start = openmp_region_start([openmp_tag("DIR.OMP.TASKWAIT")], 0, self.loc)
         or_start.requires_combined_acquire_release()
@@ -632,7 +635,7 @@ class OpenmpVisitor(Transformer):
         eblk = self.blocks[self.blk_end]
         scope = sblk.scope
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit critical_directive", args, type(args))
         or_start = openmp_region_start([openmp_tag("DIR.OMP.CRITICAL")], 0, self.loc)
         or_start.requires_acquire_release()
@@ -643,7 +646,7 @@ class OpenmpVisitor(Transformer):
         def_but_live_out = {remove_ssa(x, scope, self.loc):x for x in def_but_live_out}
         common_keys = inputs_to_region.keys() & def_but_live_out.keys()
         in_def_live_out = {inputs_to_region[k]:def_but_live_out[k] for k in common_keys}
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("inputs_to_region:", inputs_to_region)
             print("def_but_live_out:", def_but_live_out)
             print("in_def_live_out:", in_def_live_out)
@@ -659,7 +662,7 @@ class OpenmpVisitor(Transformer):
         sblk = self.blocks[self.blk_start]
         eblk = self.blocks[self.blk_end]
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit single_directive", args, type(args))
         or_start = openmp_region_start([openmp_tag("DIR.OMP.SINGLE")], 0, self.loc)
         or_start.requires_acquire_release()
@@ -688,21 +691,21 @@ class OpenmpVisitor(Transformer):
 
         inputs_to_region, def_but_live_out, private_to_region = self.find_io_vars(self.body_blocks)
         for itr in inputs_to_region:
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("input_to_region:", itr)
             start_tags.append(openmp_tag("QUAL.OMP.FIRSTPRIVATE", ir.Var(scope, itr, self.loc)))
         for itr in def_but_live_out:
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("def_but_live_out:", itr)
             itr_var = ir.Var(scope, itr, self.loc)
             start_tags.append(openmp_tag("QUAL.OMP.SHARED", itr_var))
             keep_alive.append(ir.Assign(itr_var, itr_var, self.loc))
         for ptr in private_to_region:
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("private_to_region:", ptr)
             start_tags.append(openmp_tag("QUAL.OMP.PRIVATE", ir.Var(scope, ptr, self.loc)))
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit task_directive", args, type(args), tag_clauses)
         or_start = openmp_region_start(start_tags, 0, self.loc)
         or_end   = openmp_region_end(or_start, end_tags, self.loc)
@@ -711,42 +714,42 @@ class OpenmpVisitor(Transformer):
         eblk.body = [or_end]   + keep_alive + eblk.body[:]
 
     def task_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit task_clause", args, type(args), args[0])
         return args[0]
 
     def data_default_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_default_clause", args, type(args), args[0])
         return args[0]
 
     def data_sharing_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_sharing_clause", args, type(args), args[0])
         return args[0]
 
     def data_privatization_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_privatization_clause", args, type(args), args[0])
         return args[0]
 
     def data_privatization_in_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_privatization_in_clause", args, type(args), args[0])
         return args[0]
 
     def data_privatization_out_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_privatization_out_clause", args, type(args), args[0])
         return args[0]
 
     def data_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_clause", args, type(args), args[0])
         return args[0]
 
     def private_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit private_clause", args, type(args), args[0])
         (_, var_list) = args
         ret = []
@@ -766,7 +769,7 @@ class OpenmpVisitor(Transformer):
     # Don't need a rule for COPYPRIVATE.
 
     def firstprivate_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit firstprivate_clause", args, type(args), args[0])
         (_, var_list) = args
         ret = []
@@ -777,7 +780,7 @@ class OpenmpVisitor(Transformer):
     # Don't need a rule for FIRSTPRIVATE.
 
     def lastprivate_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit lastprivate_clause", args, type(args), args[0])
         (_, var_list) = args
         ret = []
@@ -808,7 +811,7 @@ class OpenmpVisitor(Transformer):
     # Don't need a rule for REDUCTION.
 
     def data_reduction_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit data_reduction_clause", args, type(args), args[0])
 
         (_, red_op, red_list) = args
@@ -818,17 +821,17 @@ class OpenmpVisitor(Transformer):
         return ret
 
     def default_shared_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit default_shared_clause", args, type(args))
         return default_shared_val(True)
 
     def default_none_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit default_none", args, type(args))
         return default_shared_val(False)
 
     def const_num_or_var(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit const_num_or_var", args, type(args))
         return args[0]
 
@@ -841,13 +844,13 @@ class OpenmpVisitor(Transformer):
 
         clauses = []
         default_shared = True
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit parallel_directive", args, type(args))
         incoming_clauses = [remove_indirections(x) for x in args[1:]]
         # Process all the incoming clauses which can be in singular or list form
         # and flatten them to a list of openmp_tags.
         for clause in incoming_clauses:
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("clause:", clause, type(clause))
             if isinstance(clause, openmp_tag):
                 clauses.append(clause)
@@ -855,20 +858,20 @@ class OpenmpVisitor(Transformer):
                 clauses.extend(remove_indirections(clause))
             elif isinstance(clause, default_shared_val):
                 default_shared = clause.val
-                if config.DEBUG_ARRAY_OPT >= 1:
+                if config.DEBUG_OPENMP >= 1:
                     print("got new default_shared:", clause.val)
             else:
-                if config.DEBUG_ARRAY_OPT >= 1:
+                if config.DEBUG_OPENMP >= 1:
                     print("Unknown clause type in incoming_clauses", clause, type(clause))
                 assert(0)
 
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             for clause in clauses:
                 print("final clause:", clause)
 
         # Get a dict mapping variables explicitly mentioned in the data clauses above to their openmp_tag.
         vars_in_explicit_clauses = self.get_explicit_vars(clauses)
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("vars_in_explicit_clauses:", vars_in_explicit_clauses, type(vars_in_explicit_clauses))
 
         # Do an analysis to get variable use information coming into and out of the region.
@@ -899,7 +902,7 @@ class OpenmpVisitor(Transformer):
             user_defined_inputs = get_user_defined_var(inputs_to_region)
             user_defined_def_live = get_user_defined_var(def_but_live_out)
             user_defined_private = get_user_defined_var(private_to_region)
-            if config.DEBUG_ARRAY_OPT >= 1:
+            if config.DEBUG_OPENMP >= 1:
                 print("inputs users:", user_defined_inputs)
                 print("def users:", user_defined_def_live)
                 print("private users:", user_defined_private)
@@ -918,20 +921,20 @@ class OpenmpVisitor(Transformer):
 
     def parallel_clause(self, args):
         (val,) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit parallel_clause", args, type(args))
         return val
 
     def unique_parallel_clause(self, args):
         (val,) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit unique_parallel_clause", args, type(args))
         assert(isinstance(val, openmp_tag))
         return val
 
     def if_clause(self, args):
         (_, if_val) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit if_clause", args, type(args))
 
         return openmp_tag("QUAL.OMP.IF", if_val, load=True)
@@ -940,7 +943,7 @@ class OpenmpVisitor(Transformer):
 
     def num_threads_clause(self, args):
         (_, num_threads) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit num_threads_clause", args, type(args))
 
         return openmp_tag("QUAL.OMP.NUM_THREADS", num_threads, load=True)
@@ -954,7 +957,7 @@ class OpenmpVisitor(Transformer):
         return self.some_for_directive(args, "DIR.OMP.PARALLEL.LOOP", "DIR.OMP.END.PARALLEL.LOOP", 2, True)
 
     def parallel_for_clause(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit parallel_for_clause", args, type(args), args[0])
         return args[0]
 
@@ -965,7 +968,7 @@ class OpenmpVisitor(Transformer):
 
     def for_clause(self, args):
         (val,) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit for_clause", args, type(args))
         if isinstance(val, openmp_tag):
             return [val]
@@ -976,7 +979,7 @@ class OpenmpVisitor(Transformer):
 
     def unique_for_clause(self, args):
         (val,) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit unique_for_clause", args, type(args))
         if isinstance(val, openmp_tag):
             return val
@@ -985,18 +988,18 @@ class OpenmpVisitor(Transformer):
 
     def linear_expr(self, args):
         (_, var, step) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit linear_expr", args, type(args))
         return openmp_tag("QUAL.OMP.LINEAR", [var, step])
 
     def ORDERED(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit ordered", args, type(args))
         return "ordered"
 
     def sched_no_expr(self, args):
         (_, kind) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit sched_no_expr", args, type(args))
         if kind == 'static':
             return openmp_tag("QUAL.OMP.SCHEDULE.STATIC", 0)
@@ -1009,7 +1012,7 @@ class OpenmpVisitor(Transformer):
 
     def sched_expr(self, args):
         (_, kind, num_or_var) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit sched_expr", args, type(args), num_or_var, type(num_or_var))
         if kind == 'static':
             return openmp_tag("QUAL.OMP.SCHEDULE.STATIC", num_or_var, load=True)
@@ -1021,38 +1024,38 @@ class OpenmpVisitor(Transformer):
             return openmp_tag("QUAL.OMP.SCHEDULE.RUNTIME", num_or_var, load=True)
 
     def SCHEDULE(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit SCHEDULE", args, type(args))
         return "schedule"
 
     def schedule_kind(self, args):
         (kind,) = args
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit schedule_kind", args, type(args))
         return kind
 
     def STATIC(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit STATIC", args, type(args))
         return "static"
 
     def DYNAMIC(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit DYNAMIC", args, type(args))
         return "dynamic"
 
     def GUIDED(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit GUIDED", args, type(args))
         return "guided"
 
     def RUNTIME(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit RUNTIME", args, type(args))
         return "RUNTIME"
 
     def var_list(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit var_list", args, type(args))
         if len(args) == 1:
             return args
@@ -1061,25 +1064,25 @@ class OpenmpVisitor(Transformer):
             return args[0]
 
     def PLUS(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit PLUS", args, type(args))
         return "+"
 
     def reduction_operator(self, args):
         arg = args[0]
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit reduction_operator", args, type(args), arg, type(arg))
         if arg == "+":
             return "ADD"
         assert(0)
 
     def PYTHON_NAME(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit PYTHON_NAME", args, type(args), str(args))
         return str(args)
 
     def NUMBER(self, args):
-        if config.DEBUG_ARRAY_OPT >= 1:
+        if config.DEBUG_OPENMP >= 1:
             print("visit NUMBER", args, type(args), str(args))
         return int(args)
 
@@ -1392,7 +1395,7 @@ def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra
     args = extra["args"]
     arg = args[0]
     parse_res = openmp_parser.parse(arg.value)
-    if config.DEBUG_ARRAY_OPT >= 1:
+    if config.DEBUG_OPENMP >= 1:
         print("args:", args, type(args))
         print("arg:", arg, type(arg), arg.value, type(arg.value))
         print(parse_res.pretty())
