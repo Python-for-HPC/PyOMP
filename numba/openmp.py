@@ -12,10 +12,12 @@ import operator
 import sys
 import copy
 
-iomplib = '/opt/intel/compilers_and_libraries_2018.0.128/linux/compiler/lib/intel64_lin/libiomp5.so'
+#iomplib = '/opt/intel/compilers_and_libraries_2018.0.128/linux/compiler/lib/intel64_lin/libiomp5.so'
+iomplib = '/opt/intel/compilers_and_libraries_2020/linux/lib/intel64/libiomp5.so'
 ll.load_library_permanently(iomplib)
 
-irclib = '/opt/intel/compilers_and_libraries_2018.0.128/linux/compiler/lib/intel64_lin/libirc.so'
+#irclib = '/opt/intel/compilers_and_libraries_2018.0.128/linux/compiler/lib/intel64_lin/libirc.so'
+irclib = '/opt/intel/compilers_and_libraries_2020/linux/lib/intel64/libirc.so'
 ll.load_library_permanently(irclib)
 
 class PythonOpenmp:
