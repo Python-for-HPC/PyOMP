@@ -172,6 +172,7 @@ def main_posix(kind, library_ext):
 
     # Get LLVM information for building
     libs = run_llvm_config(llvm_config, "--system-libs --libs all".split())
+    libs += " " + os.getenv('EXTRA_LLVM_LIBS', "")
     # Normalize whitespace (trim newlines)
     libs_str = ' '.join(libs.split())
     os.environ['LLVM_LIBS'] = " " + libs_str + " " + libs_str + " "
