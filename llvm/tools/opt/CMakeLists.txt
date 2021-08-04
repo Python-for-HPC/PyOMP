@@ -13,6 +13,7 @@ set(LLVM_LINK_COMPONENTS
   Extensions
   IPO
   IRReader
+  IntrinsicsOpenMP
   InstCombine
   Instrumentation
   MC

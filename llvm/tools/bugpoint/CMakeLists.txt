@@ -13,6 +13,7 @@ set(LLVM_LINK_COMPONENTS
   AggressiveInstCombine
   InstCombine
   Instrumentation
+  IntrinsicsOpenMP
   Linker
   ObjCARCOpts
   ScalarOpts
