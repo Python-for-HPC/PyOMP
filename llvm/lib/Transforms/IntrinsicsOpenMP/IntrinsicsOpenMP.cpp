@@ -61,12 +61,18 @@ namespace {
     IntrinsicsOpenMP() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
+      dbgs() << "=== Start IntrinsicsOpenMPPass\n";
+
+      Function *RegionEntryF = M.getFunction("llvm.directive.region.entry");
+
+      // Return early for lack of directive intrinsics.
+      if (!RegionEntryF)
+        return false;
+
       OpenMPIRBuilder OMPBuilder(M);
       OMPBuilder.initialize();
 
       bool Changed = false;
-
-      Function *RegionEntryF = M.getFunction("llvm.directive.region.entry");
 
       SmallVector<User *, 4> RegionEntryUsers(RegionEntryF->users());
       for(User *Usr : RegionEntryUsers) {
