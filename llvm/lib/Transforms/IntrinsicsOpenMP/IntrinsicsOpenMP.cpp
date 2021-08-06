@@ -49,6 +49,7 @@ namespace {
   static const DenseMap<StringRef, DSAType> StringToDSA = {
       {"QUAL.OMP.PRIVATE", DSA_PRIVATE},
       {"QUAL.OMP.FIRSTPRIVATE", DSA_FIRSTPRIVATE},
+      {"QUAL.OMP.SHARED", DSA_SHARED},
   };
 
   using InsertPointTy = OpenMPIRBuilder::InsertPointTy;
@@ -61,35 +62,40 @@ namespace {
     IntrinsicsOpenMP() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
-      dbgs() << "=== Start IntrinsicsOpenMPPass\n";
+      dbgs() << "=== Start IntrinsicsOpenMPPass v3\n";
 
       Function *RegionEntryF = M.getFunction("llvm.directive.region.entry");
 
       // Return early for lack of directive intrinsics.
-      if (!RegionEntryF)
+      if (!RegionEntryF) {
+        dbgs() << "No intrinsics directives, exiting...\n";
         return false;
+      }
 
       OpenMPIRBuilder OMPBuilder(M);
       OMPBuilder.initialize();
 
-      bool Changed = false;
+      dbgs() << "=== Dump module\n";
+      M.dump();
+      dbgs() << "=== End of Dump module\n";
 
+      // Iterate over all calls to directive intrinsics and transform code
+      // using OpenMPIRBuilder for lowering.
       SmallVector<User *, 4> RegionEntryUsers(RegionEntryF->users());
       for(User *Usr : RegionEntryUsers) {
-        Changed = true;
-
         dbgs() << "Found Usr " << *Usr << "\n";
         CallBase *CBEntry = dyn_cast<CallBase>(Usr);
         assert(CBEntry && "Expected call to region entry intrinsic");
 
-        SmallVector<OperandBundleDef, 16> OpBundles;
+        // Extract the directive kind and data sharing attributes of values
+        // from the operand bundles of the intrinsic call.
         Directive Dir;
+        SmallVector<OperandBundleDef, 16> OpBundles;
         DenseMap<Value *, DSAType>  DSAValueMap;
         CBEntry->getOperandBundlesAsDefs(OpBundles);
         for(OperandBundleDef &O : OpBundles) {
           dbgs() << "OP " << O.getTag() << "\n";
 
-          // Store directive kind from the operand bundle.
           auto It = StringToDir.find(O.getTag());
           if (It != StringToDir.end()) {
             dbgs() << "Found Str " << It->first << "\n";
@@ -101,7 +107,7 @@ namespace {
             Value *V = dyn_cast<Value>(*I);
             assert(V && "Expected Value");
             auto It = StringToDSA.find(O.getTag());
-            assert(It != StringToDSA.end() && "Expected DSA type found in map");
+            assert(It != StringToDSA.end() && "DSA type not found in map");
             DSAValueMap[V] = It->second;
           }
         }
@@ -118,12 +124,17 @@ namespace {
           Function *Fn = BB->getParent();
           const DebugLoc DL = BB->getTerminator()->getDebugLoc();
 
-          //BasicBlock *StartBB = SplitBlock(BB, CBEntry, DT);
-          BasicBlock *StartBB = BB->getUniqueSuccessor();
-          assert(StartBB && "Expected unique successor at region start BB");
+          // Create the basic block structure to isolate the outlined region.
+          BasicBlock *StartBB = SplitBlock(BB, CBEntry, DT);
+          //BasicBlock *StartBB = BB->getUniqueSuccessor();
+          assert(BB->getUniqueSuccessor() == StartBB &&
+                 "Expected unique successor at region start BB");
           BB->getTerminator()->eraseFromParent();
-          // TODO: CBExit may not be the first instruction in EndBB, check and fix.
-          BasicBlock *EndBB = SplitBlock(CBExit->getParent(), CBExit->getNextNode(), DT);
+
+          BasicBlock *BBExit = CBExit->getParent();
+          BasicBlock *EndBB = SplitBlock(BBExit, CBExit->getNextNode(), DT);
+          assert(BBExit->getUniqueSuccessor() == EndBB &&
+                 "Expected unique successor at region start BB");
           BasicBlock *AfterBB = SplitBlock(EndBB, &*EndBB->getFirstInsertionPt(), DT);
           // Remove intrinsics of OpenMP tags, first CBExit to also remove use
           // of CBEntry, then CBEntry.
@@ -145,10 +156,22 @@ namespace {
                             Value &Orig, Value &Inner,
                             Value *&ReplacementValue) -> InsertPointTy {
             auto It = DSAValueMap.find(&Inner);
+            dbgs() << "DSAValueMap for " << Inner;
+            if (It != DSAValueMap.end())
+              dbgs() << It->second;
+            else
+              dbgs() << "(null)!";
+            dbgs() << "\n ";
+
+            //assert(It != DSAValueMap.end() && "Expected Value in DSAValueMap");
+            // TODO: Handle this correctly. Run pass before opts?
+            if (It == DSAValueMap.end()) {
+              ReplacementValue = &Inner;
+              return CodeGenIP;
+            }
+
             if (It->second == DSA_PRIVATE) {
               OMPBuilder.Builder.restoreIP(AllocaIP);
-              // TODO: looks like all values come in as pointer, may need to
-              // adjust the type.
               Type *VTy = Inner.getType()->getPointerElementType();
               ReplacementValue = OMPBuilder.Builder.CreateAlloca(
                   VTy, /*ArraySize */ nullptr, Inner.getName());
@@ -159,13 +182,15 @@ namespace {
               Type *VTy = Inner.getType()->getPointerElementType();
               Value *V = OMPBuilder.Builder.CreateLoad(VTy, &Inner, Orig.getName() + ".reload");
               ReplacementValue = OMPBuilder.Builder.CreateAlloca(
-                  VTy, /*ArraySize */ nullptr, Inner.getName());
+                  VTy, /*ArraySize */ nullptr, Orig.getName() + ".copy");
               OMPBuilder.Builder.restoreIP(CodeGenIP);
               OMPBuilder.Builder.CreateStore(V, ReplacementValue);
               dbgs() << "Firstprivatizing Inner " << Inner << " -> to -> " << *ReplacementValue
                      << "\n";
             } else {
               ReplacementValue = &Inner;
+              dbgs() << "Shared Inner " << Inner << " -> to -> " << *ReplacementValue
+                     << "\n";
             }
 
             return CodeGenIP;
@@ -204,8 +229,12 @@ namespace {
         }
       }
 
-      errs() << "IntrinscsOpenMP pass\n";
-      return Changed;
+      dbgs() << "=== Dump Lowered Module\n";
+      M.dump();
+      dbgs() << "=== End of Dump Lowered Module\n";
+
+      errs() << "=== End of IntrinscsOpenMP pass\n";
+      return true;
     }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
@@ -228,15 +257,17 @@ PreservedAnalyses IntrinsicsOpenMPPass::run(Module &M, ModuleAnalysisManager &AM
 char IntrinsicsOpenMP::ID = 0;
 static RegisterPass<IntrinsicsOpenMP> X("intrinsics-openmp", "IntrinsicsOpenMP Pass");
 
-static RegisterStandardPasses Y(PassManagerBuilder::EP_ModuleOptimizerEarly,
-                                [](const PassManagerBuilder &Builder,
-                                   legacy::PassManagerBase &PM) {
-                                  PM.add(new IntrinsicsOpenMP());
-                                });
+// TODO: Explicitly add the pass to the builder to make sure it runs before any
+// optimization?
+//static RegisterStandardPasses Y(PassManagerBuilder::EP_ModuleOptimizerEarly,
+//                                [](const PassManagerBuilder &Builder,
+//                                   legacy::PassManagerBase &PM) {
+//                                  PM.add(new IntrinsicsOpenMP());
+//                                });
 
-static RegisterStandardPasses Z(PassManagerBuilder::EP_EnabledOnOptLevel0,
-                                [](const PassManagerBuilder &Builder,
-                                   legacy::PassManagerBase &PM) {
-                                  PM.add(new IntrinsicsOpenMP());
-                                });
+//static RegisterStandardPasses Z(PassManagerBuilder::EP_EnabledOnOptLevel0,
+//                                [](const PassManagerBuilder &Builder,
+//                                   legacy::PassManagerBase &PM) {
+//                                  PM.add(new IntrinsicsOpenMP());
+//                                });
 ModulePass *llvm::createIntrinsicsOpenMPPass() { return new IntrinsicsOpenMP(); }
