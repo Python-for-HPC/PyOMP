@@ -173,6 +173,9 @@ class PassManager(ffi.ObjectRef):
         """http://llvm.org/docs/Passes.html#loop-rotate-rotate-loops."""
         ffi.lib.LLVMPY_LLVMAddLoopRotatePass(self)
 
+    def add_intrinsics_openmp_pass(self):
+        ffi.lib.LLVMPY_LLVMAddIntrinsicsOpenMPPass(self)
+
     # Non-standard LLVM passes
 
     def add_refprune_pass(self, subpasses_flags=RefPruneSubpasses.ALL,

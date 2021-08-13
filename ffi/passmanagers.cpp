@@ -7,6 +7,7 @@
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "llvm-c/Transforms/IntrinsicsOpenMP.h"
 #include "llvm-c/Transforms/Scalar.h"
 #include "llvm-c/Transforms/IPO.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -182,6 +183,12 @@ API_EXPORT(void)
 LLVMPY_LLVMAddLoopRotatePass(LLVMPassManagerRef PM)
 {
     LLVMAddLoopRotatePass(PM);
+}
+
+API_EXPORT(void)
+LLVMPY_LLVMAddIntrinsicsOpenMPPass(LLVMPassManagerRef PM)
+{
+    LLVMAddIntrinsicsOpenMPPass(PM);
 }
 
 } // end extern "C"
