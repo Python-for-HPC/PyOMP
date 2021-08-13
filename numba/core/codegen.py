@@ -662,6 +662,9 @@ class CPUCodeLibrary(CodeLibrary):
         """
         Internal: optimize this library's final module.
         """
+        with self._codegen._intrinsics_openmp_pass_manager() as pm:
+            pm.run(self._final_module)
+
         # there is an issue in xmain when optimizing functions twice.  openmp Todd
         with self._codegen._function_pass_manager(self._final_module) as fpm:
             # Run function-level optimizations to reduce memory usage and improve
@@ -1238,6 +1241,11 @@ class CPUCodegen(Codegen):
             pm.add_instruction_combining_pass()
         if config.LLVM_REFPRUNE_PASS:
             pm.add_refprune_pass(_parse_refprune_flags())
+        return pm
+
+    def _intrinsics_openmp_pass_manager(self):
+        pm = ll.create_module_pass_manager()
+        pm.add_intrinsics_openmp_pass()
         return pm
 
     def _function_pass_manager(self, llvm_module, **kwargs):
