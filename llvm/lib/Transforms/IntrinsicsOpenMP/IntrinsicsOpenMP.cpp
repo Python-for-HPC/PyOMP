@@ -11,6 +11,7 @@
 //
 //===-------------------------------------------------------------------------===//
 
+#include "llvm-c/Transforms/IntrinsicsOpenMP.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
@@ -44,6 +45,9 @@ namespace {
   static const DenseMap<StringRef, Directive> StringToDir = {
       {"DIR.OMP.PARALLEL", OMPD_parallel},
       {"DIR.OMP.SINGLE", OMPD_single},
+      {"DIR.OMP.CRITICAL", OMPD_critical},
+      {"DIR.OMP.BARRIER", OMPD_barrier},
+      {"DIR.OMP.LOOP", OMPD_for},
   };
 
   static const DenseMap<StringRef, DSAType> StringToDSA = {
@@ -62,7 +66,7 @@ namespace {
     IntrinsicsOpenMP() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
-      dbgs() << "=== Start IntrinsicsOpenMPPass v3\n";
+      dbgs() << "=== Start IntrinsicsOpenMPPass v4\n";
 
       Function *RegionEntryF = M.getFunction("llvm.directive.region.entry");
 
@@ -75,9 +79,7 @@ namespace {
       OpenMPIRBuilder OMPBuilder(M);
       OMPBuilder.initialize();
 
-      dbgs() << "=== Dump module\n";
-      M.dump();
-      dbgs() << "=== End of Dump module\n";
+      dbgs() << "=== Dump module\n" << M << "=== End of Dump module\n";
 
       // Iterate over all calls to directive intrinsics and transform code
       // using OpenMPIRBuilder for lowering.
@@ -89,69 +91,72 @@ namespace {
 
         // Extract the directive kind and data sharing attributes of values
         // from the operand bundles of the intrinsic call.
-        Directive Dir;
+        Directive Dir = OMPD_unknown;
         SmallVector<OperandBundleDef, 16> OpBundles;
         DenseMap<Value *, DSAType>  DSAValueMap;
         CBEntry->getOperandBundlesAsDefs(OpBundles);
+        // TODO: parse clauses.
         for(OperandBundleDef &O : OpBundles) {
-          dbgs() << "OP " << O.getTag() << "\n";
+          StringRef Tag = O.getTag();
+          dbgs() << "OPB " << Tag << "\n";
 
-          auto It = StringToDir.find(O.getTag());
-          if (It != StringToDir.end()) {
-            dbgs() << "Found Str " << It->first << "\n";
+          if (Tag.startswith("DIR")) {
+            auto It = StringToDir.find(Tag);
+            assert(It != StringToDir.end() && "Directive is not supported!");
             Dir = It->second;
-            continue;
-          }
-
-          for(auto I = O.input_begin(), E = O.input_end(); I != E; ++I) {
-            Value *V = dyn_cast<Value>(*I);
-            assert(V && "Expected Value");
-            auto It = StringToDSA.find(O.getTag());
-            assert(It != StringToDSA.end() && "DSA type not found in map");
-            DSAValueMap[V] = It->second;
+          } else if (Tag.startswith("QUAL")) {
+            for (auto I = O.input_begin(), E = O.input_end(); I != E; ++I) {
+              Value *V = dyn_cast<Value>(*I);
+              assert(V && "Expected Value");
+              auto It = StringToDSA.find(Tag);
+              assert(It != StringToDSA.end() && "DSA type not found in map");
+              DSAValueMap[V] = It->second;
+            }
           }
         }
+
+        assert(Dir != OMPD_unknown && "Expected valid OMP directive");
 
         assert(CBEntry->getNumUses() == 1 &&
                "Expected single use of the directive entry CB");
         Use &U = *CBEntry->use_begin();
         CallBase *CBExit = dyn_cast<CallBase>(U.getUser());
         assert(CBExit && "Expected call to region exit intrinsic");
-        dbgs() << "Found Use of " << *CBEntry << "\n->AT->\n" << *CBExit << "\n";
+        dbgs() << "Found Use of " << *CBEntry << "\n-> AT ->\n" << *CBExit << "\n";
+
+        // Gather info.
+        BasicBlock *BBEntry = CBEntry->getParent();
+        Function *Fn = BBEntry->getParent();
+        const DebugLoc DL = BBEntry->getTerminator()->getDebugLoc();
+
+        // Create the basic block structure to isolate the outlined region.
+        BasicBlock *StartBB = SplitBlock(BBEntry, CBEntry, DT);
+        assert(BBEntry->getUniqueSuccessor() == StartBB &&
+               "Expected unique successor at region start BB");
+
+        BasicBlock *BBExit = CBExit->getParent();
+        BasicBlock *EndBB = SplitBlock(BBExit, CBExit->getNextNode(), DT);
+        assert(BBExit->getUniqueSuccessor() == EndBB &&
+               "Expected unique successor at region start BB");
+        BasicBlock *AfterBB =
+            SplitBlock(EndBB, &*EndBB->getFirstInsertionPt(), DT);
+
+        // Define the default BodyGenCB lambda.
+        auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
+                             BasicBlock &ContinuationIP) {
+          BasicBlock *CGStartBB = CodeGenIP.getBlock();
+          BasicBlock *CGEndBB =
+              SplitBlock(CGStartBB, &*CodeGenIP.getPoint(), DT, LI);
+          assert(StartBB != nullptr && "StartBB should not be null");
+          CGStartBB->getTerminator()->setSuccessor(0, StartBB);
+          assert(EndBB != nullptr && "EndBB should not be null");
+          EndBB->getTerminator()->setSuccessor(0, CGEndBB);
+        };
+
+        // Define the default FiniCB lambda.
+        auto FiniCB = [&](InsertPointTy CodeGenIP) {};
 
         if(Dir == OMPD_parallel) {
-          BasicBlock *BB = CBEntry->getParent();
-          Function *Fn = BB->getParent();
-          const DebugLoc DL = BB->getTerminator()->getDebugLoc();
-
-          // Create the basic block structure to isolate the outlined region.
-          BasicBlock *StartBB = SplitBlock(BB, CBEntry, DT);
-          //BasicBlock *StartBB = BB->getUniqueSuccessor();
-          assert(BB->getUniqueSuccessor() == StartBB &&
-                 "Expected unique successor at region start BB");
-          BB->getTerminator()->eraseFromParent();
-
-          BasicBlock *BBExit = CBExit->getParent();
-          BasicBlock *EndBB = SplitBlock(BBExit, CBExit->getNextNode(), DT);
-          assert(BBExit->getUniqueSuccessor() == EndBB &&
-                 "Expected unique successor at region start BB");
-          BasicBlock *AfterBB = SplitBlock(EndBB, &*EndBB->getFirstInsertionPt(), DT);
-          // Remove intrinsics of OpenMP tags, first CBExit to also remove use
-          // of CBEntry, then CBEntry.
-          CBExit->eraseFromParent();
-          CBEntry->eraseFromParent();
-
-          auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
-                               BasicBlock &ContinuationIP) {
-            BasicBlock *CGStartBB = CodeGenIP.getBlock();
-            BasicBlock *CGEndBB =
-                SplitBlock(CGStartBB, &*CodeGenIP.getPoint(), DT, LI);
-            assert(StartBB != nullptr && "StartBB should not be null");
-            CGStartBB->getTerminator()->setSuccessor(0, StartBB);
-            assert(EndBB != nullptr && "EndBB should not be null");
-            EndBB->getTerminator()->setSuccessor(0, CGEndBB);
-          };
-
           auto PrivCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
                             Value &Orig, Value &Inner,
                             Value *&ReplacementValue) -> InsertPointTy {
@@ -163,77 +168,99 @@ namespace {
               dbgs() << "(null)!";
             dbgs() << "\n ";
 
-            //assert(It != DSAValueMap.end() && "Expected Value in DSAValueMap");
-            // TODO: Handle this correctly. Run pass before opts?
-            if (It == DSAValueMap.end()) {
-              ReplacementValue = &Inner;
-              return CodeGenIP;
-            }
+            assert(It != DSAValueMap.end() && "Expected Value in DSAValueMap");
 
             if (It->second == DSA_PRIVATE) {
               OMPBuilder.Builder.restoreIP(AllocaIP);
               Type *VTy = Inner.getType()->getPointerElementType();
               ReplacementValue = OMPBuilder.Builder.CreateAlloca(
                   VTy, /*ArraySize */ nullptr, Inner.getName());
-              dbgs() << "Privatizing Inner " << Inner << " -> to -> " << *ReplacementValue
-                     << "\n";
+              dbgs() << "Privatizing Inner " << Inner << " -> to -> "
+                     << *ReplacementValue << "\n";
             } else if (It->second == DSA_FIRSTPRIVATE) {
               OMPBuilder.Builder.restoreIP(AllocaIP);
               Type *VTy = Inner.getType()->getPointerElementType();
-              Value *V = OMPBuilder.Builder.CreateLoad(VTy, &Inner, Orig.getName() + ".reload");
+              Value *V = OMPBuilder.Builder.CreateLoad(
+                  VTy, &Inner, Orig.getName() + ".reload");
               ReplacementValue = OMPBuilder.Builder.CreateAlloca(
                   VTy, /*ArraySize */ nullptr, Orig.getName() + ".copy");
               OMPBuilder.Builder.restoreIP(CodeGenIP);
               OMPBuilder.Builder.CreateStore(V, ReplacementValue);
-              dbgs() << "Firstprivatizing Inner " << Inner << " -> to -> " << *ReplacementValue
-                     << "\n";
+              dbgs() << "Firstprivatizing Inner " << Inner << " -> to -> "
+                     << *ReplacementValue << "\n";
             } else {
               ReplacementValue = &Inner;
-              dbgs() << "Shared Inner " << Inner << " -> to -> " << *ReplacementValue
-                     << "\n";
+              dbgs() << "Shared Inner " << Inner << " -> to -> "
+                     << *ReplacementValue << "\n";
             }
 
             return CodeGenIP;
           };
 
-          auto FiniCB = [&](InsertPointTy CodeGenIP) {};
-
-          OpenMPIRBuilder::LocationDescription Loc(InsertPointTy(BB, BB->end()),
-                                               DL);
-
           IRBuilder<>::InsertPoint AllocaIP(
               &Fn->getEntryBlock(),
               Fn->getEntryBlock().getFirstInsertionPt());
 
-          // TODO: amend for parameters.
+          // Set the insertion location at the end of the BBEntry.
+          BBEntry->getTerminator()->eraseFromParent();
+          OpenMPIRBuilder::LocationDescription Loc(InsertPointTy(BBEntry, BBEntry->end()),
+                                                   DL);
           InsertPointTy AfterIP = OMPBuilder.createParallel(
               Loc, AllocaIP, BodyGenCB, PrivCB, FiniCB,
               /* IfCondition*/ nullptr, /* NumThreads */ nullptr,
               OMP_PROC_BIND_default, /* IsCancellable */ false);
           BranchInst::Create(AfterBB, AfterIP.getBlock());
 
-          dbgs() << "=== Before Fn\n";
-          Fn->dump();
-          dbgs() << "=== End of Before Fn\n";
+          dbgs() << "=== Before Fn\n" << *Fn << "=== End of Before Fn\n";
           OMPBuilder.finalize(Fn, /* AllowExtractorSinking */ true);
-          dbgs() << "=== Finalize Fn\n";
-          Fn->dump();
-          dbgs() << "=== End of Finalize Fn\n";
+          dbgs() << "=== Finalize Fn\n" << *Fn << "=== End of Finalize Fn\n";
         } else if (Dir == OMPD_single) {
-          // TODO: handle code generation.
-          CBExit->eraseFromParent();
-          CBEntry->eraseFromParent();
-        } else {
+          // Set the insertion location at the end of the BBEntry.
+          BBEntry->getTerminator()->eraseFromParent();
+          OpenMPIRBuilder::LocationDescription Loc(InsertPointTy(BBEntry, BBEntry->end()),
+                                                   DL);
+
+          InsertPointTy AfterIP = OMPBuilder.createSingle(
+              Loc, BodyGenCB, FiniCB, /*DidIt*/ nullptr);
+          BranchInst::Create(AfterBB, AfterIP.getBlock());
+          dbgs() << "=== Single Fn\n" << *Fn << "=== End of Single Fn\n";
+        } else if (Dir == OMPD_critical) {
+          // Set the insertion location at the end of the BBEntry.
+          BBEntry->getTerminator()->eraseFromParent();
+          OpenMPIRBuilder::LocationDescription Loc(InsertPointTy(BBEntry, BBEntry->end()),
+                                                   DL);
+
+          InsertPointTy AfterIP = OMPBuilder.createCritical(Loc, BodyGenCB, FiniCB, "",
+                                    /*HintInst*/ nullptr);
+          BranchInst::Create(AfterBB, AfterIP.getBlock());
+          dbgs() << "=== Critical Fn\n" << *Fn << "=== End of Critical Fn\n";
+        }
+        else if (Dir == OMPD_barrier) {
+          // Set the insertion location at the end of the BBEntry.
+          OpenMPIRBuilder::LocationDescription Loc(InsertPointTy(BBEntry, BBEntry->getTerminator()->getIterator()),
+                                                   DL);
+
+          // TODO: check ForceSimpleCall usage.
+          OMPBuilder.createBarrier(Loc, OMPD_barrier, /*ForceSimpleCall*/ false,
+                                   /*CheckCancelFlag*/ true);
+          dbgs() << "=== Barrier Fn\n" << *Fn << "=== End of Barrier Fn\n";
+        }
+        else if (Dir == OMPD_for) {
+          assert(false && "OMPD_for is not supported yet!");
+        }
+        else {
           dbgs() << "Unknown directive " << *CBEntry << "\n";
           assert(false && "Unknown directive");
         }
+        // Remove intrinsics of OpenMP tags, first CBExit to also remove use
+        // of CBEntry, then CBEntry.
+        CBExit->eraseFromParent();
+        CBEntry->eraseFromParent();
       }
 
-      dbgs() << "=== Dump Lowered Module\n";
-      M.dump();
-      dbgs() << "=== End of Dump Lowered Module\n";
+      dbgs() << "=== Dump Lowered Module\n" << M << "=== End of Dump Lowered Module\n";
 
-      errs() << "=== End of IntrinscsOpenMP pass\n";
+      dbgs() << "=== End of IntrinscsOpenMP pass\n";
       return true;
     }
 
@@ -271,3 +298,7 @@ static RegisterPass<IntrinsicsOpenMP> X("intrinsics-openmp", "IntrinsicsOpenMP P
 //                                  PM.add(new IntrinsicsOpenMP());
 //                                });
 ModulePass *llvm::createIntrinsicsOpenMPPass() { return new IntrinsicsOpenMP(); }
+
+void LLVMAddIntrinsicsOpenMPPass(LLVMPassManagerRef PM) {
+  unwrap(PM)->add(createIntrinsicsOpenMPPass());
+}

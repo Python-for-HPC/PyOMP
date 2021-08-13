@@ -657,8 +657,6 @@ void PassManagerBuilder::populateModulePassManager(
   // is handled separately, so just check this is not the ThinLTO post-link.
   bool DefaultOrPreLinkPipeline = !PerformThinLTO;
 
-  MPM.add(createIntrinsicsOpenMPPass());
-
   MPM.add(createAnnotation2MetadataLegacyPass());
 
   if (!PGOSampleUse.empty()) {
