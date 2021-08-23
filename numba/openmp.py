@@ -44,6 +44,10 @@ class _OpenmpContextType(WithContext):
             print("body_blocks:", body_blocks, type(body_blocks))
             print("extra:", extra, type(extra))
             print("flags:", flags, type(flags))
+            print("func_ir:", func_ir, type(func_ir))
+            print("pre-with-removal")
+            dump_blocks(blocks)
+            sys.stdout.flush()
         assert extra is not None
         assert flags is not None
         flags.enable_ssa = False
@@ -52,6 +56,7 @@ class _OpenmpContextType(WithContext):
         if config.DEBUG_OPENMP >= 1:
             print("post-with-removal")
             dump_blocks(blocks)
+            sys.stdout.flush()
         dispatcher = dispatcher_factory(func_ir)
         dispatcher.can_cache = True
         return dispatcher
@@ -239,6 +244,14 @@ class OpenmpVisitor(Transformer):
             if is_internal_var(itr_var):
                 start_tags.append(openmp_tag("QUAL.OMP.PRIVATE", itr_var))
 
+    def find_wrapping_region(self, some_block):
+        if not hasattr(self.func_ir, "openmp"):
+            self.func_ir.openmp = []
+        for bbs, rstart in self.func_ir.openmp:
+            if some_block in bbs:
+                return rstart
+        return None
+
     def some_for_directive(self, args, main_start_tag, main_end_tag, first_clause, gen_shared):
         sblk = self.blocks[self.blk_start]
         scope = sblk.scope
@@ -247,8 +260,12 @@ class OpenmpVisitor(Transformer):
         clauses = []
         default_shared = True
         if config.DEBUG_OPENMP >= 1:
-            print("some_for_directive")
+            print("some_for_directive", self.body_blocks)
         incoming_clauses = [remove_indirections(x) for x in args[first_clause:]]
+        wrapping_region = self.find_wrapping_region(self.body_blocks[0])
+        if config.DEBUG_OPENMP >= 1:
+            print("wrapping_region", wrapping_region)
+
         # Process all the incoming clauses which can be in singular or list form
         # and flatten them to a list of openmp_tags.
         for clause in incoming_clauses:
@@ -348,7 +365,7 @@ class OpenmpVisitor(Transformer):
             if (isinstance(inst, ir.Assign)
                     and isinstance(inst.value, ir.Expr)
                     and inst.value.op == 'call'):
-                loop_kind = _get_loop_kind(inst.value.func.name, call_table) 
+                loop_kind = _get_loop_kind(inst.value.func.name, call_table)
                 if config.DEBUG_OPENMP >= 1:
                     print("loop_kind:", loop_kind)
                 if loop_kind != False and loop_kind == range:
@@ -462,6 +479,8 @@ class OpenmpVisitor(Transformer):
                     before_start.append(const1_assign)
                     count_add_1 = ir.Expr.binop(operator.sub, omp_ub_var, const1_var, inst.loc)
                     before_start.append(ir.Assign(count_add_1, omp_ub_var, inst.loc))
+                    if wrapping_region is not None:
+                        wrapping_region.tags.append(openmp_tag("QUAL.OMP.PRIVATE", const1_var))
 
 #                    before_start.append(ir.Print([omp_ub_var], None, inst.loc))
 
@@ -482,6 +501,8 @@ class OpenmpVisitor(Transformer):
                     const1_var = ir.Var(loop_index.scope, mk_unique_var("$const1"), inst.loc)
                     const1_assign = ir.Assign(ir.Const(1, inst.loc), const1_var, inst.loc)
                     latch_block.body.append(const1_assign)
+                    if wrapping_region is not None:
+                        wrapping_region.tags.append(openmp_tag("QUAL.OMP.PRIVATE", const1_var))
                     latch_assign = ir.Assign(
                         ir.Expr.binop(
                             operator.add,
@@ -921,6 +942,10 @@ class OpenmpVisitor(Transformer):
         #eblk.body = [or_end]   + eblk.body[:]
         eblk.body = [or_end] + priv_restores + keep_alive + eblk.body[:]
 
+        if not hasattr(self.func_ir, "openmp"):
+            self.func_ir.openmp = []
+        self.func_ir.openmp.append((self.body_blocks, or_start))
+
     def parallel_clause(self, args):
         (val,) = args
         if config.DEBUG_OPENMP >= 1:
@@ -1235,7 +1260,7 @@ openmp_grammar = r"""
     uniform_clause: UNIFORM "(" var_list ")"
     UNIFORM: "uniform"
     ligned_clause: ALIGNED "(" var_list ")"
-                  | ALIGNED "(" var_list ":" const_num_or_var ")" 
+                  | ALIGNED "(" var_list ":" const_num_or_var ")"
     collapse_expr: COLLAPSE "(" const_num_or_var ")"
     COLLAPSE: "collapse"
     task_construct: task_directive
