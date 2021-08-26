@@ -1,0 +1,188 @@
+.. _arch-numba-runtime:
+
+======================
+Notes on Numba Runtime
+======================
+
+
+The *Numba Runtime (NRT)* provides the language runtime to the *nopython mode*
+Python subset.  NRT is a standalone C library with a Python binding.  This
+allows NPM runtime feature to be used without the GIL.  Currently, the only
+language feature implemented in NRT is memory management.
+
+
+Memory Management
+=================
+
+NRT implements memory management for NPM code.  It uses *atomic reference count*
+for threadsafe, deterministic memory management.  NRT maintains a separate
+``MemInfo`` structure for storing information about each allocation.
+
+Cooperating with CPython
+------------------------
+
+For NRT to cooperate with CPython, the NRT python binding provides adaptors for
+converting python objects that export a memory region.  When such an
+object is used as an argument to a NPM function, a new ``MemInfo`` is created
+and it acquires a reference to the Python object.  When a NPM value is returned
+to the Python interpreter, the associated ``MemInfo`` (if any) is checked.  If
+the ``MemInfo`` references a Python object, the underlying Python object is
+released and returned instead.  Otherwise, the ``MemInfo`` is wrapped in a
+Python object and returned.  Additional process maybe required depending on
+the type.
+
+The current implementation supports Numpy array and any buffer-exporting types.
+
+
+Compiler-side Cooperation
+-------------------------
+
+NRT reference counting requires the compiler to emit incref/decref operations
+according to the usage.  When the reference count drops to zero, the compiler
+must call the destructor routine in NRT.
+
+
+.. _nrt-refct-opt-pass:
+
+Optimizations
+-------------
+
+The compiler is allowed to emit incref/decref operations naively.  It relies
+on an optimization pass to remove redundant reference count operations.
+
+A new optimization pass is implemented in version 0.52.0 to remove reference
+count operations that fall into the following four categories of control-flow
+structure---per basic-block, diamond, fanout, fanout+raise. See the documentation
+for :envvar:`NUMBA_LLVM_REFPRUNE_FLAGS` for their descriptions.
+
+The old optimization pass runs at block level to avoid control flow analysis.
+It depends on LLVM function optimization pass to simplify the control flow,
+stack-to-register, and simplify instructions.  It works by matching and
+removing incref and decref pairs within each block.  The old pass can be
+enabled by setting :envvar:`NUMBA_LLVM_REFPRUNE_PASS` to `0`.
+
+Important assumptions
+---------------------
+
+Both the old (pre-0.52.0) and the new (post-0.52.0) optimization passes assume
+that the only function that can consume a reference is ``NRT_decref``.
+It is important that there are no other functions that will consume references.
+Since the passes operate on LLVM IR, the "functions" here are referring to any
+callee in a LLVM call instruction.
+
+To summarize, all functions exposed to the refcount optimization pass
+**must not** consume counted references unless done so via ``NRT_decref``.
+
+
+Quirks of the old optimization pass
+-----------------------------------
+
+Since the pre-0.52.0 `refcount optimization pass <nrt-refct-opt-pass_>`_
+requires the LLVM function optimization pass, the pass works on the LLVM IR as
+text. The optimized IR is then materialized again as a new LLVM in-memory
+bitcode object.
+
+
+Debugging Leaks
+---------------
+
+To debug reference leaks in NRT MemInfo, each MemInfo python object has a
+``.refcount`` attribute for inspection.  To get the MemInfo from a ndarray
+allocated by NRT, use the ``.base`` attribute.
+
+To debug memory leaks in NRT, the ``numba.core.runtime.rtsys`` defines
+``.get_allocation_stats()``.  It returns a namedtuple containing the
+number of allocation and deallocation since the start of the program.
+Checking that the allocation and deallocation counters are matching is the
+simplest way to know if the NRT is leaking.
+
+
+Debugging Leaks in C
+--------------------
+
+The start of `numba/core/runtime/nrt.h
+<https://github.com/numba/numba/blob/master/numba/core/runtime/nrt.h>`_
+has these lines:
+
+.. code-block:: C
+
+  /* Debugging facilities - enabled at compile-time */
+  /* #undef NDEBUG */
+  #if 0
+  #   define NRT_Debug(X) X
+  #else
+  #   define NRT_Debug(X) if (0) { X; }
+  #endif
+
+Undefining NDEBUG (uncomment the ``#undef NDEBUG`` line) enables the assertion
+check in NRT.
+
+Enabling the NRT_Debug (replace ``#if 0`` with ``#if 1``) turns on
+debug print inside NRT.
+
+
+Recursion Support
+=================
+
+During the compilation of a pair of mutually recursive functions, one of the
+functions will contain unresolved symbol references since the compiler handles
+one function at a time.  The memory for the unresolved symbols is allocated and
+initialized to the address of the *unresolved symbol abort* function
+(``nrt_unresolved_abort``) just before the machine code is
+generated by LLVM.  These symbols are tracked and resolved as new functions are
+compiled.  If a bug prevents the resolution of these symbols,
+the abort function will be called, raising a ``RuntimeError`` exception.
+
+The *unresolved symbol abort* function is defined in the NRT with a zero-argument
+signature. The caller is safe to call it with arbitrary number of
+arguments.  Therefore, it is safe to be used inplace of the intended callee.
+
+Using the NRT from C code
+=========================
+
+Externally compiled C code should use the ``NRT_api_functions`` struct as a
+function table to access the NRT API. The struct is defined in
+:ghfile:`numba/core/runtime/nrt_external.h`. Users can use the utility function
+``numba.extending.include_path()`` to determine the include directory for
+Numba provided C headers.
+
+.. literalinclude:: ../../../numba/core/runtime/nrt_external.h
+  :language: C
+  :caption: `numba/core/runtime/nrt_external.h`
+
+Inside Numba compiled code, the ``numba.core.unsafe.nrt.NRT_get_api()``
+intrinsic can be used to obtain a pointer to the ``NRT_api_functions``.
+
+Here is an example that uses the ``nrt_external.h``:
+
+.. code-block:: C
+
+  #include <stdio.h>
+  #include "numba/core/runtime/nrt_external.h"
+
+  void my_dtor(void *ptr) {
+      free(ptr);
+  }
+
+  NRT_MemInfo* my_allocate(NRT_api_functions *nrt) {
+      /* heap allocate some memory */
+      void * data = malloc(10);
+      /* wrap the allocated memory; yield a new reference */
+      NRT_MemInfo *mi = nrt->manage_memory(data, my_dtor);
+      /* acquire reference */
+      nrt->acquire(mi);
+      /* release reference */
+      nrt->release(mi);
+      return mi;
+  }
+
+
+Future Plan
+===========
+
+The plan for NRT is to make a standalone shared library that can be linked to
+Numba compiled code, including use within the Python interpreter and without
+the Python interpreter.  To make that work, we will be doing some refactoring:
+
+* numba NPM code references statically compiled code in "helperlib.c".  Those
+  functions should be moved to NRT.
