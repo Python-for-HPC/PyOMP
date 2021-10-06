@@ -2,7 +2,7 @@
 
 cd llvm-project/llvm
 
-PREFIX=../../llvm-project-install
+PREFIX=../../../llvm-project-install
 
 set -x
 
