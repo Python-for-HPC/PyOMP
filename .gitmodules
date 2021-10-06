@@ -1,0 +1,9 @@
+[submodule "llvm-project"]
+	path = llvm-project
+	url = https://github.com/ggeorgakoudis/llvm-project.git
+[submodule "llvmliteWithOpenmp"]
+	path = llvmliteWithOpenmp
+	url = https://github.com/ggeorgakoudis/llvmliteWithOpenmp.git
+[submodule "NumbaWithOpenmp"]
+	path = NumbaWithOpenmp
+	url = https://github.com/ggeorgakoudis/NumbaWithOpenmp.git
