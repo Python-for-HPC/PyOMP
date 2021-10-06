@@ -26,7 +26,7 @@ _cmake_config+=(-DHAVE_TERMIOS_H=OFF)
 _cmake_config+=(-DLLVM_ENABLE_RTTI=OFF)
 _cmake_config+=(-DLLVM_TARGETS_TO_BUILD=X86)
 _cmake_config+=(-DCMAKE_COLOR_MAKEFILE=0)
-_cmake_config+=(-DLLVM_USE_INTEL_JITEVENTS:BOOL=ON)
+#_cmake_config+=(-DLLVM_USE_INTEL_JITEVENTS:BOOL=ON)
 _cmake_config+=(-DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
 #_cmake_config+=(-DLLVM_ENABLE_WERROR=ON)
 _cmake_config+=(-DINTEL_CUSTOMIZATION=1)
@@ -42,7 +42,7 @@ cmake -G'Unix Makefiles'     \
       "${_cmake_config[@]}"  \
       ..
 
-make -j32 VERBOSE=1
+make -j4 VERBOSE=1
 make install
 
 cd ../..
