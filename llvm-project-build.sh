@@ -42,7 +42,7 @@ cmake -G'Unix Makefiles'     \
       "${_cmake_config[@]}"  \
       ..
 
-make -j4 VERBOSE=1
+make -j32 VERBOSE=1
 make install
 
 cd ../..
