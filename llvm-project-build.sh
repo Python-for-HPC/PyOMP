@@ -10,7 +10,8 @@ export ENABLE_SPATIAL_ADVISOR=1
 
 declare -a _cmake_config
 _cmake_config+=(-DCMAKE_INSTALL_PREFIX:PATH=${PREFIX})
-_cmake_config+=(-DCMAKE_BUILD_TYPE:STRING=Debug)
+_cmake_config+=(-DCMAKE_BUILD_TYPE:STRING=Release)
+#_cmake_config+=(-DCMAKE_BUILD_TYPE:STRING=Debug)
 _cmake_config+=(-DLLVM_ENABLE_ASSERTIONS:BOOL=ON)
 _cmake_config+=(-DLINK_POLLY_INTO_TOOLS:BOOL=ON)
 # Urgh, llvm *really* wants to link to ncurses / terminfo and we *really* do not want it to.

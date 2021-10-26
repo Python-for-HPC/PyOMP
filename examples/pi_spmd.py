@@ -25,10 +25,10 @@ def f1():
                 x = (i + 0.5) * step
                 local_sum += 4.0 / (1.0 + x * x)
 
-            print("foo:", j, tid, local_sum)
+#            print("foo:", j, tid, local_sum)
             tsum[tid] = local_sum
 
-        print("tsum:", tsum)
+#        print("tsum:", tsum)
         full_sum = np.sum(tsum)
 
         pi = step * full_sum
