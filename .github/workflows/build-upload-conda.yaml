@@ -19,6 +19,7 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
+        submodules: 'true'
       - name: Conda environment creation and activation
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -27,7 +28,31 @@ jobs:
           auto-update-conda: false
           auto-activate-base: false
           show-channel-urls: true
-      - name: Build and upload the conda packages
+      - name: Build and upload the llvmdev conda package
+        uses: uibcdf/action-build-and-upload-conda-packages@v1.3.0
+        with:
+          meta_yaml_dir: llvmliteWithOpenmp/conda-recipes/llvmdev
+          python-version: ${{ matrix.python-version }}
+          user: python-for-hpc
+          label: auto
+          token: ${{ secrets.ANACONDA_TOKEN }}
+      - name: Build and upload the llvmlite conda package
+        uses: uibcdf/action-build-and-upload-conda-packages@v1.3.0
+        with:
+          meta_yaml_dir: llvmliteWithOpenmp/conda-recipes/llvmlite
+          python-version: ${{ matrix.python-version }}
+          user: python-for-hpc
+          label: auto
+          token: ${{ secrets.ANACONDA_TOKEN }}
+      - name: Build and upload the numba conda package
+        uses: uibcdf/action-build-and-upload-conda-packages@v1.3.0
+        with:
+          meta_yaml_dir: NumbaWithOpenmp/buildscripts/condarecipe.local
+          python-version: ${{ matrix.python-version }}
+          user: python-for-hpc
+          label: auto
+          token: ${{ secrets.ANACONDA_TOKEN }}
+      - name: Build and upload the pyomp conda metapackage
         uses: uibcdf/action-build-and-upload-conda-packages@v1.3.0
         with:
           meta_yaml_dir: buildscripts/conda-recipe
