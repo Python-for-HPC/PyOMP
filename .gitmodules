@@ -4,6 +4,8 @@
 [submodule "llvmliteWithOpenmp"]
 	path = llvmliteWithOpenmp
 	url = https://github.com/Python-for-HPC/llvmliteWithOpenmp.git
+	branch = de5e833
 [submodule "NumbaWithOpenmp"]
 	path = NumbaWithOpenmp
 	url = https://github.com/Python-for-HPC/NumbaWithOpenmp.git
+	branch = 1051f77
