@@ -19,7 +19,8 @@ jobs:
         python-version: ["3.9"]
     steps:
       - uses: actions/checkout@v4
-        submodules: 'true'
+        with:
+          submodules: 'true'
       - name: Conda environment creation and activation
         uses: conda-incubator/setup-miniconda@v3
         with:
