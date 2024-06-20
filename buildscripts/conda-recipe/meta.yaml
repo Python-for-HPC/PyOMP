@@ -1,0 +1,13 @@
+package:
+  name: pyomp
+  version: 0.1
+
+build:
+  number: 0
+
+requirements:
+  run:
+    - python >=3.9
+    - numba 0.57_pyomp.*
+about:
+  summary: "PyOMP metapackage, OpenMP for portable CPU/GPU parallel programming in Python."
