@@ -1,0 +1,76 @@
+{% set shortversion = "14.0.6_pyomp" %}
+{% set version = "14.0.6_pyomp" %}
+{% set build_number = "3" %}
+
+package:
+  name: llvmdev
+  version: {{ version }}
+
+source:
+  url: https://github.com/Python-for-HPC/llvm-project/archive/refs/tags/llvm-pyomp-c0c4ca6.tar.gz
+  sha256: 67351c785f5e7ac1e50c828174d1cfa9d78fc2c34dba6a6582ac422ac7224e33
+  patches:
+    - patches/llvm14-clear-gotoffsetmap.patch
+    - patches/llvm14-remove-use-of-clonefile.patch
+    - patches/llvm14-svml.patch
+    - patches/0000-Find-conda-gcc-installation.patch
+    - patches/0001-Fix-sysroot-detection-for-linux.patch
+    - patches/0002-clang-add-conda-specific-env-var-CONDA_BUILD_SYSROOT.patch
+    - patches/0003-Fix-normalizeProgramName-s-handling-of-dots-outside-.patch
+    - patches/0004-Set-VERSION-in-osx-as-well.patch
+    - patches/0005-Fix-crosscompiling-LLVM-tools.patch
+    - patches/0006-Only-error-on-undefined-TARGET_OS_OSX.patch  # [osx and x86_64]
+
+build:
+  number: {{ build_number }}
+  script_env:
+    - PY_VCRUNTIME_REDIST
+  ignore_run_exports:
+    # Is static-linked
+    - xar
+
+requirements:
+  build:
+    # We cannot do this on macOS or windows
+    # OSX already has llvm so has to be handled
+    # at build.sh time
+    # Windows needs to build using vs2015_runtime
+    # irrespective of python version
+    - {{ compiler('c') }} # [linux and not (armv6l or armv7l)]
+    - {{ compiler('cxx') }} # [linux and not (armv6l or armv7l)]
+    - {{ compiler('cxx') }} {{ version | replace('_pyomp', '') }} # [osx]
+    - cmake
+    - make # [unix and not (armv6l or armv7l or aarch64)]
+    # Needed to unpack the source tarball
+    - m2w64-xz  # [win]
+    # Needed to build LLVM
+    - python >=3
+  host:
+    # needed for llc at runtime
+    - zlib # [not win]
+    - elfutils # [linux]
+    - {{ compiler('cxx') }} # [linux and not (armv6l or armv7l)]
+    - xar # [osx and x86_64]
+
+test:
+  files:
+    - numba-3016.ll
+  commands:
+    - $PREFIX/bin/llvm-config --libs                         # [not win]
+    - $PREFIX/bin/llc -version                               # [not win]
+
+    - if not exist %LIBRARY_INC%\\llvm\\Pass.h exit 1        # [win]
+    - if not exist %LIBRARY_LIB%\\LLVMSupport.lib exit 1     # [win]
+
+    - test -f $PREFIX/include/llvm/Pass.h                    # [unix]
+    - test -f $PREFIX/lib/libLLVMSupport.a                   # [unix]
+
+    - test -f $PREFIX/lib/libLLVMCore.a                      # [not win]
+
+
+about:
+  home: http://llvm.org/
+  dev_url: https://github.com/llvm-mirror/llvm
+  license: NCSA
+  license_file: llvm/LICENSE.TXT
+  summary: Development headers and libraries for LLVM

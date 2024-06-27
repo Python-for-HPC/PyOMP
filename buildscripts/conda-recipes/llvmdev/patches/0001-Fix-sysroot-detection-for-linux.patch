@@ -1,0 +1,51 @@
+From 7a49bc550ed905e012bd108c861712fb1bec9a28 Mon Sep 17 00:00:00 2001
+From: "Todd A. Anderson" <drtodd13@comcast.net>
+Date: Tue, 22 Aug 2023 15:37:47 -0700
+Subject: [PATCH] Clang Linux driver sysroot
+
+---
+ clang/lib/Driver/ToolChains/Linux.cpp | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/clang/lib/Driver/ToolChains/Linux.cpp b/clang/lib/Driver/ToolChains/Linux.cpp
+index 83cb41159de7..a403477dbd32 100644
+--- a/clang/lib/Driver/ToolChains/Linux.cpp
++++ b/clang/lib/Driver/ToolChains/Linux.cpp
+@@ -355,18 +355,30 @@ std::string Linux::computeSysRoot() const {
+       return AndroidSysRootPath;
+   }
+ 
+-  if (!GCCInstallation.isValid() || !getTriple().isMIPS())
++  if (!GCCInstallation.isValid())
++    return std::string();
++
++  // Check for conda layout
++  const StringRef InstallDir = GCCInstallation.getInstallPath();
++  const StringRef TripleStr = GCCInstallation.getTriple().str();
++
++  std::string Path =
++      (InstallDir + "/../../../../" + TripleStr + "/sysroot")
++          .str();
++
++  if (getVFS().exists(Path))
++    return Path;
++
++  if (!getTriple().isMIPS())
+     return std::string();
+ 
+   // Standalone MIPS toolchains use different names for sysroot folder
+   // and put it into different places. Here we try to check some known
+   // variants.
+ 
+-  const StringRef InstallDir = GCCInstallation.getInstallPath();
+-  const StringRef TripleStr = GCCInstallation.getTriple().str();
+   const Multilib &Multilib = GCCInstallation.getMultilib();
+ 
+-  std::string Path =
++  Path =
+       (InstallDir + "/../../../../" + TripleStr + "/libc" + Multilib.osSuffix())
+           .str();
+ 
+-- 
+2.31.1
+

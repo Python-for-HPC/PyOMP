@@ -1,0 +1,41 @@
+From e705a45fedcac4595772aa6f5bbb4b78bdfc17a0 Mon Sep 17 00:00:00 2001
+From: Isuru Fernando <isuruf@gmail.com>
+Date: Mon, 8 Apr 2019 16:20:03 -0500
+Subject: [PATCH 1/8] Find conda gcc installation
+
+---
+ clang/lib/Driver/ToolChains/Gnu.cpp | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/clang/lib/Driver/ToolChains/Gnu.cpp b/clang/lib/Driver/ToolChains/Gnu.cpp
+index 7a9570a686..358d5d576a 100644
+--- a/clang/lib/Driver/ToolChains/Gnu.cpp
++++ b/clang/lib/Driver/ToolChains/Gnu.cpp
+@@ -2073,7 +2073,7 @@ void Generic_GCC::GCCInstallationDetector::AddDefaultGCCPrefixes(
+   static const char *const AArch64LibDirs[] = {"/lib64", "/lib"};
+   static const char *const AArch64Triples[] = {
+       "aarch64-none-linux-gnu", "aarch64-linux-gnu", "aarch64-redhat-linux",
+-      "aarch64-suse-linux"};
++      "aarch64-suse-linux", "aarch64-conda_cos7-linux-gnu", "aarch64-conda-linux-gnu"};
+   static const char *const AArch64beLibDirs[] = {"/lib"};
+   static const char *const AArch64beTriples[] = {"aarch64_be-none-linux-gnu",
+                                                  "aarch64_be-linux-gnu"};
+@@ -2099,7 +2099,8 @@ void Generic_GCC::GCCInstallationDetector::AddDefaultGCCPrefixes(
+       "x86_64-redhat-linux",    "x86_64-suse-linux",
+       "x86_64-manbo-linux-gnu", "x86_64-linux-gnu",
+       "x86_64-slackware-linux", "x86_64-unknown-linux",
+-      "x86_64-amazon-linux"};
++      "x86_64-amazon-linux", "x86_64-conda_cos6-linux-gnu",
++      "x86_64-conda_cos7-linux-gnu", "x86_64-conda-linux-gnu"};
+   static const char *const X32Triples[] = {"x86_64-linux-gnux32",
+                                            "x86_64-pc-linux-gnux32"};
+   static const char *const X32LibDirs[] = {"/libx32", "/lib"};
+@@ -2162,7 +2163,7 @@ void Generic_GCC::GCCInstallationDetector::AddDefaultGCCPrefixes(
+   static const char *const PPC64LETriples[] = {
+       "powerpc64le-linux-gnu", "powerpc64le-unknown-linux-gnu",
+       "powerpc64le-none-linux-gnu", "powerpc64le-suse-linux",
+-      "ppc64le-redhat-linux"};
++      "ppc64le-redhat-linux", "powerpc64le-conda_cos7-linux-gnu", "powerpc64le-conda-linux-gnu"};
+ 
+   static const char *const RISCV32LibDirs[] = {"/lib32", "/lib"};
+   static const char *const RISCV32Triples[] = {"riscv32-unknown-linux-gnu",

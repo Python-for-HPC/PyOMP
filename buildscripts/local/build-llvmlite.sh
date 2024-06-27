@@ -6,7 +6,7 @@ export LLVMLITE_SKIP_LLVM_VERSION_CHECK=1
 export CC=gcc
 export CXX=g++
 
-pushd llvmliteWithOpenmp
+pushd ../../llvmliteWithOpenmp
 rm -rf build
 config=$LLVM_BUILD_PATH/bin/llvm-config
 LLVM_CONFIG=$config python setup.py clean

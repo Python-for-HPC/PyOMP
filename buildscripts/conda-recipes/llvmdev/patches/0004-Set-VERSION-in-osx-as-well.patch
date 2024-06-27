@@ -1,0 +1,28 @@
+From 10fe346d4598afd1cba116a963aae7ca07b457a3 Mon Sep 17 00:00:00 2001
+From: "Todd A. Anderson" <drtodd13@comcast.net>
+Date: Tue, 22 Aug 2023 15:57:51 -0700
+Subject: [PATCH] Set VERSION in osx as well
+
+---
+ clang/tools/libclang/CMakeLists.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/clang/tools/libclang/CMakeLists.txt b/clang/tools/libclang/CMakeLists.txt
+index 4e0647971ab4..d5f9c43d5d14 100644
+--- a/clang/tools/libclang/CMakeLists.txt
++++ b/clang/tools/libclang/CMakeLists.txt
+@@ -154,6 +154,11 @@ if(ENABLE_SHARED)
+ 
+     set_property(TARGET libclang APPEND_STRING PROPERTY
+                  LINK_FLAGS ${LIBCLANG_LINK_FLAGS})
++    set_target_properties(libclang
++      PROPERTIES
++      VERSION ${LIBCLANG_LIBRARY_VERSION}
++      SOVERSION ${LIBCLANG_LIBRARY_VERSION}
++    )
+   else()
+     set_target_properties(libclang
+       PROPERTIES
+-- 
+2.31.1
+

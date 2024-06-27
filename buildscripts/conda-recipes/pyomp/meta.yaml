@@ -7,7 +7,7 @@ build:
 
 requirements:
   run:
-    - python >=3.9
+    - python >=3.8, <=3.10
     - numba 0.57_pyomp.*
 about:
   summary: "PyOMP metapackage, OpenMP for portable CPU/GPU parallel programming in Python."

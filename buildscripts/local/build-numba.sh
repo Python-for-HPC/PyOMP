@@ -3,7 +3,7 @@
 export CC=gcc
 export CXX=g++
  
-pushd NumbaWithOpenmp
+pushd ../../NumbaWithOpenmp
 find . -name "*.so" -exec rm {} \;
 python setup.py clean --all
 python setup.py build_ext --inplace

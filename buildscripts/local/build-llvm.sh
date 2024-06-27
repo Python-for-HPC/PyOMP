@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cmake -G Ninja \
-    -S llvm-project/llvm \
+    -S ../../llvm-project/llvm \
     -B ${LLVM_BUILD_PATH} \
     -DCMAKE_C_COMPILER=gcc \
     -DCMAKE_CXX_COMPILER=g++ \

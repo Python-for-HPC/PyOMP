@@ -19,7 +19,7 @@ echo "=> Build numba..."
 ./build-numba.sh
 
 # Setup numba paths to LLVM.
-pushd NumbaWithOpenmp/numba 
+pushd ../../NumbaWithOpenmp/numba
 rm -f bin lib
 ln -s ${LLVM_BUILD_PATH}/install/lib
 ln -s ${LLVM_BUILD_PATH}/install/bin
