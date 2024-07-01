@@ -1,14 +1,14 @@
 # PyOMP
 OpenMP for Python in Numba
 
-Currently, PyOMP is distributed as a full version of Numba which is based on a Numba version a few versions behind mainline.  Since Numba is available for every combination of the past few Python versions and the past few NumPy versions and various operating systems and architectures, there is quite an extensive build infrastructure required to get all these combinations and we haven't sorted that out yet.  As a result, the current PyOMP is distributed only for Linux x86-64 with one specific Python and NumPy version.  That distribution is available with the conda command in the next section.  Moreover, there is a glibc dependency problem such that this distirbution won't work if your machine has lower than glibc version 2.29.  It is possible to build from sources for other environments but this process is manual and generally difficult.
+Currently, PyOMP is distributed as a full version of Numba which is based on a Numba version a few versions behind mainline.  Since Numba is available for every combination of the past few Python versions and the past few NumPy versions and various operating systems and architectures, there is quite an extensive build infrastructure required to get all these combinations and recently we have sorted out some of these combinations.  The architecture and operating system combinations that currently work are linux-ppc6le, linux-64 (x86_64), and osx-arm64 (mac).  These distributions are available with the conda command in the next section.  Due to PyOMP using the LLVM OpenMP infrastructure, we also inherit its limitations which means that GPU support is only available on Linux.  It is possible to build from sources for other environments but this process is manual and generally difficult.
 
-In the future, we plan on converting PyOMP to a Numba extension which should eliminate the Python and NumPy versioning issues.  We are working on making it easier to get a working version of PyOMP for your given environment.
+In the future, we plan on converting PyOMP to a Numba extension which should eliminate the Python and NumPy versioning issues.  We continue to work to make it easier to get a working version of PyOMP for other environments.
 
 Installing with Conda
 ---------------------
 
-conda install Python-for-HPC::numba Python-for-HPC::llvmlite -c conda-forge -–override-channels
+conda install -c python-for-hpc -c conda-forge --override-channels pyomp
 
 Installing with Docker
 ----------------------
