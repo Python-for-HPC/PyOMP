@@ -10,6 +10,12 @@ Installing with Conda
 
 conda install -c python-for-hpc -c conda-forge --override-channels pyomp
 
+Trying it out
+-------------
+
+You can try it out for free on a multi-core CPU in JupyterLab at the following link.
+https://mybinder.org/v2/gh/ggeorgakoudis/my-binder.git/HEAD
+
 Installing with Docker
 ----------------------
 
