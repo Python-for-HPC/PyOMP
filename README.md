@@ -1,3 +1,5 @@
+[![Documentation Status](https://readthedocs.org/projects/pyomp/badge/?version=latest)](https://pyomp.readthedocs.io/en/latest/?badge=latest)
+
 # PyOMP
 OpenMP for Python in Numba
 
