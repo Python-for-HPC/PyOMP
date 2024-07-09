@@ -18,7 +18,12 @@ jobs:
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
           brew update
           brew install podman
-          podman --help
+          podman machine init --cpus 3 --memory 6144
+          podman machine start
+      - name: Run in container
+        run: |
+          pdoman run --rm --platform linux-aarch64 ubuntu:22.04 \
+          bash -c "uname -a"
       
   ## Job to create llvmdev, runs once, it is independent of the python version
   ## fixed at 3.10 for building.
