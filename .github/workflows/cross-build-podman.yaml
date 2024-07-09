@@ -6,14 +6,14 @@ on:
 
 jobs:
   cross_conda_build_llvmdev_mac:
-    name: Conda cross build with mac
+    name: Conda cross build with podman
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Install podman
         run: |
-          apt-get update -qq
-          apt-get install -yqq podman
+          sudo apt-get update -qq
+          sudo apt-get install -yqq podman
       #- name: Setup tmate session
       #  uses: mxschmitt/action-tmate@v3
       - name: Create machine
