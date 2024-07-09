@@ -18,6 +18,9 @@ jobs:
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
           brew update
           brew install podman
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+      - name: Create machine
           podman machine init --cpus 3 --memory 6144
           podman machine start
       - name: Run in container
