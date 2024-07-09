@@ -23,8 +23,6 @@ jobs:
         uses: docker/setup-qemu-action@v3
         with:
           platforms: ${{ matrix.arch }}
-      #- name: Setup tmate session
-      #  uses: mxschmitt/action-tmate@v3
       - name: Run in Docker
         run: |
           docker run \
@@ -43,6 +41,8 @@ jobs:
             echo \"DONE\" &&
             rm -rf miniconda.sh &&
             export PATH=/miniconda3/bin:$PATH &&
-            conda --version &&
-            ls
+            conda install -yq binutils make git conda-build conda-verify &&
+            pushd buildscripts/conda-recipes/llvmdev &&
+            conda build -c conda-forge --override-channels .
+            popd
             "
