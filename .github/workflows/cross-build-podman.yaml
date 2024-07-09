@@ -7,7 +7,7 @@ on:
 jobs:
   cross_conda_build_llvmdev_mac:
     name: Conda cross build with mac
-    runs-on: macos-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Install podman
