@@ -1,0 +1,47 @@
+
+name: Cross-build and upload conda packages using docker
+
+on:
+  push:
+  workflow_dispatch:        # Un comment line if you also want to trigger action manually
+
+jobs:
+  # Job to create llvmdev, runs once, it is independent of the python version
+  # fixed at 3.10 for building.
+  cross_conda_build_llvmdev:
+    name: Conda cross build llvmdev for platform linux-aarch64
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: 
+          - aarch64
+        distro:
+          - ubuntu:22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.arch }}
+      #- name: Setup tmate session
+      #  uses: mxschmitt/action-tmate@v3
+      - name: Run in Docker
+        run: |
+          docker run \
+            --rm \
+            -v $(pwd):/${{ github.workspace }} \
+            --platform linux/${{ matrix.arch }} \
+            ${{ matrix.distro }} \
+            bash -c " \
+            apt-get -qq update &&
+            apt-get -qq install -yq wget &&
+            echo \"FETCH MINICONDA\" &&
+            wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${{ matrix.arch }}.sh -O miniconda.sh &&
+            echo \"EXECUTE MINICONDA INSTALLATION\" &&
+            bash miniconda.sh -b -u -p /miniconda3 &&
+            echo \"DONE\" &&
+            rm -rf miniconda.sh &&
+            export PATH=/miniconda3/bin:$PATH &&
+            conda --version &&
+            ls
+            "
