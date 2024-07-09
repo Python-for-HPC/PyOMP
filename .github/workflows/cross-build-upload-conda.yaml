@@ -2,7 +2,7 @@
 name: Cross-build and upload conda packages using docker
 
 on:
-  push:
+  #push:
   workflow_dispatch:        # Un comment line if you also want to trigger action manually
 
 jobs:
