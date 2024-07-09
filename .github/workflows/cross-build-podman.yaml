@@ -13,7 +13,7 @@ jobs:
       - name: Install podman
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -yqq podman
+          sudo apt-get install -yqq qemu podman
       #- name: Setup tmate session
       #  uses: mxschmitt/action-tmate@v3
       - name: Create machine
