@@ -30,6 +30,7 @@ jobs:
           docker run \
             --rm \
             -v $(pwd):/${{ github.workspace }} \
+            -w ${{ github.workspace }} \
             --platform linux/${{ matrix.arch }} \
             ${{ matrix.distro }} \
             bash -c " \
