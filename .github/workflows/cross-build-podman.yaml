@@ -1,0 +1,26 @@
+name: Cross-build using podman
+
+on:
+  push:
+  workflow_dispatch:        # Un comment line if you also want to trigger action manually
+
+jobs:
+  cross_conda_build_llvmdev_mac:
+    name: Conda cross build with mac
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install podman
+        run: |
+          apt-get update -qq
+          apt-get install -yqq podman
+      #- name: Setup tmate session
+      #  uses: mxschmitt/action-tmate@v3
+      - name: Create machine
+        run: |
+          podman machine init --cpus 4 --memory 15360
+          podman machine start
+      - name: Run in container
+        run: |
+          pdoman run --rm --platform linux-aarch64 ubuntu:22.04 \
+          bash -c "uname -a"
