@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Install podman
         run: |
           sudo apt-get update 
           sudo apt-get install -y qemu-system-x86 qemu-system-arm podman
-      #- name: Setup tmate session
-      #  uses: mxschmitt/action-tmate@v3
       - name: Create machine
         run: |
           podman machine init --cpus 4 --memory 15360
