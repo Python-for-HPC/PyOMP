@@ -13,11 +13,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install podman
         run: |
-          sysctl -n hw.ncpu \
-          sysctl -n hw.memsize \
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)" \
-          brew update \
-          brew install podman \
+          sysctl -n hw.ncpu
+          sysctl -n hw.memsize
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+          brew update
+          brew install podman
           podman --help
       
   ## Job to create llvmdev, runs once, it is independent of the python version
