@@ -21,6 +21,7 @@ jobs:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
       - name: Create machine
+        run: |
           podman machine init --cpus 3 --memory 6144
           podman machine start
       - name: Run in container
