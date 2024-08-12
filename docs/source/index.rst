@@ -3,8 +3,9 @@ PyOMP documentation
 
 **PyOMP** implements OpenMP parallel CPU/GPU programming abstraction in Python using Numba.
 
-Check out the :doc:`usage` section for further information, including
-how to :ref:`installation` the project.
+Check out the :doc:`installation` section for how to install, the :doc:`usage`
+section on information regarding using PyOMP, and :doc:`openmp` for the list of
+supported OpenMP abstractions.
 
 .. note::
 
@@ -15,4 +16,6 @@ Contents
 
 .. toctree::
 
+   installation
    usage
+   openmp

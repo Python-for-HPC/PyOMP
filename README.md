@@ -7,79 +7,105 @@ Currently, PyOMP is distributed as a full version of Numba which is based on a N
 
 In the future, we plan on converting PyOMP to a Numba extension which should eliminate the Python and NumPy versioning issues.  We continue to work to make it easier to get a working version of PyOMP for other environments.
 
-Installing with Conda
----------------------
+## Installation
 
+### Conda
+The easiest and recommended way to install PyOMP is through conda, currently
+supporting linux-ppc6le, linux-64 (x86_64), and osx-arm64 (mac) architectures
+
+```
 conda install -c python-for-hpc -c conda-forge --override-channels pyomp
+```
 
-Trying it out
--------------
+### Building from source
 
-You can try it out for free on a multi-core CPU in JupyterLab at the following link.
+Building from source is possible but not recommended
+```
+git clone --recursive https://github.com/Python-for-HPC/PyOMP.git
+cd PyOMP/buildscripts/local/
+./build-all.sh
+```
+
+After building, it is necessary to source the built environment before using PyOMP
+```
+. setup-env.sh
+```
+
+## Trying it out
+
+### Binder
+You can try it out for free on a multi-core CPU in JupyterLab at the following link:
 https://mybinder.org/v2/gh/ggeorgakoudis/my-binder.git/HEAD
 
-Installing with Docker
-----------------------
+### Docker
 
-# arm64 with Jupyter
+We also provide pre-built containers for arm64 and amd64 architectures in two
+flavours: (1) with Jupyter pre-installed exporting a web interface to the host,
+and (2) without Jupyter assuming usage through the terminal in the container.
+
+#### arm64 
+##### Jupyter
+```
 docker pull ghcr.io/ggeorgakoudis/pyomp-jupyter-arm64:latest
-
 docker run -t -p 8888:8888 pyomp-jupyter
+```
 
-# arm64 terminal
+##### terminal
+```
 docker pull ghcr.io/ggeorgakoudis/pyomp-arm64:latest
+docker run -it pyomp
+```
 
-docker run -it pyomp 
-
-# amd64 with Jupyter
+#### amd64
+##### Jupyter
+```
 docker pull ghcr.io/ggeorgakoudis/pyomp-jupyter-amd64:latest
-
 docker run -t -p 8888:8888 pyomp-jupyter
+```
 
-# amd64 terminal
+##### terminal
+```
 docker pull ghcr.io/ggeorgakoudis/pyomp-amd64:latest
+docker run -it pyomp
+```
 
-docker run -it pyomp 
+## Usage
 
-Building
---------
+Import Numba and add the `@njit` decorator to the function in which you want to use OpenMP.
+Add `with` contexts for each OpenMP region you want to have, importing the
+context `openmp_context` from the `numba.openmp` module.
 
-Run build.sh.
+For a list of supported OpenMP directives and more detailed information, check
+out the [Documentation](https://pyomp.readthedocs.io).
+PyOMP supports both CPU and GPU programming for NVIDIA GPUs through the `target`
+directive for offloading.
+For GPU programming, PyOMP supports the `device` clause and by convention the
+default without using the clause or providing `device(0)` always refers to the
+accelerator GPU device.
+It is also possible to use the host as a multi-core CPU target device setting `device(1)`.
 
-Using
------
+### Example
 
-Import Numba and add the njit decorator to the function in which you want to use OpenMP.
-Add with contexts for each OpenMP region you want to have where the with context is
-openmp_context from the numba.openmp module.
+This is an example of calculating $\pi$ with PyOMP with a `parallel for` loop.
 
-The most common target directive (target teams distribute parallel for) should now work.
-Some other variations of target directives and nested directives also work but not all
-combinations are currently supported.  Target directives support the device clause and
-for PyOMP, device(0) always refers to a multi-core CPU target device where as device(1)
-always refers to an Nvidia target device.
+```python
+from numba import njit
+from numba.openmp import openmp_context as openmp
 
-Example
--------
+@njit
+def calc_pi():
+    num_steps = 100000
+    step = 1.0 / num_steps
 
-    from numba import njit
-    from numba.openmp import openmp_context as openmp
+    the_sum = 0.0
+    with openmp("parallel for reduction(+:the_sum) schedule(static)"):
+        for j in range(num_steps):
+            c = step
+            x = ((j-1) - 0.5) * step
+            the_sum += 4.0 / (1.0 + x * x)
 
-    @njit
-    def test_pi_loop():
-        num_steps = 100000
-        step = 1.0 / num_steps
+    pi = step * the_sum
+    return pi
 
-        the_sum = 0.0
-        omp_set_num_threads(4)
-
-        with openmp("parallel"):
-            with openmp("for reduction(+:the_sum) schedule(static)"):
-                for j in range(num_steps):
-                    c = step
-                    x = ((j-1) - 0.5) * step
-                    the_sum += 4.0 / (1.0 + x * x)
-
-        pi = step * the_sum
-        return pi
-
+print("pi =", calc_pi())
+```
