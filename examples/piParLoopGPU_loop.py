@@ -15,7 +15,8 @@ def piFunc(NumSteps):
                     sum += 4.0/(1.0 + x*x)
 
     pi = step * sum
-    print("pi = ", pi, "runtime = ", runtime = omp_get_wtime() - start_time)
+    runtime = omp_get_wtime() - start_time
+    print("pi = ", pi, "runtime = ", runtime)
     return pi
 
 pi = piFunc(10000000)
