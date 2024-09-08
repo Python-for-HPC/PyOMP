@@ -1,6 +1,0 @@
-cffi==1.16.0
-lark==1.1.9
-numpy==1.24.0
-matplotlib==3.8.3
-pandas==2.2.1
-ninja==1.11.1.1

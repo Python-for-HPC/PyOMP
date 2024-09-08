@@ -3,11 +3,15 @@ package:
   version: 0.1
 
 build:
-  number: 0
+  string: {{ (GITHUB_HEAD_SHA | default(''))[:7] ~ (CI_COMMIT_SHA | default(''))[:7] }}
+  script_env:
+    - PY_VCRUNTIME_REDIST
+    - GITHUB_HEAD_SHA
+    - CI_COMMIT_SHA
 
 requirements:
   run:
     - python >=3.8, <=3.10
-    - numba 0.57_pyomp.*
+    - numba pyomp_0.57.*
 about:
   summary: "PyOMP metapackage, OpenMP for portable CPU/GPU parallel programming in Python."

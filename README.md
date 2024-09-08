@@ -10,25 +10,11 @@ In the future, we plan on converting PyOMP to a Numba extension which should eli
 ## Installation
 
 ### Conda
-The easiest and recommended way to install PyOMP is through conda, currently
-supporting linux-ppc6le, linux-64 (x86_64), and osx-arm64 (mac) architectures
+PyOMP is distributed as a package through Conda, currently supporting linux-64
+(x86_64), osx-arm64 (mac), and linux-ppc64learchitectures.
 
 ```
 conda install -c python-for-hpc -c conda-forge --override-channels pyomp
-```
-
-### Building from source
-
-Building from source is possible but not recommended
-```
-git clone --recursive https://github.com/Python-for-HPC/PyOMP.git
-cd PyOMP/buildscripts/local/
-./build-all.sh
-```
-
-After building, it is necessary to source the built environment before using PyOMP
-```
-. setup-env.sh
 ```
 
 ## Trying it out
