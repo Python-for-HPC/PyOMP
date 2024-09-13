@@ -1,21 +1,18 @@
-{% set VERSION_SUFFIX = "" %} # debug version suffix, appended to the version
-{% set version = "0.40_pyomp" %}
-
 package:
   name: llvmlite
-  # GIT_DESCRIBE_TAG may not be set
-  version: {{ version }}
-  #version: {{ "%s%s" % (environ.get('GIT_DESCRIBE_TAG', '').lstrip('v'), VERSION_SUFFIX) }}
+  version: pyomp_0.40
 
 source:
-  url: https://github.com/Python-for-HPC/llvmliteWithOpenmp/archive/refs/tags/llvmlite-0.40_pyomp.tar.gz
+  git_url: https://github.com/Python-for-HPC/llvmliteWithOpenmp.git
+  git_rev: develop
+  git_depth: 1
 
 build:
-  number: {{ environ.get('GIT_DESCRIBE_NUMBER', 0) }}
+  string: py{{ PY_VER }}h{{ PKG_HASH }}_{{ (GITHUB_HEAD_SHA | default(''))[:7] ~ (CI_COMMIT_SHA | default(''))[:7] }}
   script_env:
     - PY_VCRUNTIME_REDIST
-    - LLVMLITE_SHARED
-    - LLVMLITE_USE_CMAKE
+    - GITHUB_HEAD_SHA
+    - CI_COMMIT_SHA
 
 requirements:
   build:
@@ -24,14 +21,14 @@ requirements:
     # build.sh deals with it!
     - {{ compiler('c') }}    # [not (osx or armv6l or armv7l or win)]
     - {{ compiler('cxx') }}  # [not (osx or armv6l or armv7l or win)]
-    - vs2017_{{ target_platform  }}    # [win]
     # The DLL build uses cmake on Windows
     - cmake          # [win]
-    - make           # [unix and not (armv6l or armv7l or aarch64)]
+    - make           # [unix]
   host:
     - python
     # On channel https://anaconda.org/numba/
-    - llvmdev 14.0.6_pyomp.*
+    - llvmdev 14.0.6
+    - llvm 14.0.6
     - vs2015_runtime # [win]
     # llvmdev is built with libz compression support
     - zlib           # [unix and not (armv6l or armv7l)]

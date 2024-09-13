@@ -1,0 +1,8 @@
+channels:
+  - python-for-hpc/label/test
+  - conda-forge
+
+dependencies:
+  - anaconda-client
+  - conda-build
+  - conda-verify

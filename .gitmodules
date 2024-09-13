@@ -1,9 +1,0 @@
-[submodule "llvm-project"]
-	path = llvm-project
-	url = https://github.com/Python-for-HPC/llvm-project.git
-[submodule "llvmliteWithOpenmp"]
-	path = llvmliteWithOpenmp
-	url = https://github.com/Python-for-HPC/llvmliteWithOpenmp.git
-[submodule "NumbaWithOpenmp"]
-	path = NumbaWithOpenmp
-	url = https://github.com/Python-for-HPC/NumbaWithOpenmp.git

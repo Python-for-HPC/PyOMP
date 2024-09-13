@@ -13,13 +13,5 @@ if [[ "$(uname -s)" == *"Linux"* ]] && [[ "$(uname -p)" == *"ppc64le"* ]]; then
     export CXX="$CXX -pthread"
 fi
 
-MACOSX_DEPLOYMENT_TARGET=10.10 $PYTHON setup.py build_ext $EXTRA_BUILD_EXT_FLAGS build install --single-version-externally-managed --record=record.txt
-
-# Copy llvm binary tools and libraries under the numba installation directory.
-mkdir -p ${SP_DIR}/numba/bin
-mkdir -p ${SP_DIR}/numba/lib
-cp ${PREFIX}/bin/clang      ${SP_DIR}/numba/bin
-cp ${PREFIX}/bin/opt        ${SP_DIR}/numba/bin
-cp ${PREFIX}/bin/llc        ${SP_DIR}/numba/bin
-cp ${PREFIX}/bin/llvm-link  ${SP_DIR}/numba/bin
-cp ${PREFIX}/lib/lib*omp*   ${SP_DIR}/numba/lib
+MACOSX_DEPLOYMENT_TARGET=10.10 $PYTHON setup.py \
+    build_static build_ext $EXTRA_BUILD_EXT_FLAGS build install --single-version-externally-managed --record=record.txt

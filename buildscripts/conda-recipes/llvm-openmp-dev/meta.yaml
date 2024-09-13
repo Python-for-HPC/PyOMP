@@ -1,0 +1,80 @@
+package:
+  name: llvm-openmp-dev
+  version: 14.0.6
+
+source:
+  url: https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.6/openmp-14.0.6.src.tar.xz
+  sha256: 4f731ff202add030d9d68d4c6daabd91d3aeed9812e6a5b4968815cfdff0eb1f
+
+build:
+  merge_build_host: False
+  string: h{{ PKG_HASH }}_{{ (GITHUB_HEAD_SHA | default(''))[:7] ~ (CI_COMMIT_SHA | default(''))[:7] }}
+  script_env:
+    - PY_VCRUNTIME_REDIST
+    - GITHUB_HEAD_SHA
+    - CI_COMMIT_SHA
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - cmake
+    - make
+    - clangdev 14.0.6
+    - elfutils # [linux]
+    - libffi
+  host:
+    - elfutils # [linux]
+    - libffi
+    - zlib
+  run:
+    - llvmdev 14.0.6.*
+
+test:
+  commands:
+    - test -f $PREFIX/lib/libomp.dylib                        # [osx]
+    - test -f $PREFIX/lib/libomp.so                           # [linux]
+    - test -f $PREFIX/lib/libompd.so                          # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx1010.bc  # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx1030.bc  # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx1031.bc  # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx700.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx701.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx801.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx803.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx900.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx902.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx906.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx908.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-amdgpu-gfx90a.bc   # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_35.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_37.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_50.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_52.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_53.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_60.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_61.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_62.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_70.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_72.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_75.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_80.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget-new-nvptx-sm_86.bc     # [linux]
+    - test -f $PREFIX/lib/libomptarget.rtl.amdgpu.so          # [linux]
+    - test -f $PREFIX/lib/libomptarget.rtl.cuda.so            # [linux]
+    - test -f $PREFIX/lib/libomptarget.rtl.ppc64.so           # [linux and ppc64le]
+    - test -f $PREFIX/lib/libomptarget.rtl.x86_64.so          # [linux and x86_64]
+    - test -f $PREFIX/lib/libomptarget.so                     # [linux]
+
+
+about:
+  home: http://llvm.org/
+  dev_url: https://github.com/llvm/llvm-project
+  license: Apache-2.0 WITH LLVM-exception
+  license_file: openmp-14.0.6.src/LICENSE.TXT
+  license_family: Apache
+  summary: Development headers and libraries for LLVM OpenMP
+
+extra:
+  recipe-maintainers:
+    - Giorgis Georgakoudis (@ggeorgakoudis)

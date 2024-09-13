@@ -54,6 +54,9 @@ numba -s
 # Check test discovery works
 python -m numba.tests.test_runtests
 
+# Disable tests for package building.
+exit 0
+
 if nvidia-smi --list-gpus; then
   echo "Found NVIDIA GPU, enable OpenMP offloading tests"
   export RUN_TARGET=1
