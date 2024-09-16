@@ -26,7 +26,7 @@ def pi_comp(Nstart, Nfinish, step):
 #        pi_sum1 = pi_comp(Nstart, cut, step)
 #        pi_sum2 = pi_comp(cut, Nfinish, step)
 #        pi_sum = pi_sum1 + pi_sum2
-    return pi_sum
+    return pi_sum 
 
 @njit
 def f1(lb, num_steps):

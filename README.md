@@ -2,19 +2,30 @@
 [![Deploy conda pkgs (main)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml/badge.svg?event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml)
 
 # PyOMP
-OpenMP for Python in Numba
+OpenMP for Python in Numba for CPU/GPU parallel programming.
 
-Currently, PyOMP is distributed as a full version of Numba which is based on a Numba version a few versions behind mainline.  Since Numba is available for every combination of the past few Python versions and the past few NumPy versions and various operating systems and architectures, there is quite an extensive build infrastructure required to get all these combinations and recently we have sorted out some of these combinations.  The architecture and operating system combinations that currently work are linux-ppc6le, linux-64 (x86_64), and osx-arm64 (mac).  These distributions are available with the conda command in the next section.  Due to PyOMP using the LLVM OpenMP infrastructure, we also inherit its limitations which means that GPU support is only available on Linux.  It is possible to build from sources for other environments but this process is manual and generally difficult.
+Currently, PyOMP is distributed as a full version of Numba which is based on a
+Numba version a few versions behind mainline.
+Since Numba is available for every combination of the past few Python versions
+and the past few NumPy versions and various operating systems and architectures,
+there is quite an extensive build infrastructure required to get all these
+combinations and recently we have sorted out some of these combinations.
+The architecture and operating system combinations that currently work are,
+linux-64 (x86_64), osx-arm64 (mac), and linux-ppc64le.
+These distributions are available with the conda command in the next section.
 
-In the future, we plan on converting PyOMP to a Numba extension which should eliminate the Python and NumPy versioning issues.  We continue to work to make it easier to get a working version of PyOMP for other environments.
+Due to PyOMP using the LLVM OpenMP infrastructure, we also inherit its
+limitations which means that GPU support is only available on Linux.
+
+In the future, we plan on converting PyOMP to a Numba extension which should eliminate the Python and NumPy versioning issues.
 
 ## Installation
 
 ### Conda
 PyOMP is distributed as a package through Conda, currently supporting linux-64
-(x86_64), osx-arm64 (mac), and linux-ppc64learchitectures.
+(x86_64), osx-arm64 (mac), and linux-ppc64le architectures.
 
-```
+```bash
 conda install -c python-for-hpc -c conda-forge --override-channels pyomp
 ```
 
@@ -26,34 +37,31 @@ https://mybinder.org/v2/gh/ggeorgakoudis/my-binder.git/HEAD
 
 ### Docker
 
-We also provide pre-built containers for arm64 and amd64 architectures in two
-flavours: (1) with Jupyter pre-installed exporting a web interface to the host,
-and (2) without Jupyter assuming usage through the terminal in the container.
+We also provide pre-built containers for arm64 and amd64 architectures with
+PyOMP and Jupyter pre-installed.
+The following show how to access the container through the terminal or using
+jupyter.
 
-#### arm64 
-##### Jupyter
+First pull the container
 ```
-docker pull ghcr.io/ggeorgakoudis/pyomp-jupyter-arm64:latest
-docker run -t -p 8888:8888 pyomp-jupyter
-```
-
-##### terminal
-```
-docker pull ghcr.io/ggeorgakoudis/pyomp-arm64:latest
-docker run -it pyomp
+docker pull ghcr.io/python-for-hpc/pyomp:latest
 ```
 
-#### amd64
-##### Jupyter
+To use the terminal, run a shell on the container
 ```
-docker pull ghcr.io/ggeorgakoudis/pyomp-jupyter-amd64:latest
-docker run -t -p 8888:8888 pyomp-jupyter
+docker run -it ghcr.io/python-for-hpc/pyomp:latest /bin/bash
 ```
 
-##### terminal
+To use Jupyter, run without arguments and forward port 8888.
 ```
-docker pull ghcr.io/ggeorgakoudis/pyomp-amd64:latest
-docker run -it pyomp
+podman run -it -p 8888:8888 ghcr.io/python-for-hpc/pyomp:latest
+```
+Jupyter will start as a service on localhost with token authentication by default.
+Grep the url with the token from the output and copy it to the browser.
+```
+...
+[I 2024-09-15 17:24:47.912 ServerApp]     http://127.0.0.1:8888/tree?token=<token>
+...
 ```
 
 ## Usage

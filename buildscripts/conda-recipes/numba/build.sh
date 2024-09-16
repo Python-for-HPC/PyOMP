@@ -6,7 +6,7 @@ else
     EXTRA_BUILD_EXT_FLAGS=""
 fi
 
-if [[ "$(uname -s)" == *"Linux"* ]] && [[ "$(uname -p)" == *"ppc64le"* ]]; then
+if [[ "$(uname -s)" == *"Linux"* ]] && ([[ "$(uname -p)" == *"ppc64le"* ]] || [[ "$(uname -p)" == *"aarch64"* ]]); then
     # To workaround https://github.com/numba/numba/issues/7302 
     # because of a python build problem that the -pthread could be stripped.
     export CC="$CC -pthread"
