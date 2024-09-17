@@ -1,5 +1,6 @@
 [![Documentation Status](https://readthedocs.org/projects/pyomp/badge/?version=latest)](https://pyomp.readthedocs.io/en/latest/?badge=latest)
 [![Deploy conda pkgs (main)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml/badge.svg?event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Python-for-HPC/binder/HEAD)
 
 # PyOMP
 OpenMP for Python in Numba for CPU/GPU parallel programming.
@@ -10,9 +11,9 @@ Since Numba is available for every combination of the past few Python versions
 and the past few NumPy versions and various operating systems and architectures,
 there is quite an extensive build infrastructure required to get all these
 combinations and recently we have sorted out some of these combinations.
-The architecture and operating system combinations that currently work are,
+The architecture and operating system combinations that currently work are:
 linux-64 (x86_64), osx-arm64 (mac), and linux-ppc64le.
-These distributions are available with the conda command in the next section.
+These distributions are available with the `conda` command in the next section.
 
 Due to PyOMP using the LLVM OpenMP infrastructure, we also inherit its
 limitations which means that GPU support is only available on Linux.
@@ -33,7 +34,8 @@ conda install -c python-for-hpc -c conda-forge --override-channels pyomp
 
 ### Binder
 You can try it out for free on a multi-core CPU in JupyterLab at the following link:
-https://mybinder.org/v2/gh/ggeorgakoudis/my-binder.git/HEAD
+
+https://mybinder.org/v2/gh/Python-for-HPC/binder/HEAD
 
 ### Docker
 
