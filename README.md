@@ -12,7 +12,7 @@ and the past few NumPy versions and various operating systems and architectures,
 there is quite an extensive build infrastructure required to get all these
 combinations and recently we have sorted out some of these combinations.
 The architecture and operating system combinations that currently work are:
-linux-64 (x86_64), osx-arm64 (mac), and linux-ppc64le.
+linux-64 (x86_64), osx-arm64 (mac), linux-arm64, and linux-ppc64le.
 These distributions are available with the `conda` command in the next section.
 
 Due to PyOMP using the LLVM OpenMP infrastructure, we also inherit its
@@ -24,7 +24,7 @@ In the future, we plan on converting PyOMP to a Numba extension which should eli
 
 ### Conda
 PyOMP is distributed as a package through Conda, currently supporting linux-64
-(x86_64), osx-arm64 (mac), and linux-ppc64le architectures.
+(x86_64), osx-arm64 (mac), linux-arm64, and linux-ppc64le architectures.
 
 ```bash
 conda install -c python-for-hpc -c conda-forge --override-channels pyomp

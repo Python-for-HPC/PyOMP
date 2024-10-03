@@ -9,7 +9,6 @@ def calc_pi():
     the_sum = 0.0
     with openmp("parallel for reduction(+:the_sum) schedule(static)"):
         for j in range(num_steps):
-            c = step
             x = ((j-1) - 0.5) * step
             the_sum += 4.0 / (1.0 + x * x)
 
