@@ -7,7 +7,7 @@ package:
 
 source:
   git_url: https://github.com/Python-for-HPC/numbaWithOpenmp.git
-  git_rev: develop
+  git_rev: e86d15701de24f66b1da3fd9015208d25ea26d81
   git_depth: 1
 
 build:

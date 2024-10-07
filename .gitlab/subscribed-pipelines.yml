@@ -24,7 +24,7 @@
         exit 1
       fi
   rules:
-    - if: ($CI_COMMIT_MESSAGE =~ /run gitlab ci/ || $CI_COMMIT_TAG)
+    - if: ($CI_COMMIT_MESSAGE =~ /\[run gitlab ci\]/ || $CI_COMMIT_TAG)
 
 ###
 # Trigger a build-and-test pipeline for a machine.

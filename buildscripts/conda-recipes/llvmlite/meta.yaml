@@ -4,7 +4,7 @@ package:
 
 source:
   git_url: https://github.com/Python-for-HPC/llvmliteWithOpenmp.git
-  git_rev: develop
+  git_rev: ce7b659c6a62aa4466d6b3894573f9900f8a1451
   git_depth: 1
 
 build:
