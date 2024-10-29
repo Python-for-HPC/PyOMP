@@ -27,7 +27,7 @@ PyOMP is distributed as a package through Conda, currently supporting linux-64
 (x86_64), osx-arm64 (mac), linux-arm64, and linux-ppc64le architectures.
 
 ```bash
-conda install -c python-for-hpc -c conda-forge --override-channels pyomp
+conda install -c python-for-hpc -c conda-forge pyomp
 ```
 
 ## Trying it out
@@ -56,7 +56,7 @@ docker run -it ghcr.io/python-for-hpc/pyomp:latest /bin/bash
 
 To use Jupyter, run without arguments and forward port 8888.
 ```
-podman run -it -p 8888:8888 ghcr.io/python-for-hpc/pyomp:latest
+docker run -it -p 8888:8888 ghcr.io/python-for-hpc/pyomp:latest
 ```
 Jupyter will start as a service on localhost with token authentication by default.
 Grep the url with the token from the output and copy it to the browser.
