@@ -6,3 +6,6 @@ dependencies:
   - anaconda-client
   - conda-build
   - conda-verify
+
+plugins:
+  anaconda_telemetry: false
