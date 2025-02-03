@@ -27,7 +27,8 @@ env:
     bash miniconda.sh -b -u -p ./miniconda3;
     rm -rf miniconda.sh;
     export PATH=/home/pyompuser/miniconda3/bin:\${PATH};
-    conda install -y -c conda-forge conda-build conda-verify anaconda-client;
+    conda remove --name base conda-anaconda-telemetry
+    conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
     conda config --set anaconda_upload yes;
   SETUP_REPO: |
     git clone https://github.com/Python-for-HPC/PyOMP;
@@ -60,7 +61,8 @@ jobs:
           show-channel-urls: true
       - name: Build and upload llvm-openmp-dev
         run: |
-          conda install -y -c conda-forge conda-build conda-verify anaconda-client;
+          conda remove --name base conda-anaconda-telemetry
+          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
           conda config --set anaconda_upload yes;
           conda build --user python-for-hpc --label ${{ inputs.label }} \
             -c python-for-hpc -c conda-forge \
@@ -92,7 +94,8 @@ jobs:
           show-channel-urls: true
       - name: Build and upload llvmlite
         run: |
-          conda install -y -c conda-forge conda-build conda-verify anaconda-client;
+          conda remove --name base conda-anaconda-telemetry
+          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
           conda config --set anaconda_upload yes;
           conda build --user python-for-hpc --label ${{ inputs.label }} \
             -c python-for-hpc -c conda-forge \
@@ -124,7 +127,8 @@ jobs:
           show-channel-urls: true
       - name: Build and upload numba
         run: |
-          conda install -y -c conda-forge conda-build conda-verify anaconda-client;
+          conda remove --name base conda-anaconda-telemetry
+          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
           conda config --set anaconda_upload yes;
           conda build --user python-for-hpc --label ${{ inputs.label }} \
             -c python-for-hpc -c conda-forge \
@@ -156,7 +160,8 @@ jobs:
           show-channel-urls: true
       - name: Build and upload pyomp
         run: |
-          conda install -y -c conda-forge conda-build conda-verify anaconda-client;
+          conda remove --name base conda-anaconda-telemetry
+          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
           conda config --set anaconda_upload yes;
           conda build --user python-for-hpc --label ${{ inputs.label }} \
             -c python-for-hpc -c conda-forge \
