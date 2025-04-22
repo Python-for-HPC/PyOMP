@@ -74,9 +74,10 @@ from numba.tests.support import (
     skip_unless_scipy,
     needs_subprocess,
 )
-import numba.openmp as openmp
+
+import numba.openmp
 from numba.openmp import njit
-from numba.openmp import openmp_context as omp
+from numba.openmp import openmp_context as openmp
 from numba.openmp import (
     omp_set_num_threads,
     omp_get_thread_num,
@@ -195,12 +196,12 @@ def override_config(name, value):
     *name* to *value*.  *name* must be the name of an existing variable
     in openmp.
     """
-    old_value = getattr(openmp, name)
-    setattr(openmp, name, value)
+    old_value = getattr(numba.openmp, name)
+    setattr(numba.openmp, name, value)
     try:
         yield
     finally:
-        setattr(openmp, name, old_value)
+        setattr(numba.openmp, name, old_value)
 
 
 # @needs_subprocess
@@ -440,9 +441,9 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
             omp_set_dynamic(0)
             o_nt = omp_get_max_threads()
             count = 0
-            with omp("parallel"):
+            with openmp("parallel"):
                 i_nt = omp_get_max_threads()
-                with omp("critical"):
+                with openmp("critical"):
                     count += 1
             return count, i_nt, o_nt
 
@@ -457,9 +458,9 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
             omp_set_dynamic(0)
             o_nt = omp_get_num_threads()
             count = 0
-            with omp("parallel"):
+            with openmp("parallel"):
                 i_nt = omp_get_num_threads()
-                with omp("critical"):
+                with openmp("critical"):
                     count += 1
             return (count, i_nt), o_nt
 
@@ -476,12 +477,12 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
             omp_set_num_threads(n1)
             count1 = 0
             count2 = 0
-            with omp("parallel"):
-                with omp("critical"):
+            with openmp("parallel"):
+                with openmp("critical"):
                     count1 += 1
                 omp_set_num_threads(n2)
-            with omp("parallel"):
-                with omp("critical"):
+            with openmp("parallel"):
+                with openmp("critical"):
                     count2 += 1
             return count1, count2
 
@@ -497,17 +498,17 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
             omp_set_max_active_levels(2)
             omp_set_num_threads(n2)
             count1, count2, count3 = 0, 0, 0
-            with omp("parallel num_threads(n1)"):
-                with omp("single"):
-                    with omp("parallel"):
-                        with omp("single"):
+            with openmp("parallel num_threads(n1)"):
+                with openmp("single"):
+                    with openmp("parallel"):
+                        with openmp("single"):
                             omp_set_num_threads(n3)
-                            with omp("parallel"):
-                                with omp("critical"):
+                            with openmp("parallel"):
+                                with openmp("critical"):
                                     count3 += 1
-                        with omp("critical"):
+                        with openmp("critical"):
                             count2 += 1
-                with omp("critical"):
+                with openmp("critical"):
                     count1 += 1
             return count1, count2, count3
 
@@ -521,13 +522,13 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
         @njit
         def test_impl():
             oa = omp_get_ancestor_thread_num(0)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     m1 = omp_get_ancestor_thread_num(0)
                     f1 = omp_get_ancestor_thread_num(1)
                     s1 = omp_get_ancestor_thread_num(2)
                     tn1 = omp_get_thread_num()
-                    with omp("parallel"):
+                    with openmp("parallel"):
                         m2 = omp_get_ancestor_thread_num(0)
                         f2 = omp_get_ancestor_thread_num(1)
                         s2 = omp_get_ancestor_thread_num(2)
@@ -545,14 +546,14 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
         def test_impl(n1, n2):
             omp_set_max_active_levels(2)
             oa = omp_get_team_size(0)
-            with omp("parallel num_threads(n1)"):
-                with omp("single"):
+            with openmp("parallel num_threads(n1)"):
+                with openmp("single"):
                     m1 = omp_get_team_size(0)
                     f1 = omp_get_team_size(1)
                     s1 = omp_get_team_size(2)
                     nt1 = omp_get_num_threads()
-                    with omp("parallel num_threads(n2)"):
-                        with omp("single"):
+                    with openmp("parallel num_threads(n2)"):
+                        with openmp("single"):
                             m2 = omp_get_team_size(0)
                             f2 = omp_get_team_size(1)
                             s2 = omp_get_team_size(2)
@@ -570,11 +571,11 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
         @njit
         def test_impl():
             oa = omp_get_level()
-            with omp("parallel if(0)"):
+            with openmp("parallel if(0)"):
                 f = omp_get_level()
-                with omp("parallel num_threads(1)"):
+                with openmp("parallel num_threads(1)"):
                     s = omp_get_level()
-                    with omp("parallel"):
+                    with openmp("parallel"):
                         t = omp_get_level()
             return oa, f, s, t
 
@@ -585,11 +586,11 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
         @njit
         def test_impl():
             oa = omp_get_active_level()
-            with omp("parallel if(0)"):
+            with openmp("parallel if(0)"):
                 f = omp_get_active_level()
-                with omp("parallel num_threads(1)"):
+                with openmp("parallel num_threads(1)"):
                     s = omp_get_active_level()
-                    with omp("parallel"):
+                    with openmp("parallel"):
                         t = omp_get_active_level()
             return oa, f, s, t
 
@@ -604,14 +605,14 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
             omp_set_dynamic(0)
             omp_set_max_active_levels(1)  # 1 because first region is inactive
             oa = omp_in_parallel()
-            with omp("parallel num_threads(1)"):
+            with openmp("parallel num_threads(1)"):
                 ia = omp_in_parallel()
-                with omp("parallel"):
+                with openmp("parallel"):
                     n1a = omp_in_parallel()
-                    with omp("single"):
-                        with omp("parallel"):
+                    with openmp("single"):
+                        with openmp("parallel"):
                             n2a = omp_in_parallel()
-            with omp("parallel if(0)"):
+            with openmp("parallel if(0)"):
                 ua = omp_in_parallel()
             return oa, ia, n1a, n2a, ua
 
@@ -629,13 +630,13 @@ class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
             a = np.arange(N)[::-1]
             fa = np.zeros(N)
             fia = np.zeros(N)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(len(a)):
                         e = a[i]
-                        with omp("task final(e >= c)"):
+                        with openmp("task final(e >= c)"):
                             fa[i] = omp_in_final()
-                            with omp("task"):
+                            with openmp("task"):
                                 fia[i] = omp_in_final()
             return fa, fia
 
@@ -651,7 +652,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
 
     def test_parallel_for_set_elements(self):
         def test_impl(v):
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(len(v)):
                     v[i] = 1.0
             return v
@@ -660,8 +661,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
 
     def test_separate_parallel_for_set_elements(self):
         def test_impl(v):
-            with omp("parallel"):
-                with omp("for"):
+            with openmp("parallel"):
+                with openmp("for"):
                     for i in range(len(v)):
                         v[i] = 1.0
             return v
@@ -671,7 +672,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_const_var_omp_statement(self):
         def test_impl(v):
             ovar = "parallel for"
-            with omp(ovar):
+            with openmp(ovar):
                 for i in range(len(v)):
                     v[i] = 1.0
             return v
@@ -681,7 +682,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_string_conditional(self):
         def test_impl(S):
             capitalLetters = 0
-            with omp("parallel for reduction(+:capitalLetters)"):
+            with openmp("parallel for reduction(+:capitalLetters)"):
                 for i in range(len(S)):
                     if S[i].isupper():
                         capitalLetters += 1
@@ -692,7 +693,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_tuple(self):
         def test_impl(t):
             len_total = 0
-            with omp("parallel for reduction(+:len_total)"):
+            with openmp("parallel for reduction(+:len_total)"):
                 for i in range(len(t)):
                     len_total += len(t[i])
             return len_total
@@ -702,7 +703,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_range_step_2(self):
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(0, len(a), 2):
                     a[i] = i + 1
 
@@ -713,7 +714,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_range_step_arg(self):
         def test_impl(N, step):
             a = np.zeros(N, dtype=np.int32)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(0, len(a), step):
                     a[i] = i + 1
 
@@ -725,7 +726,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
         @njit
         def test_impl(v, n):
             for i in range(n):
-                with omp("parallel for"):
+                with openmp("parallel for"):
                     for j in range(0, len(v), i + 1):
                         v[j] = i + 1
             return v
@@ -735,7 +736,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_range_backward_step(self):
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(N - 1, -1, -1):
                     a[i] = i + 1
 
@@ -747,7 +748,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_dictionary(self):
         def test_impl(N, c):
             l = {}
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(N):
                     l[i] = i % c
             return l
@@ -757,8 +758,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
     def test_parallel_for_num_threads(self):
         def test_impl(nt):
             a = np.zeros(nt)
-            with omp("parallel num_threads(nt)"):
-                with omp("for"):
+            with openmp("parallel num_threads(nt)"):
+                with openmp("for"):
                     for i in range(nt):
                         a[i] = i
             return a
@@ -769,8 +770,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
         @njit
         def test_impl(nt):
             a = np.zeros(nt)
-            with omp("parallel num_threads(nt) private(x)"):
-                with omp("for private(x)"):
+            with openmp("parallel num_threads(nt) private(x)"):
+                with openmp("for private(x)"):
                     for i in range(nt):
                         x = 0
                         # print("out:", i, x, i + x, nt)
@@ -786,10 +787,10 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
         def test_impl(N, c):
             a = np.zeros(N)
             b = np.zeros(N)
-            with omp("parallel for ordered"):
+            with openmp("parallel for ordered"):
                 for i in range(1, N):
                     b[i] = b[i - 1] + c
-                    with omp("ordered"):
+                    with openmp("ordered"):
                         a[i] = a[i - 1] + c
             return a
 
@@ -806,7 +807,7 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
             ia = np.zeros(n1)
             ja = np.zeros((n1, n2))
             ka = np.zeros((n1, n2, n3))
-            with omp("parallel for collapse(2)"):
+            with openmp("parallel for collapse(2)"):
                 for i in range(n1):
                     ia[i] = omp_get_thread_num()
                     for j in range(n2):
@@ -837,7 +838,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
             v = np.zeros(N)
             step = -2
             omp_set_num_threads(nt)
-            with omp("parallel private(thread_num)"):
+            with openmp("parallel private(thread_num)"):
                 running_omp = omp_in_parallel()
                 thread_num = omp_get_thread_num()
                 if not running_omp:
@@ -847,7 +848,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
                     for t in range(N):
                         f = itersPerThread*(t+1)-1 + min(iters%itersPerThread, t+1)
                         finishToThread[f] = t
-                with omp("for schedule(static)"):
+                with openmp("for schedule(static)"):
                     for index, i in enumerate(range(N-1, N%2 - 1, -2)):
                         if not running_omp:
                             for finish in finishToThread.keys():
@@ -866,7 +867,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
-            with omp("parallel for num_threads(nt) schedule(static, 4)"):
+            with openmp("parallel for num_threads(nt) schedule(static, 4)"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
 
@@ -880,7 +881,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
             b = np.zeros(n)
             nt = 5
             ss = 4
-            with omp("parallel for num_threads(nt) schedule(static, ss)"):
+            with openmp("parallel for num_threads(nt) schedule(static, ss)"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
 
@@ -892,7 +893,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
         @njit
         def test_impl(nt, c):
             a = np.empty(nt * c)
-            with omp("parallel for num_threads(nt) schedule(static)"):
+            with openmp("parallel for num_threads(nt) schedule(static)"):
                 for i in range(nt * c):
                     a[i] = omp_get_thread_num()
             return a
@@ -909,7 +910,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
         @njit
         def test_impl(nt, c, cs):
             a = np.empty(nt * c)
-            with omp("parallel for num_threads(nt) schedule(static, cs)"):
+            with openmp("parallel for num_threads(nt) schedule(static, cs)"):
                 for i in range(nt * c):
                     a[i] = omp_get_thread_num()
             return a
@@ -929,11 +930,11 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
         def test_impl(nt, c, cs):
             a = np.empty(nt * c)
             b = np.empty(nt * c)
-            with omp("parallel num_threads(8)"):
-                with omp("for schedule(static)"):
+            with openmp("parallel num_threads(8)"):
+                with openmp("for schedule(static)"):
                     for i in range(nt * c):
                         a[i] = omp_get_thread_num()
-                with omp("for schedule(static)"):
+                with openmp("for schedule(static)"):
                     for i in range(nt * c):
                         b[i] = omp_get_thread_num()
             return a, b
@@ -946,7 +947,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
         @njit
         def test_impl(nt, c, cs):
             a = np.empty(nt * c)
-            with omp("parallel for num_threads(nt) schedule(dynamic)"):
+            with openmp("parallel for num_threads(nt) schedule(dynamic)"):
                 for i in range(nt * c):
                     a[i] = omp_get_thread_num()
             return a
@@ -971,7 +972,7 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
         @njit
         def test_impl(nt, c, cs):
             a = np.empty(nt * c)
-            with omp("parallel for num_threads(nt) schedule(guided, cs)"):
+            with openmp("parallel for num_threads(nt) schedule(guided, cs)"):
                 for i in range(nt * c):
                     a[i] = omp_get_thread_num()
             return a
@@ -1007,18 +1008,18 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
             n_count = 0
             nc_count = 0
             a_count = 0
-            with omp("parallel num_threads(N) shared(c2)"):
-                with omp("critical"):
+            with openmp("parallel num_threads(N) shared(c2)"):
+                with openmp("critical"):
                     d_count += 1
-                with omp("parallel"):
-                    with omp("critical"):
+                with openmp("parallel"):
+                    with openmp("critical"):
                         n_count += 1
-                with omp("single"):
-                    with omp("parallel num_threads(6)"):
-                        with omp("critical"):
+                with openmp("single"):
+                    with openmp("parallel num_threads(6)"):
+                        with openmp("critical"):
                             nc_count += 1
-            with omp("parallel"):
-                with omp("critical"):
+            with openmp("parallel"):
+                with openmp("critical"):
                     a_count += 1
             return d_count, a_count, n_count, nc_count
 
@@ -1041,11 +1042,11 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
 
             omp_set_num_threads(s)
             omp_set_dynamic(0)
-            with omp("parallel for if(rp)"):
+            with openmp("parallel for if(rp)"):
                 for i in range(s):
                     ar[omp_get_thread_num()] = 1
                     par[i] = omp_in_parallel()
-            with omp("parallel for if(drp)"):
+            with openmp("parallel for if(drp)"):
                 for i in range(s):
                     adr[omp_get_thread_num()] = 1
                     padr[i] = omp_in_parallel()
@@ -1065,7 +1066,7 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
             b = np.zeros(n)
             omp_set_num_threads(5)
 
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
             return b
@@ -1075,7 +1076,7 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
     def test_avg_num_threads_clause(self):
         def test_impl(n, a):
             b = np.zeros(n)
-            with omp("parallel for num_threads(5)"):
+            with openmp("parallel for num_threads(5)"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
 
@@ -1087,7 +1088,7 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
-            with omp("parallel for num_threads(nt)"):
+            with openmp("parallel for num_threads(nt)"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
 
@@ -1101,7 +1102,7 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
-            with omp("parallel for if(1) num_threads(nt) schedule(static, 4)"):
+            with openmp("parallel for if(1) num_threads(nt) schedule(static, 4)"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
 
@@ -1116,7 +1117,7 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
             nt = 5
             ss = 4
             do_if = 1
-            with omp("parallel for if(do_if) num_threads(nt) schedule(static, ss)"):
+            with openmp("parallel for if(do_if) num_threads(nt) schedule(static, ss)"):
                 for i in range(1, n):
                     b[i] = (a[i] + a[i - 1]) / 2.0
 
@@ -1127,8 +1128,8 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
     def test_teams1(self):
         def test_impl():
             a = 1
-            with omp("teams"):
-                with omp("parallel"):
+            with openmp("teams"):
+                with openmp("parallel"):
                     a = 123
             return a
 
@@ -1144,7 +1145,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = 0
             nthreads = 0
-            with omp("parallel reduction(+:redux)"):
+            with openmp("parallel reduction(+:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1160,7 +1161,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = 0
             nthreads = 0
-            with omp("parallel reduction(-:redux)"):
+            with openmp("parallel reduction(-:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1176,7 +1177,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = 1
             nthreads = 0
-            with omp("parallel reduction(*:redux) num_threads(8)"):
+            with openmp("parallel reduction(*:redux) num_threads(8)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1192,7 +1193,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float64(0.0)
             nthreads = np.float64(0.0)
-            with omp("parallel reduction(+:redux)"):
+            with openmp("parallel reduction(+:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1208,7 +1209,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float64(0.0)
             nthreads = np.float64(0.0)
-            with omp("parallel reduction(-:redux)"):
+            with openmp("parallel reduction(-:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1224,7 +1225,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float64(1.0)
             nthreads = np.float64(0.0)
-            with omp("parallel reduction(*:redux) num_threads(8)"):
+            with openmp("parallel reduction(*:redux) num_threads(8)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1240,7 +1241,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float32(0.0)
             nthreads = np.float32(0.0)
-            with omp("parallel reduction(+:redux)"):
+            with openmp("parallel reduction(+:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1256,7 +1257,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float32(0.0)
             nthreads = np.float32(0.0)
-            with omp("parallel reduction(-:redux)"):
+            with openmp("parallel reduction(-:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1272,7 +1273,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float32(1.0)
             nthreads = np.float32(0.0)
-            with omp("parallel reduction(*:redux) num_threads(8)"):
+            with openmp("parallel reduction(*:redux) num_threads(8)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1287,7 +1288,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = 0
-            with omp("parallel for reduction(+:redux)"):
+            with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += 1
             return redux
@@ -1299,7 +1300,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = 0
-            with omp("parallel for reduction(-:redux)"):
+            with openmp("parallel for reduction(-:redux)"):
                 for i in range(10):
                     redux += 1
             return redux
@@ -1311,7 +1312,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = 1
-            with omp("parallel for reduction(*:redux)"):
+            with openmp("parallel for reduction(*:redux)"):
                 for i in range(10):
                     redux *= 2
             return redux
@@ -1323,7 +1324,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float64(0.0)
-            with omp("parallel for reduction(+:redux)"):
+            with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += np.float64(1.0)
             return redux
@@ -1335,7 +1336,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float64(0.0)
-            with omp("parallel for reduction(-:redux)"):
+            with openmp("parallel for reduction(-:redux)"):
                 for i in range(10):
                     redux += np.float64(1.0)
             return redux
@@ -1347,7 +1348,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float64(1.0)
-            with omp("parallel for reduction(*:redux)"):
+            with openmp("parallel for reduction(*:redux)"):
                 for i in range(10):
                     redux *= np.float64(2.0)
             return redux
@@ -1359,7 +1360,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float32(0.0)
-            with omp("parallel for reduction(+:redux)"):
+            with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += np.float32(1.0)
             return redux
@@ -1371,7 +1372,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float32(0.0)
-            with omp("parallel for reduction(-:redux)"):
+            with openmp("parallel for reduction(-:redux)"):
                 for i in range(10):
                     redux += np.float32(1.0)
             return redux
@@ -1383,7 +1384,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float32(1.0)
-            with omp("parallel for reduction(*:redux)"):
+            with openmp("parallel for reduction(*:redux)"):
                 for i in range(10):
                     redux *= np.float32(2.0)
             return redux
@@ -1396,7 +1397,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = 10
             nthreads = 0
-            with omp("parallel reduction(+:redux)"):
+            with openmp("parallel reduction(+:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1412,7 +1413,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float32(10.0)
             nthreads = np.float32(0.0)
-            with omp("parallel reduction(+:redux)"):
+            with openmp("parallel reduction(+:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1428,7 +1429,7 @@ class TestReductions(TestOpenmpBase):
         def test_impl():
             redux = np.float64(10.0)
             nthreads = np.float64(0.0)
-            with omp("parallel reduction(+:redux)"):
+            with openmp("parallel reduction(+:redux)"):
                 thread_id = omp_get_thread_num()
                 if thread_id == 0:
                     nthreads = omp_get_num_threads()
@@ -1443,7 +1444,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = 10
-            with omp("parallel for reduction(+:redux)"):
+            with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += 1
             return redux
@@ -1455,7 +1456,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float32(0.0)
-            with omp("parallel for reduction(+:redux)"):
+            with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += np.float32(1.0)
             return redux
@@ -1467,7 +1468,7 @@ class TestReductions(TestOpenmpBase):
         @njit
         def test_impl():
             redux = np.float64(10.0)
-            with omp("parallel for reduction(+:redux)"):
+            with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += np.float64(1.0)
             return redux
@@ -1485,7 +1486,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
             x = 7
-            with omp("parallel for default(none)"):
+            with openmp("parallel for default(none)"):
                 for i in range(N):
                     y = i + x
                     a[i] = y
@@ -1504,16 +1505,16 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             y = np.zeros(N)
             z = 3.14
             i = 7
-            with omp("parallel private(i)"):
+            with openmp("parallel private(i)"):
                 yn = M + 1
                 zs = z
-                with omp("for"):
+                with openmp("for"):
                     for i in range(N):
                         y[i] = yn + 2 * (i + 1)
-                with omp("for"):
+                with openmp("for"):
                     for i in range(N):
                         x[i] = y[i] - i
-                        with omp("critical"):
+                        with openmp("critical"):
                             z += 3
             return x, y, zs, z, i
 
@@ -1540,10 +1541,10 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             vals = np.zeros(NTHREADS)
             valsfp = np.zeros(NTHREADS)
 
-            with omp("""parallel private(x) shared(zsh)
+            with openmp("""parallel private(x) shared(zsh)
                         firstprivate(zfp) private(ID)"""):
                 ID = omp_get_thread_num()
-                with omp("single"):
+                with openmp("single"):
                     nsing = nsing + 1
                     numthrds = omp_get_num_threads()
                     if y != 3:
@@ -1555,7 +1556,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
                         )
 
                 # verify each thread sees the same variable vsh
-                with omp("critical"):
+                with openmp("critical"):
                     zsh = zsh + ID
 
                 # test first private
@@ -1608,7 +1609,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
             x = 7
-            with omp("""parallel for firstprivate(x) private(y)
+            with openmp("""parallel for firstprivate(x) private(y)
                          lastprivate(zzzz) private(private_index) shared(a)
                           firstprivate(N) default(none)"""):
                 for private_index in range(N):
@@ -1624,7 +1625,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         @njit
         def test_impl():
             x = 5
-            with omp("parallel private(x)"):
+            with openmp("parallel private(x)"):
                 x = 13
             return x
 
@@ -1633,7 +1634,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
     def test_private_retain_value_param(self):
         @njit
         def test_impl(x):
-            with omp("parallel private(x)"):
+            with openmp("parallel private(x)"):
                 x = 13
             return x
 
@@ -1643,8 +1644,8 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         @njit
         def test_impl():
             x = 5
-            with omp("parallel private(x)"):
-                with omp("for"):
+            with openmp("parallel private(x)"):
+                with openmp("for"):
                     for i in range(10):
                         x = i
             return x
@@ -1654,8 +1655,8 @@ class TestOpenmpDataClauses(TestOpenmpBase):
     def test_private_retain_value_for_param(self):
         @njit
         def test_impl(x):
-            with omp("parallel private(x)"):
-                with omp("for"):
+            with openmp("parallel private(x)"):
+                with openmp("for"):
                     for i in range(10):
                         x = i
             return x
@@ -1666,7 +1667,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         @njit
         def test_impl():
             x = 5
-            with omp("parallel for private(x)"):
+            with openmp("parallel for private(x)"):
                 for i in range(10):
                     x = i
             return x
@@ -1676,7 +1677,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
     def test_private_retain_value_combined_for_param(self):
         @njit
         def test_impl(x):
-            with omp("parallel for private(x)"):
+            with openmp("parallel for private(x)"):
                 for i in range(10):
                     x = i
             return x
@@ -1688,7 +1689,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl():
             x = 5
             y = 7
-            with omp("parallel private(x,y)"):
+            with openmp("parallel private(x,y)"):
                 x = 13
                 y = 40
             return x, y
@@ -1699,11 +1700,11 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         @njit
         def test_impl(N, x):
             a = np.ones(N)
-            with omp("parallel private(a)"):
-                with omp("single"):
+            with openmp("parallel private(a)"):
+                with openmp("single"):
                     sa = a
                 a = np.zeros(N)
-                with omp("for"):
+                with openmp("for"):
                     for i in range(N):
                         a[i] = x
             return a, sa
@@ -1717,7 +1718,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl(v, npoints):
             omp_set_num_threads(3)
 
-            with omp("""parallel default(shared)
+            with openmp("""parallel default(shared)
                         private(iam,nt,ipoints,istart)"""):
                 iam = omp_get_thread_num()
                 nt = omp_get_num_threads()
@@ -1734,7 +1735,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
     def test_firstprivate(self):
         @njit
         def test_impl(x, y):
-            with omp("parallel firstprivate(x)"):
+            with openmp("parallel firstprivate(x)"):
                 xs = x
                 x = y
             return xs, x
@@ -1747,7 +1748,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl(N):
             a = np.zeros(N)
             si = 0
-            with omp("parallel for lastprivate(si)"):
+            with openmp("parallel for lastprivate(si)"):
                 for i in range(N):
                     si = i + 1
                     a[i] = si
@@ -1763,7 +1764,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl(n1, n2, s):
             a = np.zeros(math.ceil((n2 - n1) / s))
             rl = np.arange(n1, n2, s)
-            with omp("parallel for lastprivate(si)"):
+            with openmp("parallel for lastprivate(si)"):
                 for i in range(len(rl)):
                     si = rl[i] + 1
                     a[i] = si
@@ -1780,32 +1781,32 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         @njit
         def test_impl(N2, si):
             a = np.zeros(N2)
-            with omp("parallel shared(sis1)"):
-                with omp("sections lastprivate(si)"):
+            with openmp("parallel shared(sis1)"):
+                with openmp("sections lastprivate(si)"):
                     sis1 = si
                     # N1 = number of sections
-                    with omp("section"):
+                    with openmp("section"):
                         si = 0
-                    with omp("section"):
+                    with openmp("section"):
                         si = 1
-                    with omp("section"):
+                    with openmp("section"):
                         si = 2
                 sis2 = si
-                with omp("sections lastprivate(si)"):
+                with openmp("sections lastprivate(si)"):
                     # N2 = number of sections
-                    with omp("section"):
+                    with openmp("section"):
                         i = 0
                         si = N2 - i
                         a[i] = si
-                    with omp("section"):
+                    with openmp("section"):
                         i = 1
                         si = N2 - i
                         a[i] = si
-                    with omp("section"):
+                    with openmp("section"):
                         i = 2
                         si = N2 - i
                         a[i] = si
-                    with omp("section"):
+                    with openmp("section"):
                         i = 3
                         si = N2 - i
                         a[i] = si
@@ -1824,8 +1825,8 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         def test_impl(N, c1, c2):
             a = np.arange(0, N * 2, c2)
             num = 0
-            with omp("parallel"):
-                with omp("for lastprivate(conditional: num)"):
+            with openmp("parallel"):
+                with openmp("for lastprivate(conditional: num)"):
                     for i in range(N):
                         if i < c1:
                             num = a[i] + c2
@@ -1842,14 +1843,14 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             a = np.zeros(N)
             ra = np.zeros(N)
             val = 0
-            with omp("threadprivate(val)"):
+            with openmp("threadprivate(val)"):
                 pass
-            with omp("parallel private(tn, sn)"):
+            with openmp("parallel private(tn, sn)"):
                 tn = omp_get_thread_num()
                 sn = c + tn
                 val = sn
                 a[tn] = sn
-            with omp("parallel private(tn)"):
+            with openmp("parallel private(tn)"):
                 tn = omp_get_thread_num()
                 ra[tn] = 1 if val == a[tn] else 0
             return ra
@@ -1864,15 +1865,15 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             xsa1 = np.zeros(nt)
             xsa2 = np.zeros(nt)
             x = n1
-            with omp("threadprivate(x)"):
+            with openmp("threadprivate(x)"):
                 pass
             x = n2
-            with omp("parallel num_threads(nt) copyin(x) private(tn)"):
+            with openmp("parallel num_threads(nt) copyin(x) private(tn)"):
                 tn = omp_get_thread_num()
                 xsa1[tn] = x
                 if tn == 0:
                     x = n3
-            with omp("parallel copyin(x)"):
+            with openmp("parallel copyin(x)"):
                 xsa2[omp_get_thread_num()] = x
             return xsa1, xsa2
 
@@ -1889,15 +1890,15 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             xsa1 = np.zeros(nt1)
             xsa2 = np.zeros(nt2)
             x = n1
-            with omp("threadprivate(x)"):
+            with openmp("threadprivate(x)"):
                 pass
             x = n2
-            with omp("parallel num_threads(nt1) copyin(x) private(tn)"):
+            with openmp("parallel num_threads(nt1) copyin(x) private(tn)"):
                 tn = omp_get_thread_num()
                 xsa1[tn] = x
                 if tn == mt:
                     x = n3
-                    with omp("parallel num_threads(nt2) copyin(x)"):
+                    with openmp("parallel num_threads(nt2) copyin(x)"):
                         xsa2[omp_get_thread_num()] = x
             return xsa1, xsa2
 
@@ -1915,8 +1916,8 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             xsa = np.zeros(nt)
             ar = np.zeros(nt)
             omp_set_num_threads(nt)
-            with omp("parallel firstprivate(x, a) private(tn)"):
-                with omp("single copyprivate(x, a)"):
+            with openmp("parallel firstprivate(x, a) private(tn)"):
+                with openmp("single copyprivate(x, a)"):
                     x = n2
                     a = np.full(nt, n3)
                 tn = omp_get_thread_num()
@@ -1937,7 +1938,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             b = np.zeros(N // 2)
 
             linearj = 0
-            with omp("parallel for linear(linearj:1)"):
+            with openmp("parallel for linear(linearj:1)"):
                 for i in range(0, N, 2):
                     b[linearj] = a[i] * 2
 
@@ -1959,7 +1960,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
     def test_parallel_for_no_for_loop(self):
         @njit
         def test_impl():
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 pass
 
         with self.assertRaises(ParallelForWrongLoopCount) as raises:
@@ -1973,7 +1974,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.zeros(4)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(2):
                     a[i] = 1
                 for i in range(2, 4):
@@ -1990,7 +1991,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.zeros(4)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 print("Fail")
                 for i in range(4):
                     a[i] = i
@@ -2004,7 +2005,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.zeros(4)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(4):
                     a[i] = i
                 print("Fail")
@@ -2019,7 +2020,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl(v):
             ovar = 7
-            with omp(ovar):
+            with openmp(ovar):
                 for i in range(len(v)):
                     v[i] = 1.0
             return v
@@ -2033,7 +2034,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         def test_impl(v):
             ovar = "parallel "
             ovar += "for"
-            with omp(ovar):
+            with openmp(ovar):
                 for i in range(len(v)):
                     v[i] = 1.0
             return v
@@ -2048,10 +2049,10 @@ class TestOpenmpConstraints(TestOpenmpBase):
     #    @njit
     #    def test_impl():
     #        n = 0
-    #        with omp("parallel"):
+    #        with openmp("parallel"):
     #            half_threads = omp_get_num_threads()//2
     #            if omp_get_thread_num() < half_threads:
-    #                with omp("for reduction(+:n)"):
+    #                with openmp("for reduction(+:n)"):
     #                    for _ in range(half_threads):
     #                        n += 1
     #        return n
@@ -2065,11 +2066,11 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl():
             n = 0
-            with omp("parallel private(lc)"):
+            with openmp("parallel private(lc)"):
                 lc = 0
                 while lc < omp_get_thread_num():
                     lc += 1
-                with omp("for reduction(+:n)"):
+                with openmp("for reduction(+:n)"):
                     for _ in range(omp_get_num_threads()):
                         n += 1
             return n
@@ -2080,7 +2081,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl(nt):
             a = np.zeros(nt)
-            with omp("parallel for num_threads(nt) nowait"):
+            with openmp("parallel for num_threads(nt) nowait"):
                 for i in range(nt):
                     a[omp_get_thread_num] = i
             return a
@@ -2093,8 +2094,8 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl(nt1, nt2):
             count = 0
-            with omp("parallel num_threads(nt1) num_threads(nt2)"):
-                with omp("critical"):
+            with openmp("parallel num_threads(nt1) num_threads(nt2)"):
+                with openmp("critical"):
                     count += 1
             print(count)
             return count
@@ -2108,14 +2109,14 @@ class TestOpenmpConstraints(TestOpenmpBase):
             hp = nt // 2
             a = np.zeros(hp)
             b = np.zeros(nt - hp)
-            with omp("parallel num_threads(nt) private(tn)"):
+            with openmp("parallel num_threads(nt) private(tn)"):
                 tn = omp_get_thread_num()
                 if tn < hp:
-                    with omp("barrier"):
+                    with openmp("barrier"):
                         pass
                     a[tn] = 1
                 else:
-                    with omp("barrier"):
+                    with openmp("barrier"):
                         pass
                     b[tn - hp] = 1
             return a, b
@@ -2129,10 +2130,10 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl(N):
             a = np.zeros((N, N))
-            with omp("parallel"):
-                with omp("for"):
+            with openmp("parallel"):
+                with openmp("for"):
                     for i in range(N):
-                        with omp("for"):
+                        with openmp("for"):
                             for j in range(N):
                                 a[i][j] = 1
             return a
@@ -2145,10 +2146,10 @@ class TestOpenmpConstraints(TestOpenmpBase):
         @njit
         def test_impl():
             num = 0
-            with omp("parallel"):
-                with omp("critical"):
+            with openmp("parallel"):
+                with openmp("critical"):
                     num += 1
-                    with omp("critical"):
+                    with openmp("critical"):
                         num -= 1
             return num
 
@@ -2164,7 +2165,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         @njit
         def test_impl():
             a = 1
-            with omp("parallel"):
+            with openmp("parallel"):
                 a += 1
 
         test_impl()
@@ -2174,8 +2175,8 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         def test_impl(nt):
             omp_set_num_threads(nt)
             a = np.zeros(4, dtype=np.int64)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     a[0] += 1
             return a
 
@@ -2187,8 +2188,8 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         def test_impl(nt):
             omp_set_num_threads(nt)
             a = np.ones(4, dtype=np.int64)
-            with omp("parallel"):
-                with omp("master"):
+            with openmp("parallel"):
+                with openmp("master"):
                     a[0] += omp_get_thread_num()
             return a
 
@@ -2201,12 +2202,12 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             count = 0
             p = 0
             sum = 0
-            with omp("parallel"):
-                with omp("barrier"):
+            with openmp("parallel"):
+                with openmp("barrier"):
                     pass
-                with omp("for private(p, sum)"):
+                with openmp("for private(p, sum)"):
                     for _ in range(iters):
-                        with omp("critical"):
+                        with openmp("critical"):
                             p = count
                             sum = 0
                             for i in range(10000):
@@ -2227,11 +2228,11 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_num_threads(N)
             ca = np.zeros(N)
             sum = 0
-            with omp("parallel private(sum) shared(c)"):
+            with openmp("parallel private(sum) shared(c)"):
                 c = N
-                with omp("barrier"):
+                with openmp("barrier"):
                     pass
-                with omp("critical"):
+                with openmp("critical"):
                     ca[omp_get_thread_num()] = c - 1
                     # Sleep
                     sum = 0
@@ -2251,12 +2252,12 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         def test_impl(N):
             omp_set_num_threads(N)
             count = 0
-            with omp("parallel"):
+            with openmp("parallel"):
                 if omp_get_thread_num() < N // 2:
-                    with omp("critical"):
+                    with openmp("critical"):
                         count += 1
                 else:
-                    with omp("critical"):
+                    with openmp("critical"):
                         count += 1
             return count
 
@@ -2270,11 +2271,11 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_num_threads(N)
             a = np.zeros((2, N))
             sa = np.zeros(N)
-            with omp("parallel private(a0c, sum, tn)"):
+            with openmp("parallel private(a0c, sum, tn)"):
                 tn = omp_get_thread_num()
-                with omp("barrier"):
+                with openmp("barrier"):
                     pass
-                with omp("critical (a)"):
+                with openmp("critical (a)"):
                     # Sleep
                     sum = 0
                     for j in range(1000):
@@ -2283,7 +2284,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
                         else:
                             sum -= 1
                     a[0][tn] = 1 + sum
-                with omp("critical (b)"):
+                with openmp("critical (b)"):
                     a0c = np.copy(a[0])
                     # Sleep
                     sum = 0
@@ -2308,12 +2309,12 @@ class TestOpenmpConcurrency(TestOpenmpBase):
     #        count = 0
     #        p = 0
     #        sum = 0
-    #        with omp("parallel"):
-    #            with omp("barrier"):
+    #        with openmp("parallel"):
+    #            with openmp("barrier"):
     #                pass
-    #            with omp("for private(p, sum)"):
+    #            with openmp("for private(p, sum)"):
     #                for _ in range(iters):
-    #                    with omp("atomic"):
+    #                    with openmp("atomic"):
     #                        p = count
     #                        sum = 0
     #                        for i in range(10000):
@@ -2333,19 +2334,19 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         def test_impl(nt, N, c):
             omp_set_num_threads(nt)
             a = np.zeros(N)
-            with omp("parallel for private(b, index)"):
+            with openmp("parallel for private(b, index)"):
                 for i in range(nt):
                     b = 0
                     index = i % N
-                    with omp("atomic write"):
+                    with openmp("atomic write"):
                         a[index] = nt % c
-                    with omp("barrier"):
+                    with openmp("barrier"):
                         pass
-                    with omp("atomic read"):
+                    with openmp("atomic read"):
                         b = a[index - 1] + index
-                    with omp("barrier"):
+                    with openmp("barrier"):
                         pass
-                    with omp("atomic update"):
+                    with openmp("atomic update"):
                         a[index] += b
             return a
 
@@ -2382,15 +2383,15 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             a = np.zeros(s)
             sva = np.zeros(N)
             tns = np.zeros(N)
-            with omp("parallel for num_threads(nt) private(sv, index)"):
+            with openmp("parallel for num_threads(nt) private(sv, index)"):
                 for i in range(N):
                     index = i % s
                     tns[i] = omp_get_thread_num()
-                    with omp("atomic write"):
+                    with openmp("atomic write"):
                         a[index] = index * c + 1
-                    with omp("barrier"):
+                    with openmp("barrier"):
                         pass
-                    with omp("atomic capture"):
+                    with openmp("atomic capture"):
                         sv = a[index - 1]
                         a[index - 1] += sv + (tns[i] % c + 1)
                     # sva[index] = sv
@@ -2414,11 +2415,11 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             ta1 = np.zeros(nt)
             secpa = np.zeros(nt)
 
-            with omp("parallel sections num_threads(nt)"):
-                with omp("section"):
+            with openmp("parallel sections num_threads(nt)"):
+                with openmp("section"):
                     ta0[omp_get_thread_num()] += 1
                     secpa[0] = omp_in_parallel()
-                with omp("section"):
+                with openmp("section"):
                     ta1[omp_get_thread_num()] += 1
                     secpa[1] = omp_in_parallel()
             print(ta0, ta1)
@@ -2440,15 +2441,15 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             x = iters // c
             iters = x * c
             sum = 0
-            with omp("parallel num_threads(nt) private(tn, sum)"):
+            with openmp("parallel num_threads(nt) private(tn, sum)"):
                 tn = omp_get_thread_num()
-                with omp("critical"):
+                with openmp("critical"):
                     sum = 0
                     for i in range(iters):
                         if i % x == 0:
                             sum += 1
                     a[tn] = sum
-                with omp("barrier"):
+                with openmp("barrier"):
                     pass
                 for j in range(nt):
                     ac[tn][j] = a[j]
@@ -2467,9 +2468,9 @@ class TestOpenmpConcurrency(TestOpenmpBase):
     #            b = np.zeros(n)
     #            ac = np.zeros((nt, n))
     #            sum = 0
-    #            with omp("parallel num_threads(nt) private(tn)"):
+    #            with openmp("parallel num_threads(nt) private(tn)"):
     #                tn = omp_get_thread_num()
-    #                with omp("for nowait schedule(static) private(sum)"):
+    #                with openmp("for nowait schedule(static) private(sum)"):
     #                    for i in range(n):
     #                        # Sleep
     #                        sum = 0
@@ -2481,7 +2482,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
     #                        a[i] = i * c1 + sum
     #                for j in range(nt):
     #                    ac[tn][j] = a[j]
-    #                with omp("for schedule(static)"):
+    #                with openmp("for schedule(static)"):
     #                    for i in range(n):
     #                        b[i] = a[i] + c2
     #            return b, ac
@@ -2496,11 +2497,11 @@ class TestOpenmpConcurrency(TestOpenmpBase):
     #        def test_impl(n, m, a, b, y, z):
     #            omp_set_num_threads(5)
     #
-    #            with omp("parallel"):
-    #                with omp("for nowait"):
+    #            with openmp("parallel"):
+    #                with openmp("for nowait"):
     #                    for i in range(1, n):
     #                        b[i] = (a[i] + a[i-1]) / 2.0
-    #                with omp("for nowait"):
+    #                with openmp("for nowait"):
     #                    for i in range(m):
     #                        y[i] = math.sqrt(z[i])
     #
@@ -2516,9 +2517,9 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_nested(1)
             omp_set_dynamic(0)
             a = np.zeros((nt, nt), dtype=np.int32)
-            with omp("parallel for"):
+            with openmp("parallel for"):
                 for i in range(nt):
-                    with omp("parallel for"):
+                    with openmp("parallel for"):
                         for j in range(nt):
                             a[i][j] = omp_get_thread_num()
             return a
@@ -2535,12 +2536,12 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_max_active_levels(2)
             ca = np.zeros(nt1)
             omp_set_num_threads(nt1)
-            with omp("parallel private(tn)"):
+            with openmp("parallel private(tn)"):
                 tn = omp_get_thread_num()
-                with omp("parallel num_threads(3)"):
-                    with omp("critical"):
+                with openmp("parallel num_threads(3)"):
+                    with openmp("critical"):
                         ca[tn] += 1
-                    with omp("single"):
+                    with openmp("single"):
                         ats = omp_get_ancestor_thread_num(1) == tn
                         ts = omp_get_team_size(1)
             return ca, ats, ts
@@ -2569,10 +2570,10 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_num_threads(n1)
             a = np.zeros((n2, 6), dtype=np.int32)
             b = np.zeros((n1, 6), dtype=np.int32)
-            with omp("parallel"):
+            with openmp("parallel"):
                 omp_set_num_threads(n2)
-                with omp("single"):
-                    with omp("parallel"):
+                with openmp("single"):
+                    with openmp("parallel"):
                         omp_set_num_threads(n3)
                         set_array(a)
                 set_array(b)
@@ -2593,7 +2594,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_dynamic(0)
             omp_set_num_threads(N)
             a = np.zeros((N, 2), dtype=np.int32)
-            with omp("parallel private(tn)"):
+            with openmp("parallel private(tn)"):
                 tn = omp_get_thread_num()
                 a[tn][0] = 1
                 a[tn][1] = 2
@@ -2612,10 +2613,10 @@ class TestOpenmpTask(TestOpenmpBase):
     def test_task_basic(self):
         def test_impl(ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task"):
+                        with openmp("task"):
                             a[i] = 1
             return a
 
@@ -2626,10 +2627,10 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(ntsks):
             a = np.empty(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task"):
+                        with openmp("task"):
                             a[i] = omp_get_thread_num()
             return a
 
@@ -2641,14 +2642,14 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(n1, n2):
             x = n1
-            with omp("parallel private(y)"):
+            with openmp("parallel private(y)"):
                 y = n1
-                with omp("single"):
-                    with omp("task"):
+                with openmp("single"):
+                    with openmp("task"):
                         xa = x == n1
                         ya = y == n1
                         x, y = n2, n2
-                    with omp("taskwait"):
+                    with openmp("taskwait"):
                         ysave = y
             return (x, ysave), (xa, ya)
 
@@ -2662,10 +2663,10 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task private(sum)"):
+                        with openmp("task private(sum)"):
                             # Sleep
                             sum = 0
                             for j in range(10000):
@@ -2674,7 +2675,7 @@ class TestOpenmpTask(TestOpenmpBase):
                                 else:
                                     sum -= 1
                             a[i] = 1 + sum
-                # with omp("barrier"):
+                # with openmp("barrier"):
                 #    pass
                 sa = np.copy(a)
             return sa
@@ -2688,10 +2689,10 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single nowait"):
+            with openmp("parallel"):
+                with openmp("single nowait"):
                     for i in range(ntsks):
-                        with omp("task private(sum)"):
+                        with openmp("task private(sum)"):
                             sum = 0
                             for j in range(10000):
                                 if j % 2 == 0:
@@ -2715,14 +2716,14 @@ class TestOpenmpTask(TestOpenmpBase):
             omp_set_num_threads(nt)
             a = np.zeros((nt + 1) * nt / 2)
             # a = np.zeros(10)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for tn in range(nt):
-                        with omp("task"):
+                        with openmp("task"):
                             for i in range(tn + 1):
-                                with omp("task"):
+                                with openmp("task"):
                                     a[i] = omp_get_thread_num() + 1
-                    with omp("barrier"):
+                    with openmp("barrier"):
                         ret = np.all(a)
             return ret
 
@@ -2731,10 +2732,10 @@ class TestOpenmpTask(TestOpenmpBase):
     def test_taskwait(self):
         def test_impl(ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel private(i)"):
-                with omp("single"):
+            with openmp("parallel private(i)"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task private(sum) private(j)"):
+                        with openmp("task private(sum) private(j)"):
                             sum = 0
                             for j in range(10000):
                                 if j % 2 == 0:
@@ -2742,7 +2743,7 @@ class TestOpenmpTask(TestOpenmpBase):
                                 else:
                                     sum -= 1
                             a[i] = 1 + sum
-                    with omp("taskwait"):
+                    with openmp("taskwait"):
                         ret = np.all(a)
             return ret
 
@@ -2754,13 +2755,13 @@ class TestOpenmpTask(TestOpenmpBase):
         def test_impl(ntsks, dtsks):
             a = np.zeros(ntsks)
             da = np.zeros((ntsks, dtsks))
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task"):
+                        with openmp("task"):
                             a[i] = 1
                             for j in range(dtsks):
-                                with omp("task private(sum)"):
+                                with openmp("task private(sum)"):
                                     sum = 0
                                     for k in range(10000):
                                         if k % 2 == 0:
@@ -2768,10 +2769,10 @@ class TestOpenmpTask(TestOpenmpBase):
                                         else:
                                             sum -= 1
                                     da[i][j] = 1 + sum
-                    with omp("taskwait"):
+                    with openmp("taskwait"):
                         ac = np.copy(a)
                         dac = np.copy(da)
-                with omp("barrier"):
+                with openmp("barrier"):
                     pass
             return ac, dac
 
@@ -2784,10 +2785,10 @@ class TestOpenmpTask(TestOpenmpBase):
     def test_undeferred_task(self):
         @njit
         def test_impl():
-            with omp("parallel"):
+            with openmp("parallel"):
                 flag = 1
-                with omp("single"):
-                    with omp("task if(1) private(sum)"):
+                with openmp("single"):
+                    with openmp("task if(1) private(sum)"):
                         sum = 0
                         for i in range(10000):
                             if i % 2 == 0:
@@ -2806,12 +2807,12 @@ class TestOpenmpTask(TestOpenmpBase):
         def test_impl(ntsks):
             start_nums = np.zeros(ntsks)
             current_nums = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task untied private(sum)"):
+                        with openmp("task untied private(sum)"):
                             start_nums[i] = omp_get_thread_num()
-                            with omp("task if(0) shared(sum)"):
+                            with openmp("task if(0) shared(sum)"):
                                 # Sleep
                                 sum = 0
                                 for j in range(10000):
@@ -2820,7 +2821,7 @@ class TestOpenmpTask(TestOpenmpBase):
                                     else:
                                         sum -= 1
                             current_nums[i] = omp_get_thread_num() + sum
-                with omp("barrier"):
+                with openmp("barrier"):
                     pass
             return start_nums, current_nums
 
@@ -2835,10 +2836,10 @@ class TestOpenmpTask(TestOpenmpBase):
             start_nums = np.zeros(ntsks)
             finish_nums = np.zeros(ntsks)
             yielded_tasks = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task private(stn, start_i, finish_i, diff)"):
+                        with openmp("task private(stn, start_i, finish_i, diff)"):
                             stn = omp_get_thread_num()
                             start_i = np.where(start_nums == stn)[0]
                             finish_i = np.where(finish_nums == stn)[0]
@@ -2852,10 +2853,10 @@ class TestOpenmpTask(TestOpenmpBase):
                             for dindex in diff[diff != 0]:
                                 yielded_tasks[dindex] = 1
                             start_nums[i] = stn
-                            with omp("taskyield"):
+                            with openmp("taskyield"):
                                 pass
                             finish_nums[i] = omp_get_thread_num()
-                with omp("barrier"):
+                with openmp("barrier"):
                     pass
             return yielded_tasks
 
@@ -2869,16 +2870,16 @@ class TestOpenmpTask(TestOpenmpBase):
             final_nums = np.zeros(ntsks)
             included_nums = np.zeros(ntsks)
             da = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task final(i>c) private(sum, d)"):
+                        with openmp("task final(i>c) private(sum, d)"):
                             ftask_num = i
                             final_nums[ftask_num] = omp_get_thread_num()
                             # If it is a final task, generate an included task
                             if ftask_num > c:
                                 d = 1
-                                with omp("task private(sum)"):
+                                with openmp("task private(sum)"):
                                     itask_num = ftask_num
                                     # Sleep
                                     sum = 0
@@ -2903,13 +2904,13 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(ntsks, dtsks):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
-                    with omp("taskgroup"):
+            with openmp("parallel"):
+                with openmp("single"):
+                    with openmp("taskgroup"):
                         for i in range(ntsks):
-                            with omp("task"):
+                            with openmp("task"):
                                 for _ in range(dtsks):
-                                    with omp("task"):
+                                    with openmp("task"):
                                         # Sleep
                                         sum = 0
                                         for j in range(10000):
@@ -2932,10 +2933,10 @@ class TestOpenmpTask(TestOpenmpBase):
         def test_impl(ntsks):
             a = np.zeros(ntsks)
             count = 0
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task priority(i)"):
+                        with openmp("task priority(i)"):
                             count += i + 1
                             a[i] = count
             return a
@@ -2952,12 +2953,12 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(ntsks, c1, c2):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task private(x)"):
+                        with openmp("task private(x)"):
                             x = c1
-                            with omp("task mergeable if(0)"):
+                            with openmp("task mergeable if(0)"):
                                 x = c2
                             a[i] = x
             return a
@@ -2970,23 +2971,23 @@ class TestOpenmpTask(TestOpenmpBase):
         def test_impl(ntsks):
             a = np.zeros(ntsks)
             da = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task private(x, done)"):
+                        with openmp("task private(x, done)"):
                             x = 1
                             done = False
-                            with omp("task shared(x) depend(out: x)"):
+                            with openmp("task shared(x) depend(out: x)"):
                                 x = 5
-                            with omp("""task shared(done, x)
+                            with openmp("""task shared(done, x)
                                         depend(out: done) depend(inout: x)"""):
                                 x += i
                                 done = True
-                            with omp("""task shared(done, x)
+                            with openmp("""task shared(done, x)
                                          depend(in: done) depend(inout: x)"""):
                                 x *= i
                                 da[i] = 1 if done else 0
-                            with omp("task shared(x) depend(in: x)"):
+                            with openmp("task shared(x) depend(in: x)"):
                                 a[i] = x
             return a, da
 
@@ -2997,14 +2998,14 @@ class TestOpenmpTask(TestOpenmpBase):
     def test_task_affinity(self):
         def test_impl(ntsks, const):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     for i in range(ntsks):
-                        with omp("task firstprivate(i)"):
-                            with omp("""task shared(b) depend(out: b)
+                        with openmp("task firstprivate(i)"):
+                            with openmp("""task shared(b) depend(out: b)
                                          affinity(a)"""):
                                 b = np.full(i, const)
-                            with omp("""task shared(b) depend(in: b)
+                            with openmp("""task shared(b) depend(in: b)
                                          affinity(a)"""):
                                 a[i] = np.sum(b)
             return a
@@ -3017,17 +3018,17 @@ class TestOpenmpTask(TestOpenmpBase):
                 return
 
             b = np.zeros(100)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     a = np.ones(100)
                     c = 0
                     d = 0
                     if mode > 1:
-                        with omp("task shared(a, c)"):
+                        with openmp("task shared(a, c)"):
                             c = a.sum()
-                        with omp("task shared(a, d)"):
+                        with openmp("task shared(a, d)"):
                             d = a.sum()
-                        with omp("taskwait"):
+                        with openmp("taskwait"):
                             b[:] = c + d
 
             return b
@@ -3045,9 +3046,9 @@ class TestOpenmpTaskloop(TestOpenmpBase):
     def test_taskloop_basic(self):
         def test_impl(ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
-                    with omp("taskloop"):
+            with openmp("parallel"):
+                with openmp("single"):
+                    with openmp("taskloop"):
                         for i in range(ntsks):
                             a[i] = 1
             return a
@@ -3058,9 +3059,9 @@ class TestOpenmpTaskloop(TestOpenmpBase):
         @njit
         def test_impl(nt, iters, ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel num_threads(nt)"):
-                with omp("single"):
-                    with omp("taskloop num_tasks(ntsks)"):
+            with openmp("parallel num_threads(nt)"):
+                with openmp("single"):
+                    with openmp("taskloop num_tasks(ntsks)"):
                         for i in range(iters):
                             a[i] = omp_get_thread_num()
             return a
@@ -3072,10 +3073,10 @@ class TestOpenmpTaskloop(TestOpenmpBase):
         @njit
         def test_impl(nt, iters, ntsks):
             a = np.zeros(ntsks)
-            with omp("parallel num_threads(nt)"):
-                with omp("single"):
+            with openmp("parallel num_threads(nt)"):
+                with openmp("single"):
                     iters_per_task = iters // ntsks
-                    with omp("taskloop grainsize(iters_per_task)"):
+                    with openmp("taskloop grainsize(iters_per_task)"):
                         for i in range(iters):
                             a[i] = omp_get_thread_num()
             return a
@@ -3088,14 +3089,14 @@ class TestOpenmpTaskloop(TestOpenmpBase):
         def test_impl(ntsks):
             a = np.zeros(ntsks)
             sa = np.zeros(ntsks)
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     s = 0
-                    with omp("taskloop nogroup num_tasks(ntsks)"):
+                    with openmp("taskloop nogroup num_tasks(ntsks)"):
                         for i in range(ntsks):
                             a[i] = 1
                             sa[i] = s
-                    with omp("task priority(1)"):
+                    with openmp("task priority(1)"):
                         s = 1
             return a, sa
 
@@ -3111,9 +3112,9 @@ class TestOpenmpTaskloop(TestOpenmpBase):
             sl = np.zeros(ntsks)
             tl = np.zeros(ntsks)
             omp_set_num_threads(nt)
-            with omp("parallel"):
-                with omp("single"):
-                    with omp("taskloop collapse(2) num_tasks(ntsks)"):
+            with openmp("parallel"):
+                with openmp("single"):
+                    with openmp("taskloop collapse(2) num_tasks(ntsks)"):
                         for i in range(ntsks):
                             fl[i] = omp_get_thread_num()
                             for j in range(1):
@@ -3162,7 +3163,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl():
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 a = 0
                 for i in range(1000000):
                     for j in range(1000000):
@@ -3178,8 +3179,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("parallel"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3198,8 +3199,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("parallel num_threads(32)"):
+            with openmp(target_pragma):
+                with openmp("parallel num_threads(32)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3218,8 +3219,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams"):
+            with openmp(target_pragma):
+                with openmp("teams"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3246,8 +3247,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(32)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(32)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3271,9 +3272,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams"):
-                    with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("teams"):
+                    with openmp("parallel"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3300,9 +3301,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(32)"):
-                    with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(32)"):
+                    with openmp("parallel"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3326,9 +3327,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams thread_limit(32)"):
-                    with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("teams thread_limit(32)"):
+                    with openmp("parallel"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3355,9 +3356,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(32) thread_limit(32)"):
-                    with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(32) thread_limit(32)"):
+                    with openmp("parallel"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3385,9 +3386,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(32) thread_limit(64)"):
-                    with omp("parallel num_threads(32)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(32) thread_limit(64)"):
+                    with openmp("parallel num_threads(32)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3415,10 +3416,10 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 # THREAD_LIMIT takes precedence over NUM_THREADS.
-                with omp("teams num_teams(32) thread_limit(64)"):
-                    with omp("parallel num_threads(128)"):
+                with openmp("teams num_teams(32) thread_limit(64)"):
+                    with openmp("parallel num_threads(128)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3448,14 +3449,14 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads1 = 0
             teams2 = 0
             threads2 = 0
-            with omp(target_pragma):
-                with omp("parallel num_threads(32)"):
+            with openmp(target_pragma):
+                with openmp("parallel num_threads(32)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
                         teams1 = omp_get_num_teams()
                         threads1 = omp_get_num_threads()
-                with omp("parallel num_threads(256)"):
+                with openmp("parallel num_threads(256)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3480,14 +3481,14 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads1 = 0
             teams2 = 0
             threads2 = 0
-            with omp(target_pragma):
-                with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("parallel"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
                         teams1 = omp_get_num_teams()
                         threads1 = omp_get_num_threads()
-                with omp("parallel"):
+                with openmp("parallel"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3511,15 +3512,15 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads1 = 0
             teams2 = 0
             threads2 = 0
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 max_threads = omp_get_max_threads()
-                with omp("parallel"):
+                with openmp("parallel"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
                         teams1 = omp_get_num_teams()
                         threads1 = omp_get_num_threads()
-                with omp("parallel num_threads(256)"):
+                with openmp("parallel num_threads(256)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3550,8 +3551,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.zeros(32, dtype=np.int64)
-            with omp(target_pragma):
-                with omp(parallel_pragma):
+            with openmp(target_pragma):
+                with openmp(parallel_pragma):
                     thread_id = omp_get_thread_num()
                     a[thread_id] = 1
             return a
@@ -3568,8 +3569,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.zeros(N, dtype=np.int32)
-            with omp(target_pragma):
-                with omp(parallel_pragma):
+            with openmp(target_pragma):
+                with openmp(parallel_pragma):
                     for i in range(0, len(a), step):
                         a[i] = i + 1
 
@@ -3588,8 +3589,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.zeros(N, dtype=np.int32)
             for i in range(step_range):
-                with omp(target_pragma):
-                    with omp(parallel_pragma):
+                with openmp(target_pragma):
+                    with openmp(parallel_pragma):
                         for j in range(0, len(a), i + 1):
                             a[j] = i + 1
             return a
@@ -3606,7 +3607,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.zeros(100, dtype=np.int64)
             nteams = 0
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 team_id = omp_get_team_num()
                 if team_id == 0:
                     nteams = omp_get_num_teams()
@@ -3628,8 +3629,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.zeros(100, dtype=np.int64)
             nteams = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(100)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(100)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         nteams = omp_get_num_teams()
@@ -3650,8 +3651,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             s = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(100) shared(s)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(100) shared(s)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3666,8 +3667,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             s = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(100)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(100)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3682,8 +3683,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             s = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(100) shared(s)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(100) shared(s)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3699,8 +3700,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = 0
             ss = np.zeros(1)
-            with omp(target_pragma):
-                with omp("teams num_teams(100)"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(100)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3718,8 +3719,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("parallel"):
                     team_id = omp_get_team_num()
                     thread_id = omp_get_thread_num()
                     if team_id == 0 and thread_id == 0:
@@ -3744,9 +3745,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             teams = 0
             threads = 0
-            with omp(target_pragma):
-                with omp("teams num_teams(10) thread_limit(32)"):
-                    with omp("parallel"):
+            with openmp(target_pragma):
+                with openmp("teams num_teams(10) thread_limit(32)"):
+                    with openmp("parallel"):
                         team_id = omp_get_team_num()
                         thread_id = omp_get_thread_num()
                         if team_id == 0 and thread_id == 0:
@@ -3769,7 +3770,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(x):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 x += 1
                 r = x
             return r
@@ -3783,7 +3784,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 r = 0
                 for i in range(len(a)):
                     r += a[i]
@@ -3800,7 +3801,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(x):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 x = 43
             return x
 
@@ -3813,7 +3814,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(x):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 x += 1
             return x
 
@@ -3826,9 +3827,9 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(x):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 x += 1
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 x += 1
             return x
 
@@ -3842,7 +3843,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl(n):
             a = np.zeros(n, dtype=np.int64)
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] = 42
             return a
@@ -3858,7 +3859,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl(n):
             a = np.zeros(n)
             b = np.arange(n)
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(50):
                     # These b accesses are within the transferred region.
                     a[i + 50] = b[i + 100]
@@ -3877,7 +3878,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl(n):
             a = np.zeros(n)
             b = np.arange(n)
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(50):
                     # These b accesses are outside the transferred region.
                     # Should get whatever happens to be in memory at that point.
@@ -3897,7 +3898,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] += 1
             return a
@@ -3912,8 +3913,8 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a, sched):
-            with omp(target_pragma):
-                with omp("parallel for num_threads(256)"):
+            with openmp(target_pragma):
+                with openmp("parallel for num_threads(256)"):
                     for i in range(len(a)):
                         a[i] = 1
                         thread_id = omp_get_thread_num()
@@ -3939,8 +3940,8 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a, sched):
-            with omp(target_pragma):
-                with omp("teams distribute"):
+            with openmp(target_pragma):
+                with openmp("teams distribute"):
                     for i in range(len(a)):
                         a[i] = 1
                         team_id = omp_get_team_num()
@@ -3975,7 +3976,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a, sched):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] = 1
                     team_id = omp_get_team_num()
@@ -4009,7 +4010,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a, sched):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] = 1
                     team_id = omp_get_team_num()
@@ -4032,7 +4033,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(s):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 s = 43
             return s
 
@@ -4045,7 +4046,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(s):
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 s = 43
             return s
 
@@ -4061,8 +4062,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.ones(10)
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] = 42
             return a
@@ -4079,8 +4080,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.ones(10)
             b = np.zeros(10)
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] = 42
                         b[i] = a[i]
@@ -4099,8 +4100,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = 0
             a = np.ones(10)
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] += 41
                     s = 42
@@ -4121,8 +4122,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.ones(10)
             b = np.zeros(10)
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] = 42
                         b[i] = a[i]
@@ -4141,8 +4142,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.ones(10)
             b = np.ones(10)
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] = 42
                         b[i] = 42
@@ -4161,11 +4162,11 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.ones(10)
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] = 42
-                with omp(target_update_pragma):
+                with openmp(target_update_pragma):
                     pass
             return a
 
@@ -4181,13 +4182,13 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.ones(10)
-            with omp(target_data_pragma):
+            with openmp(target_data_pragma):
                 a += 1
 
-                with omp(target_update_pragma):
+                with openmp(target_update_pragma):
                     pass
 
-                with omp(target_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] += 1
             return a
@@ -4205,17 +4206,17 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.ones(10)
-            with omp(target_data_pragma):
+            with openmp(target_data_pragma):
                 a += 1
 
-                with omp(target_update_to_pragma):
+                with openmp(target_update_to_pragma):
                     pass
 
-                with omp(target_pragma):
+                with openmp(target_pragma):
                     for i in range(len(a)):
                         a[i] += 1
 
-                with omp(target_update_from_pragma):
+                with openmp(target_update_from_pragma):
                     pass
 
                 a += 1
@@ -4235,16 +4236,16 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.ones(10)
-            with omp(target_enter):
+            with openmp(target_enter):
                 pass
 
             a += 1
 
             # XXX: Test passes if uncommented!
-            # with omp("target device(1)"):
+            # with openmp("target device(1)"):
             #    pass
 
-            with omp(target_exit):
+            with openmp(target_exit):
                 pass
 
             return a
@@ -4260,11 +4261,11 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             a = np.ones(10)
-            with omp(target_data):
+            with openmp(target_data):
                 a += 1
 
             # XXX: Test passes if uncommented!
-            # with omp("target device(1)"):
+            # with openmp("target device(1)"):
             #    pass
 
             return a
@@ -4279,12 +4280,12 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a):
-            with omp(target_data):
+            with openmp(target_data):
                 for rep in range(10):
                     # Target update resets a to ones.
-                    with omp(target_update):
+                    with openmp(target_update):
                         pass
-                    with omp(target_pragma):
+                    with openmp(target_pragma):
                         for i in range(len(a)):
                             a[i] += 1
 
@@ -4304,15 +4305,15 @@ class TestOpenmpTarget(TestOpenmpBase):
             as1 = np.empty(s, dtype=a.dtype)
             as2 = np.empty(s, dtype=a.dtype)
             b = n1
-            with omp(target_data_pragma):
-                with omp(target_pragma):
+            with openmp(target_data_pragma):
+                with openmp(target_pragma):
                     as1[:] = a
                     bs1 = b
-                with omp(target_pragma):
+                with openmp(target_pragma):
                     for i in range(s):
                         a[i] = n2
                     b = n2
-                with omp(target_pragma):
+                with openmp(target_pragma):
                     as2[:] = a
                     bs2 = b
             return a, as1, as2, b, bs1, bs2
@@ -4340,13 +4341,13 @@ class TestOpenmpTarget(TestOpenmpBase):
             bstop = 3
             a = np.array([1, 2, 3])
             b = np.array([3, 2, 1])
-            with omp(target_enter_pragma):
-                with omp(target_pragma):
+            with openmp(target_enter_pragma):
+                with openmp(target_pragma):
                     for i in range(1):
                         a[0] = 42
                         b[0] = 42
 
-            with omp(target_exit_pragma):
+            with openmp(target_exit_pragma):
                 pass
 
             return a, b
@@ -4364,15 +4365,15 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(scalar, array):
-            with omp(target_enter_pragma):
+            with openmp(target_enter_pragma):
                 pass
 
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 scalar += 1
                 for i in range(len(array)):
                     array[i] += 1
 
-            with omp(target_exit_pragma):
+            with openmp(target_exit_pragma):
                 pass
 
             return scalar, array
@@ -4398,12 +4399,12 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         @njit
         def test_impl(a):
-            with omp(target_enter_pragma):
+            with openmp(target_enter_pragma):
                 pass
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] = 1
-            with omp(target_exit_pragma):
+            with openmp(target_exit_pragma):
                 pass
 
             return a
@@ -4421,7 +4422,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl(a, sched_team, sched_thread):
             s = 42
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] = 1
                     team_id = omp_get_team_num()
@@ -4489,8 +4490,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl(a, sched_team, sched_thread):
             s = 42
-            with omp(target_pragma):
-                with omp(dist_parfor_pragma):
+            with openmp(target_pragma):
+                with openmp(dist_parfor_pragma):
                     for i in range(len(a)):
                         a[i] = 1
                         team_id = omp_get_team_num()
@@ -4532,8 +4533,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             s = 42
             r = np.zeros(32)
             threads = 0
-            with omp(target_pragma):
-                with omp("parallel firstprivate(s)"):
+            with openmp(target_pragma):
+                with openmp("parallel firstprivate(s)"):
                     threadno = omp_get_thread_num()
                     if threadno == 0:
                         threads = omp_get_num_threads()
@@ -4553,8 +4554,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = np.float32(42.0)
             r = np.float32(0.0)
-            with omp(target_pragma):
-                with omp("parallel firstprivate(s)"):
+            with openmp(target_pragma):
+                with openmp("parallel firstprivate(s)"):
                     threadno = omp_get_thread_num()
                     if threadno == 0:
                         r = s + 1
@@ -4570,8 +4571,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = np.float32(42.0)
             r = np.float32(0.0)
-            with omp(target_pragma):
-                with omp("teams firstprivate(s)"):
+            with openmp(target_pragma):
+                with openmp("teams firstprivate(s)"):
                     teamno = omp_get_thread_num()
                     if teamno == 0:
                         r = s + 1
@@ -4590,8 +4591,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         @njit
         def test_impl():
             s = np.zeros(32)
-            with omp(target_pragma):
-                with omp("parallel firstprivate(s)"):
+            with openmp(target_pragma):
+                with openmp("parallel firstprivate(s)"):
                     print("parallel s", s[0])
                     teams = omp_get_num_teams()
                     threads = omp_get_num_threads()
@@ -4611,7 +4612,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.zeros(10, dtype=np.int32)
             nteams = 0
 
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 team_shared_array = np.empty(10, dtype=np.int32)
                 team_id = omp_get_team_num()
 
@@ -4645,7 +4646,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.zeros((10, 2, 2), dtype=np.int32)
             nteams = 0
 
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 team_shared_array = np.empty((2, 2), dtype=np.int32)
                 team_id = omp_get_team_num()
 
@@ -4679,8 +4680,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             a = np.zeros((32, 10), dtype=np.int32)
             nthreads = 0
-            with omp(target_pragma):
-                with omp("parallel num_threads(32)"):
+            with openmp(target_pragma):
+                with openmp("parallel num_threads(32)"):
                     local_array = np.empty(10, dtype=np.int32)
                     tid = omp_get_thread_num()
                     if tid == 0:
@@ -4716,14 +4717,14 @@ class TestOpenmpTarget(TestOpenmpBase):
             nteams = 0
             nthreads = 0
 
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 team_shared_array = np.empty(32, dtype=np.int32)
                 team_id = omp_get_team_num()
                 if team_id == 0:
                     nteams = omp_get_num_teams()
                     nthreads = omp_get_num_threads()
 
-                with omp("parallel num_threads(32)"):
+                with openmp("parallel num_threads(32)"):
                     thread_local_array = np.empty(10, dtype=np.int32)
                     for i in range(10):
                         thread_local_array[i] = omp_get_thread_num()
@@ -4759,7 +4760,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.ones((n, n))
             b = np.ones((n, n))
             c = np.zeros((n, n))
-            with omp(target_pragma):
+            with openmp(target_pragma):
                 for i in range(n):
                     for j in range(n):
                         c[i, j] = a[i, j] + b[i, j]
@@ -4777,9 +4778,9 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.ones((n, n))
             b = np.ones((n, n))
             c = np.zeros((n, n))
-            with omp(target_pragma):
-                with omp("teams"):
-                    with omp("loop collapse(2)"):
+            with openmp(target_pragma):
+                with openmp("teams"):
+                    with openmp("loop collapse(2)"):
                         for i in range(n):
                             for j in range(n):
                                 c[i, j] = a[i, j] + b[i, j]
@@ -4820,8 +4821,8 @@ class TestOpenmpPi(TestOpenmpBase):
             the_sum = 0.0
             omp_set_num_threads(4)
 
-            with omp("parallel"):
-                with omp("for reduction(+:the_sum) schedule(static)"):
+            with openmp("parallel"):
+                with openmp("for reduction(+:the_sum) schedule(static)"):
                     for j in range(num_steps):
                         x = ((j - 1) - 0.5) * step
                         the_sum += 4.0 / (1.0 + x * x)
@@ -4838,7 +4839,7 @@ class TestOpenmpPi(TestOpenmpBase):
             the_sum = 0.0
             omp_set_num_threads(4)
 
-            with omp("parallel for reduction(+:the_sum) schedule(static)"):
+            with openmp("parallel for reduction(+:the_sum) schedule(static)"):
                 for j in range(num_steps):
                     x = ((j - 1) - 0.5) * step
                     the_sum += 4.0 / (1.0 + x * x)
@@ -4855,7 +4856,7 @@ class TestOpenmpPi(TestOpenmpBase):
             the_sum = 0.0
             omp_set_num_threads(4)
 
-            with omp("loop reduction(+:the_sum) schedule(static)"):
+            with openmp("loop reduction(+:the_sum) schedule(static)"):
                 for j in range(num_steps):
                     x = ((j - 1) - 0.5) * step
                     the_sum += 4.0 / (1.0 + x * x)
@@ -4875,7 +4876,7 @@ class TestOpenmpPi(TestOpenmpBase):
             omp_set_num_threads(j)
             full_sum = 0.0
 
-            with omp("parallel private(tid, numthreads, local_sum, x)"):
+            with openmp("parallel private(tid, numthreads, local_sum, x)"):
                 tid = omp_get_thread_num()
                 numthreads = omp_get_num_threads()
                 local_sum = 0.0
@@ -4907,11 +4908,11 @@ class TestOpenmpPi(TestOpenmpBase):
                 pi_sum1 = 0.0
                 pi_sum2 = 0.0
                 cut = Nfinish - (iblk // 2)
-                with omp("task shared(pi_sum1)"):
+                with openmp("task shared(pi_sum1)"):
                     pi_sum1 = test_pi_comp(Nstart, cut, step)
-                with omp("task shared(pi_sum2)"):
+                with openmp("task shared(pi_sum2)"):
                     pi_sum2 = test_pi_comp(cut, Nfinish, step)
-                with omp("taskwait"):
+                with openmp("taskwait"):
                     pi_sum = pi_sum1 + pi_sum2
             return pi_sum
 
@@ -4928,11 +4929,11 @@ class TestOpenmpPi(TestOpenmpBase):
                 pi_sum1 = 0.0
                 pi_sum2 = 0.0
                 cut = Nfinish - (iblk // 2)
-                with omp("task shared(pi_sum1)"):
+                with openmp("task shared(pi_sum1)"):
                     pi_sum1 = test_pi_comp_njit(Nstart, cut, step)
-                with omp("task shared(pi_sum2)"):
+                with openmp("task shared(pi_sum2)"):
                     pi_sum2 = test_pi_comp_njit(cut, Nfinish, step)
-                with omp("taskwait"):
+                with openmp("taskwait"):
                     pi_sum = pi_sum1 + pi_sum2
             return pi_sum
 
@@ -4943,8 +4944,8 @@ class TestOpenmpPi(TestOpenmpBase):
             omp_set_num_threads(j)
             full_sum = 0.0
 
-            with omp("parallel"):
-                with omp("single"):
+            with openmp("parallel"):
+                with openmp("single"):
                     full_sum = pi_comp_func(lb, num_steps, step)
 
             pi = step * full_sum
