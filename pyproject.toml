@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "numba>=0.57, <0.58", "cmake>=3.20"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyomp"
+version = "0.2.0"
+description = "Python OpenMP library based on Numba"
+readme = "README.md"
+requires-python = ">=3.8, <=3.12"
+license = { text = "BSD 2-Clause License" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Compilers",
+]
+dependencies = ["numba>=0.57, <0.58", "lark", "cffi"]
+
+[project.urls]
+Homepage = "https://github.com/Python-for-HPC/PyOMP"
+Issues = "https://github.com/Python-for-HPC/PyOMP/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["numba.openmp"]
+
+[tool.setuptools.package-data]
+"numba.openmp" = ["libs/*"]
