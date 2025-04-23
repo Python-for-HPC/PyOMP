@@ -7,6 +7,10 @@ else
   LABEL="test"
 fi
 
+# Set pkg dir per job to avoid conflicts.
+export CONDA_PKGS_DIRS=/tmp/ggeorgak/conda-pkgs-${CI_JOB_ID}
+mkdir -p "$CONDA_PKGS_DIRS"
+
 function deploy_conda() {
   PKG="${1}"
 
