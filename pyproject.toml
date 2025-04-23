@@ -23,4 +23,4 @@ Homepage = "https://github.com/Python-for-HPC/PyOMP"
 Issues = "https://github.com/Python-for-HPC/PyOMP/issues"
 
 [tool.setuptools]
-packages = ["numba.openmp"]
+packages = ["numba.openmp", "numba.openmp.libs", "numba.openmp.tests"]
