@@ -44,7 +44,7 @@ jobs:
     strategy:
       matrix:
         #os: [ubuntu-latest, macOS-latest, windows-latest]
-        os: [ubuntu-latest, macOS-latest]
+        os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v4
       - name: Create and activate conda env
@@ -102,47 +102,48 @@ jobs:
   ################################################################
   # Deploy on ARM64 using QEMU and a docker container for building.
   ################################################################
-  conda-deploy-llvm-openmp-dev-linux-arm64:
-    name: llvm-openmp-dev linux-arm64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-      - name: Deploy llvm-openmp-dev
-        run: |
-          docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -xel -c "
-          ${{ env.SETUP_BASE }}
-          ${{ env.SETUP_MINICONDA }}
-          ${{ env.SETUP_REPO }}
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/llvm-openmp-dev;
-          "
+  #conda-deploy-llvm-openmp-dev-linux-arm64:
+  #  name: llvm-openmp-dev linux-arm64
+  #  runs-on: ubuntu-latest
+  #  steps:
+  #    - name: Set up QEMU
+  #      uses: docker/setup-qemu-action@v3
+  #      with:
+  #        platforms: linux/arm64
+  #    - name: Deploy llvm-openmp-dev
+  #      run: |
+  #        docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -xel -c "
+  #        ${{ env.SETUP_BASE }}
+  #        ${{ env.SETUP_MINICONDA }}
+  #        ${{ env.SETUP_REPO }}
+  #        conda build --user python-for-hpc --label ${{ inputs.label }} \
+  #          -c python-for-hpc -c conda-forge \
+  #          --token ${{ secrets.ANACONDA_TOKEN }} \
+  #          buildscripts/conda-recipes/llvm-openmp-dev;
+  #        "
 
-  conda-deploy-pyomp-linux-arm64:
-    needs: conda-deploy-llvm-openmp-dev-linux-arm64
-    name: pyomp linux-arm64
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10"]
-    steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-      - name: Deploy pyomp
-        run: |
-          docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -el -c "
-          ${{ env.SETUP_BASE }}
-          ${{ env.SETUP_MINICONDA }}
-          ${{ env.SETUP_REPO }}
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --python ${{ matrix.python-version}} \
-            --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/pyomp;
-          "
+  #conda-deploy-pyomp-linux-arm64:
+  #  needs: conda-deploy-llvm-openmp-dev-linux-arm64
+  #  name: pyomp linux-arm64
+  #  runs-on: ubuntu-latest
+  #  strategy:
+  #    matrix:
+  #      python-version: ["3.8", "3.9", "3.10"]
+  #  steps:
+  #    - name: Set up QEMU
+  #      uses: docker/setup-qemu-action@v3
+  #      with:
+  #        platforms: linux/arm64
+  #    - name: Deploy pyomp
+  #      run: |
+  #        docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -el -c "
+  #        ${{ env.SETUP_BASE }}
+  #        ${{ env.SETUP_MINICONDA }}
+  #        ${{ env.SETUP_REPO }}
+  #        conda build --user python-for-hpc --label ${{ inputs.label }} \
+  #          -c python-for-hpc -c conda-forge \
+  #          --python ${{ matrix.python-version}} \
+  #          --token ${{ secrets.ANACONDA_TOKEN }} \
+  #          buildscripts/conda-recipes/pyomp;
+  #        "
+  
