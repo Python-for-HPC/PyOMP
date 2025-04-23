@@ -66,21 +66,8 @@ build-llvm-openmp-dev-lassen:
   variables:
     PYOMP_CI_BUILD_PKG: "llvm-openmp-dev"
 
-build-llvmlite-lassen:
+build-pyomp-lassen:
   extends: [.base-job, .python-variants]
   needs: ["build-llvm-openmp-dev-lassen"]
   variables:
-    PYOMP_CI_BUILD_PKG: "llvmlite"
-
-build-numba-lassen:
-  extends: [.base-job, .python-variants]
-  needs: ["build-llvmlite-lassen"]
-  variables:
-    PYOMP_CI_BUILD_PKG: "numba"
-
-build-pyomp-lassen:
-  extends: .base-job
-  needs: ["build-numba-lassen"]
-  variables:
     PYOMP_CI_BUILD_PKG: "pyomp"
-

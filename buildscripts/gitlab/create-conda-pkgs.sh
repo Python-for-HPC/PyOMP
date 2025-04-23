@@ -40,14 +40,6 @@ case ${PYOMP_CI_BUILD_PKG} in
     deploy_conda "llvm-openmp-dev"
     ;;
 
-  "llvmlite")
-    deploy_conda "llvmlite"
-    ;;
-
-  "numba")
-    deploy_conda "numba"
-    ;;
-
   "pyomp")
     deploy_conda "pyomp"
     ;;
