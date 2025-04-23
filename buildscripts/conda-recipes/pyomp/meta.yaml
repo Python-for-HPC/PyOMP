@@ -23,11 +23,13 @@ requirements:
     - pip
     - setuptools
     - numba >=0.57, <0.58
+    - llvmdev 14.*
   run:
     - numba >=0.57, <0.58
     - lark
     - cffi
     - llvm-openmp-dev
+    - llvmdev 14.*
 
 about:
   home: https://github.com/Python-for-HPC/PyOMP
