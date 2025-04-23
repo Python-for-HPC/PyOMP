@@ -77,6 +77,10 @@ jobs:
         python-version: ["3.8", "3.9", "3.10"]
     steps:
       - uses: actions/checkout@v4
+        # Checkout the repo with history to get the commit hash for the build
+        # string.
+        with:
+          fetch-depth: 0
       - name: Create and activate conda env
         uses: conda-incubator/setup-miniconda@v3
         with:
