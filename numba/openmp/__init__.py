@@ -5248,8 +5248,9 @@ class OpenmpVisitor(Transformer):
             var_list = args[1]
             assert len(args) == 2
         else:
-            map_type = "TOFROM"  # is this default right?  FIX ME
-            var_list = args[0]
+            # TODO: is this default right?
+            map_type = "TOFROM"
+            var_list = args[1]
         ret = []
         for var in var_list:
             ret.append(openmp_tag("QUAL.OMP.MAP." + map_type, var))
