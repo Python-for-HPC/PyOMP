@@ -480,10 +480,6 @@ def _init():
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
-    # libomptarget errors out if gpu is not available.
-    if not numba_cuda.is_available():
-        return
-
     omptargetlib = llvm_libpath + "/libomptarget.so"
     if DEBUG_OPENMP >= 1:
         print("Found OpenMP target runtime library at", omptargetlib)
