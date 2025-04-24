@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Python OpenMP library based on Numba"
 readme = "README.md"
 requires-python = ">=3.8, <3.12"
-license = "BSD-2-Clause"
+license = { text = "BSD-2-Clause" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
