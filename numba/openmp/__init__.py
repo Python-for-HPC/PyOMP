@@ -2622,14 +2622,16 @@ class openmp_region_start(ir.Stmt):
 
                 subprocess.run(
                     [
-                        "ld",
+                        # Use the compiler driver to create the shared library
+                        # and avoid missing symbols.
+                        "c++",
                         "-shared",
                         filename_o,
                         # Do whole archive to include all symbols, esp. for the
                         # PyOMP_NRT_Init constructor.
-                        "--whole-archive",
+                        "-Wl,--whole-archive",
                         libpath / "libnrt_static.a",
-                        "--no-whole-archive",
+                        "-Wl,--no-whole-archive",
                         "-o",
                         filename_so,
                     ],
