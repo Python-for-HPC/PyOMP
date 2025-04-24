@@ -1,29 +1,19 @@
-# setup.py
-import os
 import numba
 import sysconfig
 import subprocess
 import shutil
 import numpy as np
-from pathlib import Path
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_clib import build_clib
 
 
-temp_dir = Path("numba/openmp/nrt/numba_src")
-
-bundle_lib = (
-    "bundle",
+nrt_static = (
+    "nrt_static",
     {
+        # We extend those sources with the ones from the numba tree.
         "sources": [
-            "numba/openmp/nrt/init.c",
-            f"{temp_dir}/_helpermod.c",
-            f"{temp_dir}/cext/utils.c",
-            f"{temp_dir}/cext/dictobject.c",
-            f"{temp_dir}/cext/listobject.c",
-            f"{temp_dir}/core/runtime/_nrt_pythonmod.c",
-            f"{temp_dir}/core/runtime/nrt.cpp",
+            "numba/openmp/libs/nrt/init.c",
         ],
         "include_dirs": [
             sysconfig.get_paths()["include"],
@@ -33,15 +23,15 @@ bundle_lib = (
 )
 
 
-class BuildStaticNRTBundle(build_clib):
+class BuildStaticNRT(build_clib):
     def finalize_options(self):
         super().finalize_options()
-        # Copy numba tree installation to the build directory for building the
+        # Copy numba tree installation to the temp directory for building the
         # static library using relative paths.
         numba_dir = numba.__path__[0]
         shutil.copytree(
             numba_dir,
-            temp_dir,
+            f"{self.build_temp}/numba_src",
             ignore=shutil.ignore_patterns(
                 "*.py",
                 "*.pyc",
@@ -52,13 +42,28 @@ class BuildStaticNRTBundle(build_clib):
             dirs_exist_ok=True,
         )
 
-        self.build_clib = "numba/openmp/libs"
+        libname, build_info = self.libraries[0]
+        if libname != "nrt_static":
+            raise Exception("Expected library name 'nrt_static'")
+        if len(self.libraries) != 1:
+            raise Exception("Expected only the `nrt_static' library in the list")
 
-    def run(self):
-        super().run()
+        sources = build_info["sources"]
+        sources.extend(
+            [
+                f"{self.build_temp}/numba_src/_helpermod.c",
+                f"{self.build_temp}/numba_src/cext/utils.c",
+                f"{self.build_temp}/numba_src/cext/dictobject.c",
+                f"{self.build_temp}/numba_src/cext/listobject.c",
+                f"{self.build_temp}/numba_src/core/runtime/_nrt_pythonmod.c",
+                f"{self.build_temp}/numba_src/core/runtime/nrt.cpp",
+            ]
+        )
 
-        # Clean up files after build is completed.
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Get build_lib directory from the 'build' command.
+        build_cmd = self.get_finalized_command("build")
+        # Build the static library in the wheel output build directory.
+        self.build_clib = f"{build_cmd.build_lib}/numba/openmp/libs"
 
 
 class CMakeExtension(Extension):
@@ -89,7 +94,7 @@ class BuildIntrinsicsOpenMPPass(build_ext):
                 "-B",
                 self.build_temp,
                 "-DCMAKE_BUILD_TYPE=Release",
-                "-DCMAKE_INSTALL_PREFIX=numba/openmp/libs",
+                f"-DCMAKE_INSTALL_PREFIX={self.build_lib}/numba/openmp/libs",
             ],
             check=True,
         )
@@ -102,10 +107,10 @@ class BuildIntrinsicsOpenMPPass(build_ext):
 
 
 setup(
-    libraries=[bundle_lib],
-    ext_modules=[CMakeExtension("libIntrinsicsOpenMP", "numba/openmp/pass")],
+    libraries=[nrt_static],
+    ext_modules=[CMakeExtension("libIntrinsicsOpenMP", "numba/openmp/libs/pass")],
     cmdclass={
-        "build_clib": BuildStaticNRTBundle,
+        "build_clib": BuildStaticNRT,
         "build_ext": BuildIntrinsicsOpenMPPass,
     },
 )

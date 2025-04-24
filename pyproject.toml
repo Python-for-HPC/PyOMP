@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77.0", "wheel", "numba>=0.57, <0.58", "cmake>=3.20"]
+requires = ["setuptools>=77.0.3", "wheel", "numba>=0.57, <0.58", "cmake>=3.20"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Python OpenMP library based on Numba"
 readme = "README.md"
 requires-python = ">=3.8, <3.12"
-license = { text = "BSD 2-Clause" }
+license = "BSD-2-Clause"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",

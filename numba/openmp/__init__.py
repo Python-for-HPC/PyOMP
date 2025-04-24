@@ -2628,7 +2628,7 @@ class openmp_region_start(ir.Stmt):
                         # Do whole archive to include all symbols, esp. for the
                         # PyOMP_NRT_Init constructor.
                         "--whole-archive",
-                        libpath / "libbundle.a",
+                        libpath / "libnrt_static.a",
                         "--no-whole-archive",
                         "-o",
                         filename_so,

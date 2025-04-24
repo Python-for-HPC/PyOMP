@@ -35,10 +35,6 @@ else
   echo Error
 fi
 
-opt_path=$(which opt)
-echo "OPT_PATH ${opt_path}"
-opt --version
-
 # Run OpenMP tests in a single-process since they use multiple cores by
 # multi-threading. Using multiple processes for testing will very probably slow
 # things down.
@@ -63,4 +59,3 @@ if nvidia-smi --list-gpus; then
   echo "=> Running: TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
   TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
 fi
-
