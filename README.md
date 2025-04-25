@@ -17,7 +17,7 @@ architecture and operating system combinations: linux-64 (x86_64), osx-arm64
 (mac), linux-arm64, and linux-ppc64le.
 Installation is possible through `conda`, detailed in the next section.
 
-As PyOMP builds on to of the LLVM OpenMP infrastructure, it also inherits its
+As PyOMP builds on top of the LLVM OpenMP infrastructure, it also inherits its
 limitations: GPU support is only available on Linux.
 Also, PyOMP currently supports only NVIDIA GPUs with AMD GPU support planned for.
 
