@@ -10,11 +10,9 @@ source:
 
 build:
   merge_build_host: False
-  string: h{{ PKG_HASH }}_{{ (GITHUB_HEAD_SHA | default(''))[:7] ~ (CI_COMMIT_SHA | default(''))[:7] }}
+  string: h{{ PKG_HASH }}
   script_env:
-    - PY_VCRUNTIME_REDIST
-    - GITHUB_HEAD_SHA
-    - CI_COMMIT_SHA
+    - PY_VCRUNTIME_REDIST # [win]
 
 requirements:
   build:

@@ -6,35 +6,9 @@ on:
       label:
         required: true
         type: string
-      commit:
-        required: true
-        type: string
       env:
         required: true
         type: string
-
-# Rembember: you have to escape characters like $ with \$.
-env:
-  SETUP_BASE: |
-    apt-get -qq update > /dev/null;
-    apt-get -qq upgrade > /dev/null;
-    apt-get -qq install wget git > /dev/null;
-    useradd -ms /bin/bash pyompuser;
-    su pyompuser;
-    cd /home/pyompuser;
-  SETUP_MINICONDA: |
-    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-\$(uname -m).sh -O miniconda.sh;
-    bash miniconda.sh -b -u -p ./miniconda3;
-    rm -rf miniconda.sh;
-    export PATH=/home/pyompuser/miniconda3/bin:\${PATH};
-    conda remove --name base conda-anaconda-telemetry
-    conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
-    conda config --set anaconda_upload yes;
-  SETUP_REPO: |
-    git clone https://github.com/Python-for-HPC/PyOMP;
-    cd PyOMP;
-    git checkout ${{ inputs.commit }};
-    export GITHUB_HEAD_SHA=${{ inputs.commit }};
 
 jobs:
   # Job to deploy llvm-openmp-dev, runs once as it is independent of the python
@@ -44,13 +18,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        #os: [ubuntu-latest, macOS-latest, windows-latest]
-        os: [ubuntu-latest, macOS-latest]
+        # TODO: Add windows.
+        os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v4
-      - name: Set env for HEAD SHA
-        run:
-          echo "GITHUB_HEAD_SHA=${{ inputs.commit }}" >> $GITHUB_ENV
       - name: Create and activate conda env
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -69,87 +40,22 @@ jobs:
             --token ${{ secrets.ANACONDA_TOKEN }} \
             buildscripts/conda-recipes/llvm-openmp-dev;
 
-  # Job to deploy llvmlite and numba, matrixed on os and python version.
-  conda-deploy-llvmlite:
-    needs: conda-deploy-llvm-openmp-dev
-    name: llvmlite ${{ matrix.os }} ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        #os: [ubuntu-latest, macOS-latest, windows-latest]
-        os: [ubuntu-latest, macOS-latest]
-        python-version: ["3.8", "3.9", "3.10"]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set env for HEAD SHA
-        run:
-          echo "GITHUB_HEAD_SHA=${{ inputs.commit }}" >> $GITHUB_ENV
-      - name: Create and activate conda env
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          python-version: ${{ matrix.python-version }}
-          environment-file: ${{ inputs.env }}
-          auto-update-conda: false
-          auto-activate-base: false
-          show-channel-urls: true
-      - name: Build and upload llvmlite
-        run: |
-          conda remove --name base conda-anaconda-telemetry
-          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
-          conda config --set anaconda_upload yes;
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --python ${{ matrix.python-version }} --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/llvmlite;
-
-  # Job to deploy numba, matrixed on os and python version.
-  conda-deploy-numba:
-    needs: conda-deploy-llvmlite
-    name: numba ${{ matrix.os }} ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        #os: [ubuntu-latest, macOS-latest, windows-latest]
-        os: [ubuntu-latest, macOS-latest]
-        python-version: ["3.8", "3.9", "3.10"]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set env for HEAD SHA
-        run:
-          echo "GITHUB_HEAD_SHA=${{ inputs.commit }}" >> $GITHUB_ENV
-      - name: Create and activate conda env
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          python-version: ${{ matrix.python-version }}
-          environment-file: ${{ inputs.env }}
-          auto-update-conda: false
-          auto-activate-base: false
-          show-channel-urls: true
-      - name: Build and upload numba
-        run: |
-          conda remove --name base conda-anaconda-telemetry
-          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
-          conda config --set anaconda_upload yes;
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --python ${{ matrix.python-version }} --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/numba;
-
-  # Job to deploy the pyomp metapackage, runs once as it is independent of the
-  # python version.
+  # Job to deploy the pyomp metapackage matrixed on the python version.
   conda-deploy-pyomp:
-    needs: conda-deploy-numba
-    name: pyomp ${{ matrix.os }}
+    needs: conda-deploy-llvm-openmp-dev
+    name: pyomp ${{ matrix.os }} ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        #os: [ubuntu-latest, macOS-latest, windows-latest]
-        os: [ubuntu-latest, macOS-latest]
+        # TODO: Add windows.
+        os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
+        python-version: ["3.8", "3.9", "3.10"]
     steps:
       - uses: actions/checkout@v4
-      - name: Set env for HEAD SHA
-        run:
-          echo "GITHUB_HEAD_SHA=${{ inputs.commit }}" >> $GITHUB_ENV
+        # Checkout the repo with history to get the commit hash for the build
+        # string.
+        with:
+          fetch-depth: 0
       - name: Create and activate conda env
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -165,97 +71,6 @@ jobs:
           conda config --set anaconda_upload yes;
           conda build --user python-for-hpc --label ${{ inputs.label }} \
             -c python-for-hpc -c conda-forge \
+            --python ${{ matrix.python-version }} \
             --token ${{ secrets.ANACONDA_TOKEN }} \
             buildscripts/conda-recipes/pyomp;
-
-  ################################################################
-  # Deploy on ARM64 using QEMU and a docker container for building.
-  ################################################################
-  conda-deploy-llvm-openmp-dev-linux-arm64:
-    name: llvm-openmp-dev linux-arm64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-      - name: Deploy llvm-openmp-dev
-        run: |
-          docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -xel -c "
-          ${{ env.SETUP_BASE }}
-          ${{ env.SETUP_MINICONDA }}
-          ${{ env.SETUP_REPO }}
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/llvm-openmp-dev;
-          "
-
-  conda-deploy-llvmlite-linux-arm64:
-    needs: conda-deploy-llvm-openmp-dev-linux-arm64
-    name: llvmlite linux-arm64
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10"]
-    steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-      - name: Deploy llvmlite
-        run: |
-          docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -el -c "
-          ${{ env.SETUP_BASE }}
-          ${{ env.SETUP_MINICONDA }}
-          ${{ env.SETUP_REPO }}
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --python ${{ matrix.python-version}} --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/llvmlite
-          "
-
-  conda-deploy-numba-linux-arm64:
-    needs: conda-deploy-llvmlite-linux-arm64
-    name: numba linux-arm64
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9", "3.10"]
-    steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-      - name: Deploy numba
-        run: |
-          docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -el -c "
-          ${{ env.SETUP_BASE }}
-          ${{ env.SETUP_MINICONDA }}
-          ${{ env.SETUP_REPO }}
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --python ${{ matrix.python-version}} --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/numba;
-          "
-
-  conda-deploy-pyomp-linux-arm64:
-    needs: conda-deploy-numba-linux-arm64
-    name: pyomp linux-arm64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-      - name: Deploy pyomp
-        run: |
-          docker run --platform linux/arm64 ubuntu:22.04 /bin/bash -el -c "
-          ${{ env.SETUP_BASE }}
-          ${{ env.SETUP_MINICONDA }}
-          ${{ env.SETUP_REPO }}
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/pyomp;
-          "

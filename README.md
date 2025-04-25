@@ -3,64 +3,66 @@
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Python-for-HPC/binder/HEAD)
 
 # PyOMP
-OpenMP for Python in Numba for CPU/GPU parallel programming.
+OpenMP for Python CPU/GPU parallel programming, powered by Numba.
 
-Currently, PyOMP is distributed as a full version of Numba which is based on a
-Numba version a few versions behind mainline.
-Since Numba is available for every combination of the past few Python versions
-and the past few NumPy versions and various operating systems and architectures,
-there is quite an extensive build infrastructure required to get all these
-combinations and recently we have sorted out some of these combinations.
-The architecture and operating system combinations that currently work are:
-linux-64 (x86_64), osx-arm64 (mac), linux-arm64, and linux-ppc64le.
-These distributions are available with the `conda` command in the next section.
+PyOMP provides a familiar interface for CPU/GPU programming using OpenMP
+abstractions adapted for Python.
+Besides effortless programmability, PyOMP generates fast code using Numba's JIT
+compiler based on LLVM, which is competitive with equivalent C/C++ implementations.
 
-Due to PyOMP using the LLVM OpenMP infrastructure, we also inherit its
-limitations which means that GPU support is only available on Linux.
+PyOMP is developed and distributed as an *extension* to Numba, so it uses
+Numba as a dependency.
+It is currently tested with Numba versions 0.57.x, 0.58.x on the following
+architecture and operating system combinations: linux-64 (x86_64), osx-arm64
+(mac), linux-arm64, and linux-ppc64le.
+Installation is possible through `conda`, detailed in the next section.
 
-In the future, we plan on converting PyOMP to a Numba extension which should eliminate the Python and NumPy versioning issues.
+As PyOMP builds on top of the LLVM OpenMP infrastructure, it also inherits its
+limitations: GPU support is only available on Linux.
+Also, PyOMP currently supports only NVIDIA GPUs with AMD GPU support planned for.
 
 ## Installation
 
 ### Conda
-PyOMP is distributed as a package through Conda, currently supporting linux-64
-(x86_64), osx-arm64 (mac), linux-arm64, and linux-ppc64le architectures.
+PyOMP is distributed through Conda, easily installable using the following command:
 
 ```bash
 conda install -c python-for-hpc -c conda-forge pyomp
 ```
+Besides a standard installation, we also provide the following options to
+quickly try out PyOMP online or through a container.
 
-## Trying it out
+### Trying it out
 
-### Binder
+#### Binder
 You can try it out for free on a multi-core CPU in JupyterLab at the following link:
 
 https://mybinder.org/v2/gh/Python-for-HPC/binder/HEAD
 
-### Docker
+#### Docker
 
 We also provide pre-built containers for arm64 and amd64 architectures with
 PyOMP and Jupyter pre-installed.
 The following show how to access the container through the terminal or using
-jupyter.
+Jupyter.
 
 First pull the container
-```
+```bash
 docker pull ghcr.io/python-for-hpc/pyomp:latest
 ```
 
 To use the terminal, run a shell on the container
-```
+```bash
 docker run -it ghcr.io/python-for-hpc/pyomp:latest /bin/bash
 ```
 
 To use Jupyter, run without arguments and forward port 8888.
-```
+```bash
 docker run -it -p 8888:8888 ghcr.io/python-for-hpc/pyomp:latest
 ```
 Jupyter will start as a service on localhost with token authentication by default.
 Grep the url with the token from the output and copy it to the browser.
-```
+```bash
 ...
 [I 2024-09-15 17:24:47.912 ServerApp]     http://127.0.0.1:8888/tree?token=<token>
 ...
@@ -68,40 +70,72 @@ Grep the url with the token from the output and copy it to the browser.
 
 ## Usage
 
-Import Numba and add the `@njit` decorator to the function in which you want to use OpenMP.
-Add `with` contexts for each OpenMP region you want to have, importing the
-context `openmp_context` from the `numba.openmp` module.
+From `numba.openmp` import the `@njit` decorator and the `openmp_context` to
+create OpenMP regions using `with` contexts.
+Decorate with `njit` the function you want to parallelize with OpenMP and
+describe parallelism in OpenMP directives using `with` contexts.
+Enjoy the simplicity of OpenMP with Python syntax and parallel performance.
 
 For a list of supported OpenMP directives and more detailed information, check
 out the [Documentation](https://pyomp.readthedocs.io).
-PyOMP supports both CPU and GPU programming for NVIDIA GPUs through the `target`
+
+PyOMP supports both CPU and GPU programming implementing OpenMP's `target`
 directive for offloading.
-For GPU programming, PyOMP supports the `device` clause and by convention the
-default without using the clause or providing `device(0)` always refers to the
-accelerator GPU device.
-It is also possible to use the host as a multi-core CPU target device setting `device(1)`.
+For GPU programming, PyOMP supports the `device` clause, with `device(0)` by
+convention offloading to a GPU device.
+It is also possible to use the host as a multi-core CPU target device (mainly
+for testing purposes) by setting `device(1)`.
 
 ### Example
 
-This is an example of calculating $\pi$ with PyOMP with a `parallel for` loop.
+This is an example of calculating $\pi$ with PyOMP with a `parallel for` loop
+using CPU parallelism:
 
 ```python
-from numba import njit
+from numba.openmp import njit
 from numba.openmp import openmp_context as openmp
 
 @njit
-def calc_pi():
-    num_steps = 100000
+def calc_pi(num_steps):
     step = 1.0 / num_steps
-
-    the_sum = 0.0
-    with openmp("parallel for reduction(+:the_sum) schedule(static)"):
+    red_sum = 0.0
+    with openmp("parallel for reduction(+:red_sum) schedule(static)"):
         for j in range(num_steps):
             x = ((j-1) - 0.5) * step
-            the_sum += 4.0 / (1.0 + x * x)
+            red_sum += 4.0 / (1.0 + x * x)
 
-    pi = step * the_sum
+    pi = step * red_sum
     return pi
 
-print("pi =", calc_pi())
+print("pi =", calc_pi(1000000))
 ```
+
+and this is the same example using GPU offloading:
+
+```python
+from numba.openmp import njit
+from numba.openmp import openmp_context as openmp
+from numba.openmp import omp_get_thread_num
+
+@njit
+def calc_pi(num_steps):
+    step = 1.0/num_steps
+    red_sum = 0.0
+    with openmp("target map(tofrom: red_sum)"):
+        with openmp("loop private(x) reduction(+:red_sum)"):
+               for i in range(num_steps):
+                   tid = omp_get_thread_num()
+                   x = (i+0.5)*step
+                   red_sum += 4.0 / (1.0 + x*x) 
+
+    pi = step * red_sum
+    print("pi=", pi)
+
+print("pi =", calc_pi(1000000))
+```
+
+## Support
+
+We welcome any feedback, bug reports, or feature requests.
+Please open an [Issue](https://github.com/Python-for-HPC/PyOMP/issues) or post
+in [Discussions](https://github.com/Python-for-HPC/PyOMP/discussions).

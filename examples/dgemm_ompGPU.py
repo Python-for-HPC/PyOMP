@@ -30,7 +30,7 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-#*******************************************************************
+# *******************************************************************
 #
 # NAME:    dgemm
 #
@@ -38,12 +38,12 @@
 #          dense multiplication is carried out
 #
 # USAGE:   The program takes as input the matrix order,
-#          the number of times the matrix-matrix multiplication 
+#          the number of times the matrix-matrix multiplication
 #          is carried out.
 #
 #          <progname> <# iterations> <matrix order>
 #
-#          The output consists of diagnostics to make sure the 
+#          The output consists of diagnostics to make sure the
 #          algorithm worked, and of timing statistics.
 #
 # HISTORY: Written by Rob Van der Wijngaart, February 2009.
@@ -52,75 +52,89 @@
 # *******************************************************************
 
 import sys
-from numba import njit
+from numba.openmp import njit
 from numba.openmp import openmp_context as openmp
-from numba.openmp import omp_set_num_threads, omp_get_thread_num, omp_get_num_threads, omp_get_wtime
+from numba.openmp import (
+    omp_set_num_threads,
+    omp_get_thread_num,
+    omp_get_num_threads,
+    omp_get_wtime,
+)
 import numpy as np
-#from time import process_time as timer
+# from time import process_time as timer
 
-#@njit(enable_ssa=False, cache=True)    What does "enable_ssa" mean? 
+
+# @njit(enable_ssa=False, cache=True)    What does "enable_ssa" mean?
 @njit(fastmath=True)
-def dgemm(iters,order):
+def dgemm(iters, order):
     # ********************************************************************
     # ** Allocate space for the input and transpose matrix
     # ********************************************************************
 
-    print('inside dgemm')
-    A = np.zeros((order,order))
-    B = np.zeros((order,order))
-    C = np.zeros((order,order))
+    print("inside dgemm")
+    A = np.zeros((order, order))
+    B = np.zeros((order, order))
+    C = np.zeros((order, order))
 
-# It can be very important to initialize data with the same threads
-# as you will use when computing.
+    # It can be very important to initialize data with the same threads
+    # as you will use when computing.
     with openmp("parallel for schedule(static)"):
-       for i in range(order):
-           A[:,i] = float(i)
-           B[:,i] = float(i)
+        for i in range(order):
+            A[:, i] = float(i)
+            B[:, i] = float(i)
 
-#    print(omp_get_num_threads())
-    for kiter in range(0,iters+1):
-         if kiter==1: 
-             t0 = omp_get_wtime()
-             tSum=0.0
-             tsqSum=0.0
-         with openmp("target teams distribute parallel for private(j,k)"):
-               for i in range(order):
-                   for k in range(order):
-                       for j in range(order):
-                           C[i][j] += A[i][k] * B[k][j]
-         if kiter>0:
-             tkiter = omp_get_wtime()
-             t = tkiter - t0
-             tSum = tSum + t
-             tsqSum = tsqSum+t*t
-             t0 = tkiter
+    #    print(omp_get_num_threads())
+    for kiter in range(0, iters + 1):
+        if kiter == 1:
+            t0 = omp_get_wtime()
+            tSum = 0.0
+            tsqSum = 0.0
+        with openmp("target teams distribute parallel for private(j,k)"):
+            for i in range(order):
+                for k in range(order):
+                    for j in range(order):
+                        C[i][j] += A[i][k] * B[k][j]
+        if kiter > 0:
+            tkiter = omp_get_wtime()
+            t = tkiter - t0
+            tSum = tSum + t
+            tsqSum = tsqSum + t * t
+            t0 = tkiter
 
-    dgemmAve    = tSum/iters
-    dgemmStdDev = ((tsqSum-iters*dgemmAve*dgemmAve)/(iters-1))**0.5 
-    print('finished with computations')
+    dgemmAve = tSum / iters
+    dgemmStdDev = ((tsqSum - iters * dgemmAve * dgemmAve) / (iters - 1)) ** 0.5
+    print("finished with computations")
 
     # ********************************************************************
     # ** Analyze and output results.
     # ********************************************************************
 
-    checksum = 0.0;
+    checksum = 0.0
     for i in range(order):
         for j in range(order):
-            checksum += C[i][j];
+            checksum += C[i][j]
 
-    ref_checksum = order*order*order
-    ref_checksum *= 0.25*(order-1.0)*(order-1.0)
-    ref_checksum *= (iters+1)
-    epsilon=1.e-8
-    if abs((checksum - ref_checksum)/ref_checksum) < epsilon:
-        print('Solution validates')
-        nflops = 2.0*order*order*order
-        recipDiff = (1.0/(dgemmAve-dgemmStdDev) - 1.0/(dgemmAve+dgemmStdDev))
-        GfStdDev = 1.e-6*nflops*recipDiff/2.0
-        print('nflops: ',nflops)
-        print('Rate: ',1.e-6*nflops/dgemmAve,' +/- (MF/s): ',GfStdDev)
+    ref_checksum = order * order * order
+    ref_checksum *= 0.25 * (order - 1.0) * (order - 1.0)
+    ref_checksum *= iters + 1
+    epsilon = 1.0e-8
+    if abs((checksum - ref_checksum) / ref_checksum) < epsilon:
+        print("Solution validates")
+        nflops = 2.0 * order * order * order
+        recipDiff = 1.0 / (dgemmAve - dgemmStdDev) - 1.0 / (dgemmAve + dgemmStdDev)
+        GfStdDev = 1.0e-6 * nflops * recipDiff / 2.0
+        print("nflops: ", nflops)
+        print("Rate: ", 1.0e-6 * nflops / dgemmAve, " +/- (MF/s): ", GfStdDev)
     else:
-        print('ERROR: Checksum = ', checksum,', Reference checksum = ', ref_checksum,'\n')
+        print(
+            "ERROR: Checksum = ",
+            checksum,
+            ", Reference checksum = ",
+            ref_checksum,
+            "\n",
+        )
+
+
 #        sys.exit("ERROR: solution did not validate")
 
 
@@ -128,23 +142,22 @@ def dgemm(iters,order):
 # read and test input parameters
 # ********************************************************************
 
-print('Parallel Research Kernels version ') #, PRKVERSION
-print('Python Dense matrix-matrix multiplication: C = A x B')
+print("Parallel Research Kernels version ")  # , PRKVERSION
+print("Python Dense matrix-matrix multiplication: C = A x B")
 
 if len(sys.argv) != 3:
-   print('argument count = ', len(sys.argv))
-   sys.exit("Usage: ./dgemm <# iterations> <matrix order>")
+    print("argument count = ", len(sys.argv))
+    sys.exit("Usage: ./dgemm <# iterations> <matrix order>")
 
 itersIn = int(sys.argv[1])
 if itersIn < 1:
-   sys.exit("ERROR: iterations must be >= 1")
+    sys.exit("ERROR: iterations must be >= 1")
 
 orderIn = int(sys.argv[2])
 if orderIn < 1:
     sys.exit("ERROR: order must be >= 1")
 
-print('Number of iterations = ', itersIn)
-print('Matrix order         = ', orderIn)
+print("Number of iterations = ", itersIn)
+print("Matrix order         = ", orderIn)
 
 dgemm(itersIn, orderIn)
-

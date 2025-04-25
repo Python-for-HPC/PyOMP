@@ -6,8 +6,6 @@ export NUMBA_DEVELOPER_MODE=1
 export NUMBA_DISABLE_ERROR_MESSAGE_HIGHLIGHTING=1
 export NUMBA_CAPTURED_ERRORS="new_style"
 export PYTHONFAULTHANDLER=1
-# Required OpenMP test env var (for offloading).
-export TEST_DEVICES=0
 
 # Disable NumPy dispatching to AVX512_SKX feature extensions if the chip is
 # reported to support the feature and NumPy >= 1.22 as this results in the use
@@ -23,7 +21,6 @@ if [[ "$NUMPY_DETECTS_AVX512_SKX_NP_GT_122" == "True" ]]; then
     export NPY_DISABLE_CPU_FEATURES="AVX512_SKX"
 fi
 
-
 unamestr=`uname`
 if [[ "$unamestr" == 'Linux' ]]; then
   # Test if catchsegv exists, not by default in recent libc.
@@ -38,37 +35,6 @@ else
   echo Error
 fi
 
-# limit CPUs in use on PPC64LE, fork() issues
-# occur on high core count systems
-archstr=`uname -m`
-if [[ "$archstr" == 'ppc64le' ]]; then
-    TEST_NPROCS=16
-fi
-
-# Check Numba executable is there
-numba -h
-
-# run system info tool
-numba -s
-
-# Check test discovery works
-python -m numba.tests.test_runtests
-
-# Disable tests for package building.
-exit 0
-
-if nvidia-smi --list-gpus; then
-  echo "Found NVIDIA GPU, enable OpenMP offloading tests"
-  export RUN_TARGET=1
-else
-  echo "Missing NVIDIA GPU, disable OpenMP offloading tests"
-  export RUN_TARGET=0
-fi
-
-# Run the whole test suite
-# Test only openmp for brevity. We may want to enable the full numba tests,
-# which include openmp, on larger runners.
-TESTS_TO_RUN="numba.tests.test_openmp"
 # Run OpenMP tests in a single-process since they use multiple cores by
 # multi-threading. Using multiple processes for testing will very probably slow
 # things down.
@@ -80,5 +46,16 @@ TESTS_TO_RUN="numba.tests.test_openmp"
 # time, 3) there may be implications with "-m 1" vs. no flag on how the runtime
 # library is inited/de-inited.
 
-echo "Running: $SEGVCATCH python -m numba.runtests -v -- $TESTS_TO_RUN"
-$SEGVCATCH python -m numba.runtests -v -- $TESTS_TO_RUN
+echo "=> Run OpenMP CPU parallelism tests"
+echo "=> Running: TEST_DEVICES=0 RUN_TARGET=0 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp"
+# TODO: remove requiring the unused TEST_DEVICES.
+TEST_DEVICES=0 RUN_TARGET=0 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp 2>&1
+
+echo "=> Run OpenMP offloading tests on CPU (device 1)"
+echo "=> Running: TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
+TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
+if nvidia-smi --list-gpus; then
+  echo "=> Found NVIDIA GPU, Run OpenMP offloading tests on GPU (device 0)"
+  echo "=> Running: TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
+  TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
+fi

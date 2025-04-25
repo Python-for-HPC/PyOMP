@@ -15,7 +15,7 @@ Diving right in, this is a minimal, parallel `hello world` example:
 .. code-block:: python
    :linenos:
 
-   from numba import njit
+   from numba.openmp import njit
    from numba.openmp import openmp_context as openmp
    from numba.openmp import omp_get_thread_num
 
@@ -69,7 +69,7 @@ thread-blocks on the GPU device:
 .. code-block:: python
    :linenos:
 
-   from numba import njit
+   from numba.openmp import njit
    from numba.openmp import openmp_context as openmp
    from numba.openmp import omp_get_thread_num
    import numpy as np

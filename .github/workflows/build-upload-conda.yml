@@ -10,7 +10,6 @@ jobs:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:
       label: main
-      commit: ${{ github.sha }}
       env: .github/workflows/envs/env.yml
     secrets: inherit
   deploy-containers:
