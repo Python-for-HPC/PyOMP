@@ -6,9 +6,6 @@ on:
       label:
         required: true
         type: string
-      commit:
-        required: true
-        type: string
       env:
         required: true
         type: string

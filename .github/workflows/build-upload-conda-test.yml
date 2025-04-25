@@ -2,6 +2,11 @@ name: Deploy conda pkgs (test)
 
 on:
   pull_request:
+    paths:
+      - "buildscripts/conda-recipes/**"
+      - ".github/workflows/build-upload-conda-test.yml"
+      - ".github/workflows/build-upload-conda-base.yml"
+      - "numba/**"
   workflow_dispatch:
 
 jobs:
@@ -9,6 +14,5 @@ jobs:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:
       label: test
-      commit: ${{ github.event.pull_request.head.sha }}
       env: .github/workflows/envs/env-test.yml
     secrets: inherit
