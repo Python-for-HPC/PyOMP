@@ -1,5 +1,6 @@
-from numba import njit
+from numba.openmp import njit
 from numba.openmp import openmp_context as openmp
+
 
 @njit
 def calc_pi():
@@ -10,10 +11,11 @@ def calc_pi():
     with openmp("parallel for reduction(+:the_sum) schedule(static)"):
         for j in range(num_steps):
             c = step
-            x = ((j-1) - 0.5) * step
+            x = ((j - 1) - 0.5) * step
             the_sum += 4.0 / (1.0 + x * x)
 
     pi = step * the_sum
     return pi
+
 
 print("pi =", calc_pi())
