@@ -1,4 +1,5 @@
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRBuilder.h"
@@ -10,7 +11,6 @@
 #include "llvm/Transforms/Utils/CodeExtractor.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include "llvm/IR/CFG.h"
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <stdexcept>
@@ -45,7 +45,7 @@ static CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
   if (!Fn.getFunctionType()->isVarArg())
     if (Args.size() != Fn.getFunctionType()->getNumParams()) {
       DEBUG_ENABLE(dbgs() << "Mismatch argument size " << Args.size() << " != "
-                        << Fn.getFunctionType()->getNumParams() << "\n");
+                          << Fn.getFunctionType()->getNumParams() << "\n");
       return nullptr;
     }
 
@@ -54,9 +54,9 @@ static CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
   for (size_t I = 0; I < Fn.getFunctionType()->getNumParams(); ++I)
     if (Args[I]->getType() != Fn.getFunctionType()->getParamType(I)) {
       DEBUG_ENABLE(dbgs() << "Mismatch type at " << I << "\n";
-                 dbgs() << "Arg " << *Args[I] << "\n";
-                 dbgs() << "Expected type "
-                        << *Fn.getFunctionType()->getParamType(I) << "\n";);
+                   dbgs() << "Arg " << *Args[I] << "\n";
+                   dbgs() << "Expected type "
+                          << *Fn.getFunctionType()->getParamType(I) << "\n";);
       return nullptr;
     }
 
@@ -124,16 +124,16 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
   assert(SinkingCands.empty() && "Expected empty alloca sinking candidates");
 
   auto IsTempOrDefaultPrivate = [](Value *V) {
-    if(V->getName().startswith("."))
+    if (V->getName().startswith("."))
       return true;
 
-    if(V->getName().startswith("excinfo"))
+    if (V->getName().startswith("excinfo"))
       return true;
 
-    if(V->getName() == "quot")
+    if (V->getName() == "quot")
       return true;
 
-    if(V->getName() == "rem")
+    if (V->getName() == "rem")
       return true;
 
     return false;
@@ -146,9 +146,10 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
       DEBUG_ENABLE(dbgs() << "Missing V " << *V
                           << " from DSAValueMap, will privatize\n");
       if (!IsTempOrDefaultPrivate(V))
-        FATAL_ERROR("Expected Numba temporary value or default private, named starting "
-                    "with . but got " +
-                    V->getName().str());
+        FATAL_ERROR(
+            "Expected Numba temporary value or default private, named starting "
+            "with . but got " +
+            V->getName().str());
       Privates.push_back(V);
       continue;
     }
@@ -156,7 +157,7 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
     DSAType DSA = DSAValueMap[V].Type;
 
     DEBUG_ENABLE(dbgs() << "V " << *V << " from DSAValueMap Type " << DSA
-                      << "\n");
+                        << "\n");
     switch (DSA) {
     case DSA_PRIVATE:
       Privates.push_back(V);
@@ -365,8 +366,7 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
       (*VMap)[V] = AI;
 
     InsertPointTy AllocaIP(OutlinedEntryBB,
-                            OutlinedEntryBB->getFirstInsertionPt());
-
+                           OutlinedEntryBB->getFirstInsertionPt());
 
     Value *Priv = nullptr;
     switch (DSAValueMap[V].Type) {
@@ -410,7 +410,7 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
     BB->moveBefore(OutlinedExitBB);
 
   DEBUG_ENABLE(dbgs() << "=== Dump OutlinedFn\n"
-                    << *OutlinedFn << "=== End of Dump OutlinedFn\n");
+                      << *OutlinedFn << "=== End of Dump OutlinedFn\n");
 
   if (verifyFunction(*OutlinedFn, &errs()))
     FATAL_ERROR("Verification of OutlinedFn failed!");
@@ -593,7 +593,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelHostRuntime(
   }
 
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
-                    << *Fn << "=== End of Dump OuterFn\n");
+                      << *Fn << "=== End of Dump OuterFn\n");
 
   if (verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
@@ -851,8 +851,8 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
     FATAL_ERROR("Verification of OutlinedWrapperFn failed!");
 
   DEBUG_ENABLE(dbgs() << "=== Dump OutlinedWrapper\n"
-                    << *OutlinedWrapperFn
-                    << "=== End of Dump OutlinedWrapper\n");
+                      << *OutlinedWrapperFn
+                      << "=== End of Dump OutlinedWrapper\n");
 
   // Setup the call to kmpc_parallel_51
   BBEntry->getTerminator()->eraseFromParent();
@@ -886,7 +886,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
   SmallVector<Value *> GlobalAllocas;
   for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx) {
     DEBUG_ENABLE(dbgs() << "CapturedVar " << Idx << " " << *CapturedVars[Idx]
-                      << "\n");
+                        << "\n");
     Value *GEP = OMPBuilder.Builder.CreateConstInBoundsGEP2_64(
         CapturedVarsAddrsTy, CapturedVarsAddrs, 0, Idx);
 
@@ -1003,7 +1003,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
   OMPBuilder.Builder.CreateBr(AfterBB);
 
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
-                    << *Fn << "=== End of Dump OuterFn\n");
+                      << *Fn << "=== End of Dump OuterFn\n");
 
   if (verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
@@ -1484,14 +1484,14 @@ void CGIntrinsicsOpenMP::emitOMPFor(DSAValueMapTy &DSAValueMap,
                                     BasicBlock *StartBB, BasicBlock *ExitBB,
                                     bool IsStandalone,
                                     bool IsDistributeParallelFor) {
-    // Set default loop schedule.
-    if (static_cast<int>(OMPLoopInfo.Sched) == 0)
-        OMPLoopInfo.Sched =
-            (isOpenMPDeviceRuntime() ? OMPScheduleType::StaticChunked
-                                     : OMPScheduleType::Static);
+  // Set default loop schedule.
+  if (static_cast<int>(OMPLoopInfo.Sched) == 0)
+    OMPLoopInfo.Sched =
+        (isOpenMPDeviceRuntime() ? OMPScheduleType::StaticChunked
+                                 : OMPScheduleType::Static);
 
-    emitLoop(DSAValueMap, OMPLoopInfo, StartBB, ExitBB, IsStandalone, false,
-             IsDistributeParallelFor);
+  emitLoop(DSAValueMap, OMPLoopInfo, StartBB, ExitBB, IsStandalone, false,
+           IsDistributeParallelFor);
 }
 
 void CGIntrinsicsOpenMP::emitOMPTask(DSAValueMapTy &DSAValueMap, Function *Fn,
@@ -1839,8 +1839,8 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     OffloadMapNames.push_back(OMPBuilder.getOrCreateSrcLocStr(
         BasePtr->getName(), "", 0, 0, SrcLocStrSize));
     DEBUG_ENABLE(dbgs() << "Emit mapping entry BasePtr " << *BasePtr << " Ptr "
-                      << *Ptr << " Size " << *Size << " MapType " << MapType
-                      << "\n");
+                        << *Ptr << " Size " << *Size << " MapType " << MapType
+                        << "\n");
     MapperInfos.push_back({BasePtr, Ptr, Size});
   };
 
@@ -1925,10 +1925,9 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
       // struct.
       AllocaInst *TmpInt64 = OMPBuilder.Builder.CreateAlloca(
           OMPBuilder.Int64, nullptr, V->getName() + ".casted");
-      Value *Cast = OMPBuilder.Builder.CreateBitCast(
-          TmpInt64, V->getType());
+      Value *Cast = OMPBuilder.Builder.CreateBitCast(TmpInt64, V->getType());
       auto *Store = OMPBuilder.Builder.CreateStore(Load, Cast);
-      Value *ScalarV=
+      Value *ScalarV =
           OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, TmpInt64);
       Size = ConstantInt::get(OMPBuilder.SizeTy,
                               M.getDataLayout().getTypeAllocSize(
@@ -2124,7 +2123,7 @@ void CGIntrinsicsOpenMP::emitOMPCritical(Function *Fn, BasicBlock *BBEntry,
                                                     /*HintInst*/ nullptr);
   BranchInst::Create(AfterBB, AfterIP.getBlock());
   DEBUG_ENABLE(dbgs() << "=== Critical Fn\n"
-                    << *Fn << "=== End of Critical Fn\n");
+                      << *Fn << "=== End of Critical Fn\n");
 }
 
 void CGIntrinsicsOpenMP::emitOMPBarrier(Function *Fn, BasicBlock *BBEntry,
@@ -2138,7 +2137,8 @@ void CGIntrinsicsOpenMP::emitOMPBarrier(Function *Fn, BasicBlock *BBEntry,
   OMPBuilder.createBarrier(Loc, DK,
                            /*ForceSimpleCall*/ false,
                            /*CheckCancelFlag*/ true);
-  DEBUG_ENABLE(dbgs() << "=== Barrier Fn\n" << *Fn << "=== End of Barrier Fn\n");
+  DEBUG_ENABLE(dbgs() << "=== Barrier Fn\n"
+                      << *Fn << "=== End of Barrier Fn\n");
 }
 
 void CGIntrinsicsOpenMP::emitOMPTaskwait(BasicBlock *BBEntry) {
@@ -2489,9 +2489,8 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
   for (auto &Arg : NumbaWrapperFunc->args()) {
     // TODO: Runtime expects all scalars typed as Int64.
     if (!Arg.getType()->isPointerTy()) {
-      auto *ParamType =
-          DevFuncCallee.getFunctionType()->getParamType(ArgOffset + Arg.getArgNo());
-      dbgs() << "ParamType " << *ParamType << "\n";
+      auto *ParamType = DevFuncCallee.getFunctionType()->getParamType(
+          ArgOffset + Arg.getArgNo());
       AllocaInst *TmpInt64 = Builder.CreateAlloca(OMPBuilder.Int64, nullptr,
                                                   Arg.getName() + ".casted");
       Builder.CreateStore(&Arg, TmpInt64);
@@ -2627,7 +2626,7 @@ void CGIntrinsicsOpenMP::emitOMPTeamsDeviceRuntime(
   OMPBuilder.Builder.CreateBr(AfterBB);
 
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
-                    << *Fn << "=== End of Dump OuterFn\n");
+                      << *Fn << "=== End of Dump OuterFn\n");
 
   if (verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
@@ -2728,7 +2727,7 @@ void CGIntrinsicsOpenMP::emitOMPTeamsHostRuntime(
   OMPBuilder.Builder.CreateBr(AfterBB);
 
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
-                    << *Fn << "=== End of Dump OuterFn\n");
+                      << *Fn << "=== End of Dump OuterFn\n");
 
   if (verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
@@ -2848,11 +2847,11 @@ void CGIntrinsicsOpenMP::emitOMPDistribute(
     DSAValueMapTy &DSAValueMap, OMPLoopInfoStruct &OMPLoopInfo,
     BasicBlock *StartBB, BasicBlock *ExitBB, bool IsStandalone,
     bool IsDistributeParallelFor, OMPDistributeInfoStruct *DistributeInfo) {
-    if (static_cast<int>(OMPLoopInfo.Sched) == 0)
-        OMPLoopInfo.Sched = OMPScheduleType::Distribute;
+  if (static_cast<int>(OMPLoopInfo.Sched) == 0)
+    OMPLoopInfo.Sched = OMPScheduleType::Distribute;
 
-    emitLoop(DSAValueMap, OMPLoopInfo, StartBB, ExitBB, IsStandalone, true,
-             IsDistributeParallelFor, DistributeInfo);
+  emitLoop(DSAValueMap, OMPLoopInfo, StartBB, ExitBB, IsStandalone, true,
+           IsDistributeParallelFor, DistributeInfo);
 }
 
 void CGIntrinsicsOpenMP::emitOMPDistributeParallelFor(
@@ -2966,17 +2965,16 @@ void CGIntrinsicsOpenMP::emitOMPTargetTeamsDistributeParallelFor(
     ParRegionInfoStruct &ParRegionInfo, TargetInfoStruct &TargetInfo,
     StructMapTy &StructMappingInfoMap, bool IsDeviceTargetRegion) {
 
-    emitOMPDistributeParallelFor(DSAValueMap, StartBB, ExitBB, OMPLoopInfo,
-                                 ParRegionInfo,
-                                 /* isStandalone */ false);
+  emitOMPDistributeParallelFor(DSAValueMap, StartBB, ExitBB, OMPLoopInfo,
+                               ParRegionInfo,
+                               /* isStandalone */ false);
 
-    emitOMPTargetTeams(DSAValueMap, nullptr, DL, Fn, EntryBB,
-                       StartBB, EndBB, AfterBB,
-                       TargetInfo, &OMPLoopInfo, StructMappingInfoMap,
-                       IsDeviceTargetRegion);
+  emitOMPTargetTeams(DSAValueMap, nullptr, DL, Fn, EntryBB, StartBB, EndBB,
+                     AfterBB, TargetInfo, &OMPLoopInfo, StructMappingInfoMap,
+                     IsDeviceTargetRegion);
 
-    // Alternative codegen, starting from top-down and renaming values using the
-    // ValueToValueMap.
+  // Alternative codegen, starting from top-down and renaming values using the
+  // ValueToValueMap.
 #if 0
   ValueToValueMapTy VMap;
   // Lower target_teams.
@@ -3058,45 +3056,45 @@ bool CGIntrinsicsOpenMP::isOpenMPDeviceRuntime() {
 template <>
 Value *CGReduction::emitOperation<DSA_REDUCTION_ADD>(IRBuilderBase &IRB,
                                                      Value *LHS, Value *RHS) {
-    Type *VTy = RHS->getType();
-    if (VTy->isIntegerTy())
-        return IRB.CreateAdd(LHS, RHS, "red.add");
-    else if (VTy->isFloatTy() || VTy->isDoubleTy())
-        return IRB.CreateFAdd(LHS, RHS, "red.add");
-    else
-        FATAL_ERROR("Unsupported type for reduction operation");
+  Type *VTy = RHS->getType();
+  if (VTy->isIntegerTy())
+    return IRB.CreateAdd(LHS, RHS, "red.add");
+  else if (VTy->isFloatTy() || VTy->isDoubleTy())
+    return IRB.CreateFAdd(LHS, RHS, "red.add");
+  else
+    FATAL_ERROR("Unsupported type for reduction operation");
 }
 
 // OpenMP 5.1, 2.21.5, sub is the same as add.
 template <>
 Value *CGReduction::emitOperation<DSA_REDUCTION_SUB>(IRBuilderBase &IRB,
                                                      Value *LHS, Value *RHS) {
-    return emitOperation<DSA_REDUCTION_ADD>(IRB, LHS, RHS);
+  return emitOperation<DSA_REDUCTION_ADD>(IRB, LHS, RHS);
 }
 
 template <>
 Value *CGReduction::emitOperation<DSA_REDUCTION_MUL>(IRBuilderBase &IRB,
                                                      Value *LHS, Value *RHS) {
-    Type *VTy = RHS->getType();
-    if (VTy->isIntegerTy())
-        return IRB.CreateMul(LHS, RHS, "red.mul");
-    else if (VTy->isFloatTy() || VTy->isDoubleTy())
-        return IRB.CreateFMul(LHS, RHS, "red.mul");
-    else
-        FATAL_ERROR("Unsupported type for reduction operation");
+  Type *VTy = RHS->getType();
+  if (VTy->isIntegerTy())
+    return IRB.CreateMul(LHS, RHS, "red.mul");
+  else if (VTy->isFloatTy() || VTy->isDoubleTy())
+    return IRB.CreateFMul(LHS, RHS, "red.mul");
+  else
+    FATAL_ERROR("Unsupported type for reduction operation");
 }
 
 template <>
 InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_ADD>(
     IRBuilderBase &IRB, Value *LHS, Value *Partial) {
-    IRB.CreateAtomicRMW(AtomicRMWInst::Add, LHS, Partial, None,
-                        AtomicOrdering::Monotonic);
-    return IRB.saveIP();
+  IRB.CreateAtomicRMW(AtomicRMWInst::Add, LHS, Partial, None,
+                      AtomicOrdering::Monotonic);
+  return IRB.saveIP();
 }
 
 // OpenMP 5.1, 2.21.5, sub is the same as add.
 template <>
 InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_SUB>(
     IRBuilderBase &IRB, Value *LHS, Value *Partial) {
-    return emitAtomicOperationRMW<DSA_REDUCTION_ADD>(IRB, LHS, Partial);
+  return emitAtomicOperationRMW<DSA_REDUCTION_ADD>(IRB, LHS, Partial);
 }

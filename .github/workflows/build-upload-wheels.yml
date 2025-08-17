@@ -1,0 +1,150 @@
+name: pypi
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - "buildscripts/cibuildwheel/**"
+      - ".github/workflows/build-upload-wheels.yml"
+      - "src/**"
+      - setup.py
+      - MANIFEST.in
+      - pyproject.toml
+  workflow_dispatch:
+
+jobs:
+  # Always runs: Build wheels for all platforms and upload artifacts.
+  build-wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # TODO: Add windows.
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+        # Checkout the repo with history to get the commit hash for the build
+        # string.
+        with:
+          fetch-depth: 0
+
+       # Used to host cibuildwheel.
+      - uses: actions/setup-python@v5
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==3.1.4
+
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz
+
+  # Always runs: Test wheels across OS/Python/Numba matrix.
+  test-wheels:
+    needs: build-wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        numba-version: ['0.57.0', '0.57.1', '0.58.0', '0.58.1', '0.59.0', '0.59.1', '0.60.0']
+        exclude:
+        # Known incompatibilities based on numba's official support
+        # Numba 0.57 supports Python 3.8-3.11
+        - python-version: '3.12'
+          numba-version: '0.57.0'
+        - python-version: '3.12'
+          numba-version: '0.57.1'
+
+        # Numba 0.58 supports Python 3.8-3.11
+        - python-version: '3.12'
+          numba-version: '0.58.0'
+        - python-version: '3.12'
+          numba-version: '0.58.1'
+    steps:
+      - name: Download built wheels
+        uses: actions/download-artifact@v5
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install and test wheel
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numba==${{ matrix.numba-version }}" lark cffi setuptools
+          python -m pip install --pre --no-deps --no-index --find-links dist/ pyomp
+
+          # Verify the numba version.
+          python -c "import numba; assert numba.__version__ == '${{ matrix.numba-version }}'"
+
+          # Run host OpenMP tests.
+          TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
+
+          # Run device (cpu target) OpenMP tests.
+          OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 \
+            python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget
+
+  # Only on pre-release: Publish to TestPyPI for testing.
+  publish-testpypi:
+    needs: [build-wheels, test-wheels, build-sdist]
+    if: github.event.release.prerelease
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish testpypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+
+  # Only on full release: Publish to production PyPI.
+  publish-pypi:
+    needs: [build-wheels, test-wheels, build-sdist]
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
