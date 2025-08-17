@@ -98,6 +98,7 @@ import subprocess
 import tempfile
 import types as python_types
 import numba
+import ctypes
 from pathlib import Path
 
 llvm_binpath = None
@@ -201,31 +202,35 @@ def run_intrinsics_openmp_pass(ll_module):
         libpath / f"libIntrinsicsOpenMP.{'dylib' if sys.platform == 'darwin' else 'so'}"
     )
 
-    try:
-        r = subprocess.run(
-            [
-                llvm_binpath + "/opt",
-                "-f",
-                f"-load-pass-plugin={libpass}",
-                "-passes=intrinsics-openmp",
-            ],
-            input=ll_module.as_bitcode(),
-            check=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print("Error running LLVM pass:", e, file=sys.stderr)
-        print("Command:", e.cmd, file=sys.stderr)
-        print("Return code:", e.returncode, file=sys.stderr)
-        print("Output:", e.output.decode(), file=sys.stderr)
-        print("Error output:", e.stderr.decode(), file=sys.stderr)
-        raise
+    # Roundtrip the LLVM module through the intrinsics OpenMP pass.
+    WRITE_CB = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_size_t)
 
+    out = bytearray()
+
+    def _writer_cb(ptr, size):
+        out.extend(ctypes.string_at(ptr, size))
+
+    writer_cb = WRITE_CB(_writer_cb)
+
+    lib = ctypes.CDLL(str(libpass))
+    lib.runIntrinsicsOpenMPPass.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        WRITE_CB,
+    ]
+    lib.runIntrinsicsOpenMPPass.restype = ctypes.c_int
+
+    bc = ll_module.as_bitcode()
+    buf = ctypes.create_string_buffer(bc)
+    ptr = ctypes.cast(buf, ctypes.c_void_p)
+    rc = lib.runIntrinsicsOpenMPPass(ptr, len(bc), writer_cb)
+    if rc != 0:
+        raise RuntimeError(f"Running IntrinsicsOpenMPPass failed with return code {rc}")
+
+    bc_out = bytes(out)
+    lowered_module = ll.parse_bitcode(bc_out)
     if DEBUG_OPENMP_LLVM_PASS >= 1:
-        print(r.stderr.decode(), file=sys.stderr)
-
-    bitcode_output = r.stdout
-    lowered_module = ll.parse_bitcode(bitcode_output)
+        print(lowered_module)
 
     return lowered_module
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 import numba
 import sysconfig
 import subprocess
@@ -86,6 +87,10 @@ class BuildIntrinsicsOpenMPPass(build_ext):
         # CMakeCache.txt leftovers.
         shutil.rmtree(self.build_temp, ignore_errors=True)
 
+        lib_dir = Path(
+            self.get_finalized_command("build_py").get_package_dir("numba.openmp.libs")
+        )
+
         subprocess.run(
             [
                 "cmake",
@@ -94,7 +99,7 @@ class BuildIntrinsicsOpenMPPass(build_ext):
                 "-B",
                 self.build_temp,
                 "-DCMAKE_BUILD_TYPE=Release",
-                f"-DCMAKE_INSTALL_PREFIX={self.build_lib}/numba/openmp/libs",
+                f"-DCMAKE_INSTALL_PREFIX={lib_dir}",
             ],
             check=True,
         )
