@@ -3,11 +3,10 @@ project(pyomp-pass)
 
 find_package(LLVM REQUIRED CONFIG)
 
-if("${LLVM_VERSION_MAJOR}" VERSION_LESS 14)
-  message(FATAL_ERROR "Found LLVM ${LLVM_VERSION_MAJOR}, but need LLVM 14 or above")
+if(NOT LLVM_VERSION_MAJOR EQUAL 14)
+  message(FATAL_ERROR "Found LLVM ${LLVM_VERSION_MAJOR}, but need LLVM 14.x")
 endif()
 
-# HelloWorld includes headers from LLVM - update the include paths accordingly
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 
 # Use the same C++ standard as LLVM does
@@ -24,9 +23,7 @@ add_library(IntrinsicsOpenMP SHARED
   IntrinsicsOpenMP.cpp)
 
 target_link_libraries(IntrinsicsOpenMP
-
-  # PRIVATE ${LLVM_AVAILABLE_LIBS}
-  PRIVATE LLVM
+  PRIVATE ${LLVM_AVAILABLE_LIBS}
   "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
 
 set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto -Wl,--exclude-libs,ALL")
