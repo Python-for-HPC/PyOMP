@@ -2,7 +2,7 @@
 
 if [ "${BUILD_STANDALONE}" = "1" ]; then
   rm -rf openmp-14.0.6.src*
-  wget https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.6/openmp-14.0.6.src.tar.xz
+  curl -L https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.6/openmp-14.0.6.src.tar.xz -o openmp-14.0.6.src.tar.xz
   EXPECTED_HASH="4f731ff202add030d9d68d4c6daabd91d3aeed9812e6a5b4968815cfdff0eb1f"
   # Compute the actual hash
   ACTUAL_HASH=$(sha256sum openmp-14.0.6.src.tar.xz | awk '{print $1}')
