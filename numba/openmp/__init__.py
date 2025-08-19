@@ -101,8 +101,6 @@ import numba
 import ctypes
 from pathlib import Path
 
-llvm_binpath = None
-llvm_libpath = None
 libpath = Path(__file__).parent / "libs"
 
 ### START OF EXTENSIONS TO AVOID SUBPROCESS TOOLS ###
@@ -526,9 +524,6 @@ class CallInstrWithOperandBundle(lir.instructions.CallInstr):
 
 
 def _init():
-    global llvm_binpath
-    global llvm_libpath
-
     sys_platform = sys.platform
 
     llvm_version = (
@@ -539,20 +534,16 @@ def _init():
             f"Incompatible LLVM version {llvm_version}, PyOMP expects LLVM 14.0.6"
         )
 
-    llvm_binpath = subprocess.check_output(["llvm-config", "--bindir"]).decode().strip()
-    llvm_libpath = subprocess.check_output(["llvm-config", "--libdir"]).decode().strip()
-    iomplib = (
-        llvm_libpath + "/libomp" + (".dylib" if sys_platform == "darwin" else ".so")
-    )
+    omplib = libpath + "/libomp" + (".dylib" if sys_platform == "darwin" else ".so")
     if DEBUG_OPENMP >= 1:
-        print("Found OpenMP runtime library at", iomplib)
-    ll.load_library_permanently(iomplib)
+        print("Found OpenMP runtime library at", omplib)
+    ll.load_library_permanently(omplib)
 
     # libomptarget is unavailable on apple, windows, so return.
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
-    omptargetlib = llvm_libpath + "/libomptarget.so"
+    omptargetlib = libpath + "/libomptarget.so"
     if DEBUG_OPENMP >= 1:
         print("Found OpenMP target runtime library at", omptargetlib)
     ll.load_library_permanently(omptargetlib)
@@ -2729,7 +2720,7 @@ class openmp_region_start(ir.Stmt):
                         with open(self.libdevice_path, "rb") as f:
                             self.libs_mod = ll.parse_bitcode(f.read())
                         self.libomptarget_arch = (
-                            llvm_libpath + "/libomptarget-new-nvptx-" + self.sm + ".bc"
+                            libpath + "/libomptarget-new-nvptx-" + self.sm + ".bc"
                         )
                         with open(self.libomptarget_arch, "rb") as f:
                             libomptarget_mod = ll.parse_bitcode(f.read())
