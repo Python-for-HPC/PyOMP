@@ -553,7 +553,7 @@ def _init():
     omptargetlib = libpath / "libomp" / "lib" / "libomptarget.so"
     if DEBUG_OPENMP >= 1:
         print("Found OpenMP target runtime library at", omptargetlib)
-    ll.load_library_permanently(omptargetlib)
+    ll.load_library_permanently(str(omptargetlib))
 
 
 _init()
