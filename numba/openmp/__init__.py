@@ -264,7 +264,9 @@ class LowerNoSROA(Lower):
 
 def run_intrinsics_openmp_pass(ll_module):
     libpass = (
-        libpath / f"libIntrinsicsOpenMP.{'dylib' if sys.platform == 'darwin' else 'so'}"
+        libpath
+        / "pass"
+        / f"libIntrinsicsOpenMP.{'dylib' if sys.platform == 'darwin' else 'so'}"
     )
 
     # Roundtrip the LLVM module through the intrinsics OpenMP pass.
@@ -534,16 +536,21 @@ def _init():
             f"Incompatible LLVM version {llvm_version}, PyOMP expects LLVM 14.0.6"
         )
 
-    omplib = libpath + "/libomp" + (".dylib" if sys_platform == "darwin" else ".so")
+    omplib = (
+        libpath
+        / "libomp"
+        / "lib"
+        / f"libomp{'.dylib' if sys_platform == 'darwin' else '.so'}"
+    )
     if DEBUG_OPENMP >= 1:
         print("Found OpenMP runtime library at", omplib)
-    ll.load_library_permanently(omplib)
+    ll.load_library_permanently(str(omplib))
 
     # libomptarget is unavailable on apple, windows, so return.
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
-    omptargetlib = libpath + "/libomptarget.so"
+    omptargetlib = libpath / "libomp" / "lib" / "libomptarget.so"
     if DEBUG_OPENMP >= 1:
         print("Found OpenMP target runtime library at", omptargetlib)
     ll.load_library_permanently(omptargetlib)
@@ -2686,7 +2693,7 @@ class openmp_region_start(ir.Stmt):
 
                 link_shared_library(
                     obj_path=filename_o,
-                    static_archive=libpath / "libnrt_static.a",
+                    static_archive=libpath / "nrt/libnrt_static.a",
                     out_path=filename_so,
                     rpaths=[
                         "$ORIGIN"
@@ -2720,7 +2727,9 @@ class openmp_region_start(ir.Stmt):
                         with open(self.libdevice_path, "rb") as f:
                             self.libs_mod = ll.parse_bitcode(f.read())
                         self.libomptarget_arch = (
-                            libpath + "/libomptarget-new-nvptx-" + self.sm + ".bc"
+                            libpath / "libomp" / "lib" / "libomptarget-new-nvptx-"
+                            + self.sm
+                            + ".bc"
                         )
                         with open(self.libomptarget_arch, "rb") as f:
                             libomptarget_mod = ll.parse_bitcode(f.read())
