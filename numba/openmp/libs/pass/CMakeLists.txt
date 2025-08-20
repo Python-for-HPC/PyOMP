@@ -25,10 +25,19 @@ add_library(IntrinsicsOpenMP SHARED
 if(LLVM_LINK_LLVM_DYLIB)
   set(llvm_libs LLVM)
 else()
-  set(llvm_libs ${LLVM_AVAILABLE_LIBS})
+  set(LLVM_COMPONENTS core)
+
+  llvm_map_components_to_libnames(llvm_libs ${LLVM_COMPONENTS})
+
+  # set(llvm_libs ${LLVM_AVAILABLE_LIBS})
 endif()
 
-# message(FATAL_ERROR "LLVM libraries: ${llvm_libs}")
+if(APPLE)
+  target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,-undefined,error")
+elseif()
+  target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,--no-undefined")
+endif()
+
 target_link_libraries(IntrinsicsOpenMP
   PRIVATE ${llvm_libs}
 )
