@@ -25,11 +25,8 @@ add_library(IntrinsicsOpenMP SHARED
 if(LLVM_LINK_LLVM_DYLIB)
   set(llvm_libs LLVM)
 else()
-  set(LLVM_COMPONENTS core)
-
+  set(LLVM_COMPONENTS core support analysis passes)
   llvm_map_components_to_libnames(llvm_libs ${LLVM_COMPONENTS})
-
-  # set(llvm_libs ${LLVM_AVAILABLE_LIBS})
 endif()
 
 if(APPLE)
