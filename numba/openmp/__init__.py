@@ -2727,9 +2727,7 @@ class openmp_region_start(ir.Stmt):
                         with open(self.libdevice_path, "rb") as f:
                             self.libs_mod = ll.parse_bitcode(f.read())
                         self.libomptarget_arch = (
-                            libpath / "libomp" / "lib" / "libomptarget-new-nvptx-"
-                            + self.sm
-                            + ".bc"
+                            libpath / "libomp" / "lib" / f"libomptarget-new-nvptx-{self.sm}.bc"
                         )
                         with open(self.libomptarget_arch, "rb") as f:
                             libomptarget_mod = ll.parse_bitcode(f.read())
