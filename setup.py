@@ -180,13 +180,13 @@ class BuildCMakeExt(build_ext):
 
     def _env_toolchain_args(self) -> list[str]:
         args = []
-        # macOS archs/deployment target (cibuildwheel exposes these)
+        # Set macOS deployment target and architectures if provided.
         if archs := os.environ.get("ARCHS"):
             args += [f"-DCMAKE_OSX_ARCHITECTURES={archs}"]
         if minver := os.environ.get("MACOSX_DEPLOYMENT_TARGET"):
             args += [f"-DCMAKE_OSX_DEPLOYMENT_TARGET={minver}"]
 
-        # Generic toolchain env
+        # Forward compiler tool environment variables.
         for var, cm in [
             ("CC", "-DCMAKE_C_COMPILER="),
             ("CXX", "-DCMAKE_CXX_COMPILER="),
@@ -197,13 +197,19 @@ class BuildCMakeExt(build_ext):
             if os.environ.get(var):
                 args.append(cm + os.environ[var])
 
-        # Flags
+        # Forward compilation and linking flags.
         if os.environ.get("CFLAGS"):
             args.append(f"-DCMAKE_C_FLAGS={os.environ['CFLAGS']}")
         if os.environ.get("CXXFLAGS"):
             args.append(f"-DCMAKE_CXX_FLAGS={os.environ['CXXFLAGS']}")
         if os.environ.get("LDFLAGS"):
             args.append(f"-DCMAKE_EXE_LINKER_FLAGS={os.environ['LDFLAGS']}")
+
+        # Set LLVM_DIR and CLANG_TOOL if provided.
+        if os.environ.get("LLVM_DIR"):
+            args.append(f"-DLLVM_DIR={os.environ['LLVM_DIR']}")
+        if os.environ.get("CLANG_TOOL"):
+            args.append(f"-DCLANG_TOOL={os.environ['CLANG_TOOL']}")
         return args
 
 
