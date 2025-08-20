@@ -139,7 +139,7 @@ class BuildCMakeExt(build_ext):
             self.get_finalized_command("build_py").get_package_dir("numba.openmp.libs")
         )
 
-        extra_cmake_args = self._env_toolchain_args()
+        extra_cmake_args = self._env_toolchain_args(ext)
         # Set RPATH.
         if sys.platform.startswith("linux"):
             extra_cmake_args.append(r"-DCMAKE_INSTALL_RPATH=$ORIGIN")
@@ -178,7 +178,7 @@ class BuildCMakeExt(build_ext):
             if file.is_symlink():
                 file.unlink()
 
-    def _env_toolchain_args(self) -> list[str]:
+    def _env_toolchain_args(self, ext) -> list[str]:
         args = []
         # Set macOS deployment target and architectures if provided.
         if archs := os.environ.get("ARCHS"):
@@ -208,8 +208,11 @@ class BuildCMakeExt(build_ext):
         # Set LLVM_DIR and CLANG_TOOL if provided.
         if os.environ.get("LLVM_DIR"):
             args.append(f"-DLLVM_DIR={os.environ['LLVM_DIR']}")
-        if os.environ.get("CLANG_TOOL"):
-            args.append(f"-DCLANG_TOOL={os.environ['CLANG_TOOL']}")
+        if ext.name == "libomp":
+            # CLANG_TOOL is used by libomp to find clang for generating the OpenMP
+            # device runtime bitcodes.
+            if os.environ.get("CLANG_TOOL"):
+                args.append(f"-DCLANG_TOOL={os.environ['CLANG_TOOL']}")
         return args
 
 
