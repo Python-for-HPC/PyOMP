@@ -31,6 +31,16 @@ nrt_static = (
 
 
 class BuildStaticNRT(build_clib):
+    def run(self):
+        super().run()
+        # Find the built static library
+        libname = "libnrt_static.a"
+        build_lib_path = Path(self.build_clib) / libname
+        # Destination: your package directory
+        dest = Path("numba/openmp/libs/nrt") / libname
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(build_lib_path, dest)
+
     def finalize_options(self):
         super().finalize_options()
         # Copy numba tree installation to the temp directory for building the
