@@ -123,9 +123,9 @@ def link_shared_library(
     Produce a shared library from a single object file (+ one static archive).
     Uses distutils' compiler to remain platform-agnostic.
     """
-    obj_path = str(pathlib.Path(obj_path))
-    static_archive = str(pathlib.Path(static_archive))
-    out_path = str(pathlib.Path(out_path))
+    obj_path = str(Path(obj_path))
+    static_archive = str(Path(static_archive))
+    out_path = str(Path(out_path))
 
     cc = ccompiler.new_compiler()
     sysconfig.customize_compiler(cc)
