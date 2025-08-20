@@ -22,11 +22,22 @@ add_library(IntrinsicsOpenMP SHARED
   DebugOpenMP.cpp
   IntrinsicsOpenMP.cpp)
 
-target_link_libraries(IntrinsicsOpenMP
-  PRIVATE ${LLVM_AVAILABLE_LIBS}
-  "$<$<PLATFORM_ID:Darwin>:-undefined dynamic_lookup>")
+if(LLVM_LINK_LLVM_DYLIB)
+  set(llvm_libs LLVM)
+else()
+  set(llvm_libs ${LLVM_AVAILABLE_LIBS})
+endif()
 
-set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto -Wl,--exclude-libs,ALL")
+# message(FATAL_ERROR "LLVM libraries: ${llvm_libs}")
+target_link_libraries(IntrinsicsOpenMP
+  PRIVATE ${llvm_libs}
+)
+
+if(APPLE)
+  set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto")
+else()
+  set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto -Wl,--exclude-libs,ALL")
+endif()
 
 install(TARGETS IntrinsicsOpenMP
   EXPORT IntrinsicsOpenMP
