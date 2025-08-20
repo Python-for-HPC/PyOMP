@@ -34,7 +34,7 @@ endif()
 
 if(APPLE)
   target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,-undefined,error")
-elseif()
+else()
   target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,--no-undefined")
 endif()
 
