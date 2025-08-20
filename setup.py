@@ -44,12 +44,11 @@ class BuildStaticNRT(build_clib):
     def build_libraries(self, libraries):
         for libname, build_info in libraries:
             if libname == "nrt_static":
-                self._build_nrt_static(libname, build_info)
+                self._prepare_nrt_static(build_info)
 
-            else:
-                super().build_libraries([(libname, build_info)])
+        super().build_libraries(libraries)
 
-    def _build_nrt_static(self, libname, build_info):
+    def _prepare_nrt_static(self, build_info):
         # Copy numba tree installation to the temp directory for building the
         # static library using relative paths.
         numba_dir = numba.__path__[0]
@@ -66,9 +65,6 @@ class BuildStaticNRT(build_clib):
             dirs_exist_ok=True,
         )
 
-        if libname != "nrt_static":
-            raise Exception("Expected library name 'nrt_static'")
-
         sources = build_info["sources"]
         sources.extend(
             [
@@ -81,7 +77,6 @@ class BuildStaticNRT(build_clib):
             ]
         )
 
-        self.build_library(libname, build_info)
         print("=> sources:", sources)
 
 
