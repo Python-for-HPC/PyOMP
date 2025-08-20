@@ -528,12 +528,10 @@ class CallInstrWithOperandBundle(lir.instructions.CallInstr):
 def _init():
     sys_platform = sys.platform
 
-    llvm_version = (
-        subprocess.check_output(["llvm-config", "--version"]).decode().strip()
-    )
-    if llvm_version != "14.0.6":
+    llvm_major, llvm_minor, llvm_patch = ll.llvm_version_info
+    if llvm_major != 14:
         raise RuntimeError(
-            f"Incompatible LLVM version {llvm_version}, PyOMP expects LLVM 14.0.6"
+            f"Incompatible LLVM version {llvm_major}.{llvm_minor}.{llvm_patch}, PyOMP expects LLVM 14.x"
         )
 
     omplib = (
@@ -2727,7 +2725,10 @@ class openmp_region_start(ir.Stmt):
                         with open(self.libdevice_path, "rb") as f:
                             self.libs_mod = ll.parse_bitcode(f.read())
                         self.libomptarget_arch = (
-                            libpath / "libomp" / "lib" / f"libomptarget-new-nvptx-{self.sm}.bc"
+                            libpath
+                            / "libomp"
+                            / "lib"
+                            / f"libomptarget-new-nvptx-{self.sm}.bc"
                         )
                         with open(self.libomptarget_arch, "rb") as f:
                             libomptarget_mod = ll.parse_bitcode(f.read())
