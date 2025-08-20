@@ -65,8 +65,8 @@ class BuildStaticNRT(build_clib):
             dirs_exist_ok=True,
         )
 
-        sources = build_info["sources"]
-        sources.extend(
+        sources = set(build_info["sources"])
+        sources.update(
             [
                 f"{self.build_temp}/numba_src/_helpermod.c",
                 f"{self.build_temp}/numba_src/cext/utils.c",
@@ -76,8 +76,6 @@ class BuildStaticNRT(build_clib):
                 f"{self.build_temp}/numba_src/core/runtime/nrt.cpp",
             ]
         )
-
-        print("=> sources:", sources)
 
 
 class CMakeExtension(Extension):
