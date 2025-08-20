@@ -100,7 +100,7 @@ class BuildCMakeExt(build_ext):
         if ext.sourcedir:
             return
 
-        tmp = Path(self.build_temp) / f"download-{ext.name}" / "src.tar.gz"
+        tmp = Path("_downloads") / f"{ext.name}" / "src.tar.gz"
         tmp.parent.mkdir(parents=True, exist_ok=True)
 
         # Download the source tarball if it does not exist.
