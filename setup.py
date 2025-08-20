@@ -76,6 +76,7 @@ class BuildStaticNRT(build_clib):
                 f"{self.build_temp}/numba_src/core/runtime/nrt.cpp",
             ]
         )
+        build_info["sources"] = list(sources)
 
 
 class CMakeExtension(Extension):
