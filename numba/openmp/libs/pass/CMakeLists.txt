@@ -22,6 +22,10 @@ add_library(IntrinsicsOpenMP SHARED
   DebugOpenMP.cpp
   IntrinsicsOpenMP.cpp)
 
+if(DEFINED ENV{USE_CXX11_ABI})
+  target_compile_definitions(IntrinsicsOpenMP PRIVATE _GLIBCXX_USE_CXX11_ABI=$ENV{USE_CXX11_ABI})
+endif()
+
 if(LLVM_LINK_LLVM_DYLIB)
   set(llvm_libs LLVM)
 else()

@@ -102,9 +102,12 @@ class BuildCMakeExt(build_ext):
 
         tmp = Path(self.build_temp) / f"download-{ext.name}" / "src.tar.gz"
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(ext.url) as r:
-            with tmp.open("wb") as f:
-                f.write(r.read())
+
+        # Download the source tarball if it does not exist.
+        if not tmp.exists():
+            with urllib.request.urlopen(ext.url) as r:
+                with tmp.open("wb") as f:
+                    f.write(r.read())
 
         if ext.sha256:
             import hashlib
