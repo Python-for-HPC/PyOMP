@@ -139,6 +139,7 @@ def link_shared_library(
         # RPATH via argument (runtime_library_dirs also works, but this is explicit & robust)
         for rp in rpaths or []:
             extra_post += ["-Wl,-rpath," + rp]
+            extra_post += ["-Wl,-z,defs"]
     elif sys.platform == "darwin":
         # Mach-O does not have --whole-archive; use -force_load for a specific .a
         extra_pre += ["-Wl,-force_load", static_archive]
@@ -146,6 +147,7 @@ def link_shared_library(
             extra_post += ["-Wl,-install_name," + install_name]
         for rp in rpaths or []:
             extra_post += ["-Wl,-rpath," + rp]
+            extra_post += ["-Wl,-undefined,error"]
     elif os.name == "nt":
         # MSVC/LLD-COFF: whole-archive per library
         extra_post += [f"/WHOLEARCHIVE:{static_archive}"]

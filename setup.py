@@ -77,11 +77,6 @@ class BuildStaticNRT(build_clib):
             ]
         )
 
-        # Get build_lib directory from the 'build' command.
-        build_cmd = self.get_finalized_command("build")
-        # Build the static library in the wheel output build directory.
-        self.build_clib = f"{build_cmd.build_lib}/numba/openmp/libs"
-
 
 class CMakeExtension(Extension):
     def __init__(self, name, *, sourcedir=None, url=None, sha256=None, cmake_args=[]):
