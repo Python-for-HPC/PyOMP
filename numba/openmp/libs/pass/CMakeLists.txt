@@ -3,6 +3,10 @@ project(pyomp-pass)
 
 find_package(LLVM REQUIRED CONFIG)
 
+if(NOT LLVM_FOUND)
+  message(FATAL_ERROR "LLVM not found. Make sure LLVM 14 is installed and CMake can find it.")
+endif()
+
 if(NOT LLVM_VERSION_MAJOR EQUAL 14)
   message(FATAL_ERROR "Found LLVM ${LLVM_VERSION_MAJOR}, but need LLVM 14.x")
 endif()
