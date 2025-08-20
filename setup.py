@@ -41,8 +41,15 @@ class BuildStaticNRT(build_clib):
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(build_lib_path, dest)
 
-    def finalize_options(self):
-        super().finalize_options()
+    def build_libraries(self, libraries):
+        for libname, build_info in libraries:
+            if libname == "nrt_static":
+                self._build_nrt_static(libname, build_info)
+
+            else:
+                super().build_libraries([(libname, build_info)])
+
+    def _build_nrt_static(self, libname, build_info):
         # Copy numba tree installation to the temp directory for building the
         # static library using relative paths.
         numba_dir = numba.__path__[0]
@@ -59,11 +66,8 @@ class BuildStaticNRT(build_clib):
             dirs_exist_ok=True,
         )
 
-        libname, build_info = self.libraries[0]
         if libname != "nrt_static":
             raise Exception("Expected library name 'nrt_static'")
-        if len(self.libraries) != 1:
-            raise Exception("Expected only the `nrt_static' library in the list")
 
         sources = build_info["sources"]
         sources.extend(
@@ -76,6 +80,9 @@ class BuildStaticNRT(build_clib):
                 f"{self.build_temp}/numba_src/core/runtime/nrt.cpp",
             ]
         )
+
+        self.build_library(libname, build_info)
+        print("=> sources:", sources)
 
 
 class CMakeExtension(Extension):
