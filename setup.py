@@ -3,7 +3,6 @@ import numba
 import sysconfig
 import subprocess
 import shutil
-import numpy as np
 import tarfile
 import urllib
 import sys
@@ -31,7 +30,6 @@ nrt_static = (
         ],
         "include_dirs": [
             sysconfig.get_paths()["include"],
-            np.get_include(),
         ],
     },
 )
@@ -122,6 +120,13 @@ class BuildStaticNRT(build_clib):
             ]
         )
         build_info["sources"] = list(sources)
+
+        # Add include dirs from numpy.
+        import numpy
+
+        includes = set(build_info["include_dirs"])
+        includes.update([numpy.get_include()])
+        build_info["include_dirs"] = list(includes)
 
 
 class CMakeExtension(Extension):
@@ -222,7 +227,7 @@ class BuildCMakeExt(build_ext):
             if file.is_symlink():
                 file.unlink()
 
-    def _env_toolchain_args(self, ext) -> list[str]:
+    def _env_toolchain_args(self, ext):
         args = []
         # Set macOS deployment target and architectures if provided.
         if archs := os.environ.get("ARCHS"):
