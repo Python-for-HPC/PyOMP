@@ -46,3 +46,14 @@ exclude = ["numba.openmp.tests*"]
 # setuptools-scm config
 [tool.setuptools_scm]
 write_to = "src/numba/openmp/_version.py"
+
+[tool.cibuildwheel]
+before-all = "bash buildscripts/cibuildwheel/setup-miniconda3.sh"
+before-build = "rm -rf build dist src/numba/openmp/libs src/*.egg-info"
+skip = "*-musllinux_*"
+
+[tool.cibuildwheel.environment]
+LLVM_DIR = "${HOME}/miniconda3/envs/llvmdev"
+CLANG_TOOL = "${HOME}/miniconda3/envs/clang14/bin/clang"
+USE_CXX11_ABI = "0"
+PIP_NO_INPUT = "1"
