@@ -4,7 +4,7 @@ requires = [
     "wheel",
     "setuptools-scm>=8",
     "numpy>=1.21",
-    "numba>=0.57, <0.58",
+    "numba>=0.57, <0.59",
     "cmake>=3.20",
 ]
 build-backend = "setuptools.build_meta"
@@ -23,7 +23,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Compilers",
 ]
-dependencies = ["numba>=0.57, <0.58", "lark", "cffi"]
+dependencies = ["numba>=0.57, <0.59", "lark", "cffi", "setuptools"]
 
 [project.urls]
 Homepage = "https://github.com/Python-for-HPC/PyOMP"
