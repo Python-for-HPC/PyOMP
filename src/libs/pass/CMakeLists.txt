@@ -33,9 +33,7 @@ else()
   llvm_map_components_to_libnames(llvm_libs ${LLVM_COMPONENTS})
 endif()
 
-if(APPLE)
-  target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,-undefined,error")
-else()
+if(NOT APPLE)
   target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,--no-undefined")
 endif()
 
