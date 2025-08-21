@@ -162,15 +162,13 @@ class BuildCMakeExt(build_ext):
             + ext.cmake_args
             + extra_cmake_args
         )
-        subprocess.run(
-            cfg,
-            check=True,
-        )
+        subprocess.run(cfg, check=True, stdin=subprocess.DEVNULL)
 
-        subprocess.run(["cmake", "--build", build_dir, "-j"], check=True)
         subprocess.run(
-            ["cmake", "--install", build_dir],
-            check=True,
+            ["cmake", "--build", build_dir, "-j"], check=True, stdin=subprocess.DEVNULL
+        )
+        subprocess.run(
+            ["cmake", "--install", build_dir], check=True, stdin=subprocess.DEVNULL
         )
 
         # Remove symlinks in the lib directory to avoid issues with creating the
