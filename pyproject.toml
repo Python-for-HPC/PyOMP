@@ -31,23 +31,18 @@ Issues = "https://github.com/Python-for-HPC/PyOMP/issues"
 
 [tool.setuptools]
 include-package-data = true
+package-dir = { "" = "src" }
 
 # Use discovery for the numba.* namespace.
 [tool.setuptools.packages.find]
-include = ["numba*", "numba.openmp*", "numba.openmp.libs*"]
+where = ["src"]
+include = ["numba.openmp*"]
 exclude = ["numba.openmp.tests*"]
 
 # Bundle the CMake-installed artifacts into the wheel.
 [tool.setuptools.package-data]
-"numba.openmp.libs" = [
-    "pass/*",
-    "pass/**/*",
-    "libomp/*",
-    "libomp/**/*",
-    "nrt/*",
-]
+"numba.openmp.libs" = ["pass/*", "libomp/**/*", "nrt/*"]
 
 # setuptools-scm config
 [tool.setuptools_scm]
-# put version into your runtime package (non-src layout)
-write_to = "numba/openmp/_version.py"
+write_to = "src/numba/openmp/_version.py"

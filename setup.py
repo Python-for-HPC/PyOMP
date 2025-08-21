@@ -9,8 +9,15 @@ import urllib
 import sys
 import os
 from setuptools import setup, Extension
+from setuptools import Command
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_clib import build_clib
+from setuptools.command.sdist import sdist as _sdist
+
+try:
+    from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+except ImportError:
+    _bdist_wheel = None
 
 OPENMP_URL = "https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.6/openmp-14.0.6.src.tar.xz"
 OPENMP_SHA256 = "4f731ff202add030d9d68d4c6daabd91d3aeed9812e6a5b4968815cfdff0eb1f"
@@ -20,7 +27,7 @@ nrt_static = (
     {
         # We extend those sources with the ones from the numba tree.
         "sources": [
-            "numba/openmp/libs/nrt/init.c",
+            "src/libs/nrt/init.c",
         ],
         "include_dirs": [
             sysconfig.get_paths()["include"],
@@ -30,6 +37,44 @@ nrt_static = (
 )
 
 
+class CleanCommand(Command):
+    """Custom clean command to tidy up the project root."""
+
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        for path in ["build", "dist", "src/numba/openmp/libs"]:
+            shutil.rmtree(path, ignore_errors=True)
+        for egg_info in Path("src").rglob("*.egg-info"):
+            shutil.rmtree(egg_info, ignore_errors=True)
+
+
+class CustomSdist(_sdist):
+    def run(self):
+        # Ensure all build steps are run before sdist
+        self.run_command("build_clib")
+        self.run_command("build_ext")
+        super().run()
+
+
+if _bdist_wheel:
+
+    class CustomBdistWheel(_bdist_wheel):
+        def run(self):
+            # Ensure all build steps are run before bdist_wheel
+            self.run_command("build_clib")
+            self.run_command("build_ext")
+            super().run()
+else:
+    CustomBdistWheel = None
+
+
 class BuildStaticNRT(build_clib):
     def run(self):
         super().run()
@@ -37,7 +82,7 @@ class BuildStaticNRT(build_clib):
         libname = "libnrt_static.a"
         build_lib_path = Path(self.build_clib) / libname
         # Destination: your package directory
-        dest = Path("numba/openmp/libs/nrt") / libname
+        dest = Path("src/numba/openmp/libs/nrt") / libname
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(build_lib_path, dest)
 
@@ -171,9 +216,9 @@ class BuildCMakeExt(build_ext):
             ["cmake", "--install", build_dir], check=True, stdin=subprocess.DEVNULL
         )
 
-        # Remove symlinks in the lib directory to avoid issues with creating the
-        # wheel.
-        for file in lib_dir.rglob("*"):
+        # Remove symlinks in the install directory to avoid issues with creating
+        # the wheel.
+        for file in install_dir.rglob("*"):
             if file.is_symlink():
                 file.unlink()
 
@@ -218,7 +263,7 @@ class BuildCMakeExt(build_ext):
 setup(
     libraries=[nrt_static],
     ext_modules=[
-        CMakeExtension("pass", sourcedir="numba/openmp/libs/pass"),
+        CMakeExtension("pass", sourcedir="src/libs/pass"),
         CMakeExtension(
             "libomp",
             url=OPENMP_URL,
@@ -226,7 +271,10 @@ setup(
         ),
     ],
     cmdclass={
+        "clean": CleanCommand,
         "build_clib": BuildStaticNRT,
         "build_ext": BuildCMakeExt,
+        "sdist": CustomSdist,
+        **({"bdist_wheel": CustomBdistWheel} if CustomBdistWheel else {}),
     },
 )

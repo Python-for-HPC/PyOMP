@@ -1,11 +1,15 @@
 *.sw?
 docs/build*
-build
 *.egg-info
 .vscode
 __pycache__
-numba/openmp/_version.py
 *.a
 *.so
 *.dylib
 *.bc
+/build/
+/dist/
+/*.egg-info/
+/_downloads/
+/src/numba/openmp/_version.py
+venv
