@@ -1,0 +1,11 @@
+*.sw?
+docs/build*
+build
+*.egg-info
+.vscode
+__pycache__
+numba/openmp/_version.py
+*.a
+*.so
+*.dylib
+*.bc

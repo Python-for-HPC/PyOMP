@@ -100,6 +100,7 @@ import types as python_types
 import numba
 import ctypes
 from pathlib import Path
+from ._version import version as __version__
 
 libpath = Path(__file__).parent / "libs"
 
