@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -exo pipefail
+set -euxo pipefail
 
 if [ "$(uname)" = "Darwin" ]; then
     OS_NAME="MacOSX"
@@ -10,9 +10,9 @@ fi
 
 echo "Installing miniconda3..."
 curl -L https://repo.anaconda.com/miniconda/Miniconda3-py311_25.5.1-1-${OS_NAME}-$(uname -m).sh -o mini3.sh
-bash mini3.sh -b -f -p /root/miniconda3
+bash mini3.sh -b -f -p "${HOME}/miniconda3"
 echo "Miniconda installed"
-source /root/miniconda3/bin/activate base
+source "${HOME}/miniconda3/bin/activate" base
 export CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
 conda create -n llvmdev -y
