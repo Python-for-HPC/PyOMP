@@ -221,11 +221,23 @@ class BuildCMakeExt(build_ext):
             ["cmake", "--install", build_dir], check=True, stdin=subprocess.DEVNULL
         )
 
+        # Remove unnecessary files after installing libomp.
+        if ext.name == "libomp":
+            # Remove include directory after install.
+            include_dir = install_dir / "include"
+            if include_dir.exists():
+                shutil.rmtree(include_dir)
+            # Remove cmake directory after install.
+            include_dir = install_dir / "lib/cmake"
+            if include_dir.exists():
+                shutil.rmtree(include_dir)
         # Remove symlinks in the install directory to avoid issues with creating
         # the wheel.
         for file in install_dir.rglob("*"):
             if file.is_symlink():
                 file.unlink()
+            elif file.is_dir():
+                pass
 
     def _env_toolchain_args(self, ext):
         args = []
@@ -273,6 +285,7 @@ setup(
             "libomp",
             url=OPENMP_URL,
             sha256=OPENMP_SHA256,
+            cmake_args=["-DLIBOMP_OMPD_SUPPORT=OFF", "-DLIBOMP_OMPT_SUPPORT=OFF"],
         ),
     ],
     cmdclass={
