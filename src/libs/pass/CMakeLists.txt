@@ -26,12 +26,8 @@ if(DEFINED ENV{USE_CXX11_ABI})
   target_compile_definitions(IntrinsicsOpenMP PRIVATE _GLIBCXX_USE_CXX11_ABI=$ENV{USE_CXX11_ABI})
 endif()
 
-if(LLVM_LINK_LLVM_DYLIB)
-  set(llvm_libs LLVM)
-else()
-  set(LLVM_COMPONENTS core support analysis passes)
-  llvm_map_components_to_libnames(llvm_libs ${LLVM_COMPONENTS})
-endif()
+# Use static library components to avoid issues with shared library dependencies.
+set(llvm_libs LLVMPasses)
 
 if(NOT APPLE)
   target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,--no-undefined")
