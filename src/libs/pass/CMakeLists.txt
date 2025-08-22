@@ -38,7 +38,7 @@ target_link_libraries(IntrinsicsOpenMP
 )
 
 if(APPLE)
-  set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto")
+  set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto -Wl,-exported_symbol,_runIntrinsicsOpenMPPass")
 else()
   set_property(TARGET IntrinsicsOpenMP APPEND_STRING PROPERTY LINK_FLAGS "-flto -Wl,--exclude-libs,ALL")
 endif()
