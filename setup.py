@@ -1,5 +1,4 @@
 from pathlib import Path
-import numba
 import sysconfig
 import subprocess
 import shutil
@@ -94,6 +93,8 @@ class BuildStaticNRT(build_clib):
     def _prepare_nrt_static(self, build_info):
         # Copy numba tree installation to the temp directory for building the
         # static library using relative paths.
+        import numba
+
         numba_dir = numba.__path__[0]
         shutil.copytree(
             numba_dir,
@@ -179,6 +180,15 @@ class BuildCMakeExt(build_ext):
             ext.sourcedir = tmp.parent / tf.getnames()[0]
             tf.extractall(tmp.parent)
 
+        for patch in Path(f"src/libs/{ext.name}/patches").absolute().glob("*.patch"):
+            print("applying patch", patch)
+            subprocess.run(
+                ["patch", "-p1", "-i", str(patch)],
+                cwd=tmp.parent,
+                check=True,
+                stdin=subprocess.DEVNULL,
+            )
+
     def _build_cmake(self, ext: CMakeExtension):
         # Delete build directory if it exists to avoid errors with stale
         # CMakeCache.txt leftovers.
@@ -241,32 +251,7 @@ class BuildCMakeExt(build_ext):
 
     def _env_toolchain_args(self, ext):
         args = []
-        # Set macOS deployment target and architectures if provided.
-        if archs := os.environ.get("ARCHS"):
-            args += [f"-DCMAKE_OSX_ARCHITECTURES={archs}"]
-        if minver := os.environ.get("MACOSX_DEPLOYMENT_TARGET"):
-            args += [f"-DCMAKE_OSX_DEPLOYMENT_TARGET={minver}"]
-
-        # Forward compiler tool environment variables.
-        for var, cm in [
-            ("CC", "-DCMAKE_C_COMPILER="),
-            ("CXX", "-DCMAKE_CXX_COMPILER="),
-            ("AR", "-DCMAKE_AR="),
-            ("RANLIB", "-DCMAKE_RANLIB="),
-            ("NM", "-DCMAKE_NM="),
-        ]:
-            if os.environ.get(var):
-                args.append(cm + os.environ[var])
-
-        # Forward compilation and linking flags.
-        if os.environ.get("CFLAGS"):
-            args.append(f"-DCMAKE_C_FLAGS={os.environ['CFLAGS']}")
-        if os.environ.get("CXXFLAGS"):
-            args.append(f"-DCMAKE_CXX_FLAGS={os.environ['CXXFLAGS']}")
-        if os.environ.get("LDFLAGS"):
-            args.append(f"-DCMAKE_EXE_LINKER_FLAGS={os.environ['LDFLAGS']}")
-
-        # Set LLVM_DIR and CLANG_TOOL if provided.
+        # Forward LLVM_DIR and CLANG_TOOL if provided.
         if os.environ.get("LLVM_DIR"):
             args.append(f"-DLLVM_DIR={os.environ['LLVM_DIR']}")
         if ext.name == "libomp":
