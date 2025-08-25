@@ -23,6 +23,8 @@ requirements:
     - {{ compiler('cxx') }}
     - cmake
     - setuptools_scm
+    - elfutils # [linux]
+    - libffi # [linux]
   host:
     - python
     - pip
@@ -30,6 +32,9 @@ requirements:
     - setuptools_scm
     - numba >=0.57, <0.59
     - llvmdev 14.*
+    - zlib
+    - elfutils # [linux]
+    - libffi # [linux]
   run:
     - python
     - setuptools
