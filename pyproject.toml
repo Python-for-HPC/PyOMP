@@ -24,6 +24,9 @@ classifiers = [
     "Topic :: Software Development :: Compilers",
 ]
 dependencies = ["numba>=0.57, <0.59", "lark", "cffi", "setuptools"]
+maintainers = [
+    { name = "Giorgis Georgakoudis", email = "georgakoudis1@llnl.gov" },
+]
 
 [project.urls]
 Homepage = "https://github.com/Python-for-HPC/PyOMP"
@@ -48,9 +51,18 @@ exclude = ["numba.openmp.tests*"]
 write_to = "src/numba/openmp/_version.py"
 
 [tool.cibuildwheel]
-before-all = "bash buildscripts/cibuildwheel/setup-miniconda3.sh"
+before-all = [
+    "yum install -y elfutils-libelf-devel libffi-devel",
+    "bash buildscripts/cibuildwheel/setup-miniconda3.sh",
+]
 before-build = "rm -rf build dist src/numba/openmp/libs src/*.egg-info"
 skip = "*-musllinux_*"
+test-command = [
+    # Run host OpenMP tests.
+    "TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp",
+    # Run device (cpu target) OpenMP tests.
+    "OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget",
+]
 
 [tool.cibuildwheel.environment]
 LLVM_DIR = "_stage/miniconda3/envs/llvmdev"
