@@ -53,9 +53,9 @@ TEST_DEVICES=0 RUN_TARGET=0 $SEGVCATCH python -m numba.runtests -v -- numba.open
 
 echo "=> Run OpenMP offloading tests on CPU (device 1)"
 echo "=> Running: TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
-TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
+OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
 if nvidia-smi --list-gpus; then
   echo "=> Found NVIDIA GPU, Run OpenMP offloading tests on GPU (device 0)"
   echo "=> Running: TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
-  TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
+  OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
 fi
