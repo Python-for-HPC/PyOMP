@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 set -e
 
 if [ -n "${CI_COMMIT_TAG}" ]; then
@@ -30,18 +31,11 @@ function deploy_conda() {
 
   set -x
 
-  if [ -z "${PYOMP_CI_PYTHON_VERSION}" ]; then
-    export CONDA_BLD_PATH="/tmp/ggeorgak/conda-build-${PYOMP_CI_BUILD_PKG}-noarch"
-    conda build --no-lock --no-locking --user python-for-hpc --label ${LABEL} \
-      -c python-for-hpc/label/${LABEL} -c conda-forge \
-      buildscripts/conda-recipes/${PKG}
-  else
-    export CONDA_BLD_PATH="/tmp/ggeorgak/conda-build-${PYOMP_CI_BUILD_PKG}-${PYOMP_CI_PYTHON_VERSION}"
-    conda build --no-lock --no-locking --user python-for-hpc --label ${LABEL} \
-      -c python-for-hpc/label/${LABEL} -c conda-forge \
-      --python ${PYOMP_CI_PYTHON_VERSION} \
-      buildscripts/conda-recipes/${PKG}
-  fi
+  export CONDA_BLD_PATH="/tmp/ggeorgak/conda-build-${PYOMP_CI_BUILD_PKG}-${PYOMP_CI_PYTHON_VERSION}"
+  conda build --no-lock --no-locking --user python-for-hpc --label ${LABEL} \
+    -c python-for-hpc/label/${LABEL} -c conda-forge \
+    --python ${PYOMP_CI_PYTHON_VERSION} \
+    buildscripts/conda-recipes/${PKG}
 
   rm -rf ${CONDA_BLD_PATH}
   set +x
@@ -51,10 +45,6 @@ echo "=> Building ${PYOMP_CI_BUILD_PKG} Python version ${PYOMP_CI_PYTHON_VERSION
 
 
 case ${PYOMP_CI_BUILD_PKG} in
-
-  "llvm-openmp-dev")
-    deploy_conda "llvm-openmp-dev"
-    ;;
 
   "pyomp")
     deploy_conda "pyomp"
