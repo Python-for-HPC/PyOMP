@@ -1,4 +1,4 @@
-name: Deploy pypi and conda pkgs (main)
+name: Deploy pypi and conda (main)
 
 on:
   release:
