@@ -6,10 +6,18 @@ on:
       - "buildscripts/conda-recipes/**"
       - ".github/workflows/build-upload-conda-test.yml"
       - ".github/workflows/build-upload-conda-base.yml"
-      - "numba/**"
+      - "src/**"
+      - setup.py
+      - MANIFEST.in
+      - pyproject.toml
   workflow_dispatch:
 
 jobs:
+  deploy-pypi:
+    uses: ./.github/workflows/build-upload-pypi.yml
+    with:
+      label: test
+    secrets: inherit
   deploy-conda:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:

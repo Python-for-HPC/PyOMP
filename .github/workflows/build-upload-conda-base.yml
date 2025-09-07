@@ -11,45 +11,15 @@ on:
         type: string
 
 jobs:
-  # Job to deploy llvm-openmp-dev, runs once as it is independent of the python
-  # version.
-  conda-deploy-llvm-openmp-dev:
-    name: llvm-openmp-dev ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # TODO: Add windows.
-        os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create and activate conda env
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          python-version: "3.10"
-          environment-file: ${{ inputs.env }}
-          auto-update-conda: false
-          auto-activate-base: false
-          show-channel-urls: true
-      - name: Build and upload llvm-openmp-dev
-        run: |
-          conda remove --name base conda-anaconda-telemetry
-          conda install -q -y -c conda-forge conda-build conda-verify anaconda-client;
-          conda config --set anaconda_upload yes;
-          conda build --user python-for-hpc --label ${{ inputs.label }} \
-            -c python-for-hpc -c conda-forge \
-            --token ${{ secrets.ANACONDA_TOKEN }} \
-            buildscripts/conda-recipes/llvm-openmp-dev;
-
   # Job to deploy the pyomp metapackage matrixed on the python version.
   conda-deploy-pyomp:
-    needs: conda-deploy-llvm-openmp-dev
     name: pyomp ${{ matrix.os }} ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         # TODO: Add windows.
         os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
         # Checkout the repo with history to get the commit hash for the build

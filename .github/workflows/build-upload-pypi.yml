@@ -1,0 +1,38 @@
+name: Deploy wheels
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        required: true
+        type: string
+
+jobs:
+  # Job to deploy the pyomp metapackage matrixed on the python version.
+  conda-deploy-pyomp:
+    name: Build wheels ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # TODO: Add windows.
+        os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+        # Checkout the repo with history to get the commit hash for the build
+        # string.
+        with:
+          fetch-depth: 0
+
+       # Used to host cibuildwheel
+      - uses: actions/setup-python@v5
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==3.1.4
+
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.label }}-cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
