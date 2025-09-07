@@ -51,10 +51,7 @@ exclude = ["numba.openmp.tests*"]
 write_to = "src/numba/openmp/_version.py"
 
 [tool.cibuildwheel]
-before-all = [
-    "yum install -y elfutils-libelf-devel libffi-devel",
-    "bash buildscripts/cibuildwheel/setup-miniconda3.sh",
-]
+before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = "rm -rf build dist src/numba/openmp/libs src/*.egg-info"
 skip = "*-musllinux_*"
 test-command = [
@@ -63,6 +60,9 @@ test-command = [
     # Run device (cpu target) OpenMP tests.
     "OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget",
 ]
+
+[tool.cibuildwheel.linux]
+before-all = ["yum install -y elfutils-libelf-devel libffi-devel"]
 
 [tool.cibuildwheel.environment]
 LLVM_DIR = "_stage/miniconda3/envs/llvmdev"
