@@ -62,7 +62,10 @@ test-command = [
 ]
 
 [tool.cibuildwheel.linux]
-before-all = ["yum install -y elfutils-libelf-devel libffi-devel"]
+before-all = [
+    "yum install -y elfutils-libelf-devel libffi-devel",
+    "bash buildscripts/cibuildwheel/setup-miniconda3.sh",
+]
 
 [tool.cibuildwheel.environment]
 LLVM_DIR = "_stage/miniconda3/envs/llvmdev"
