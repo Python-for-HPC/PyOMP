@@ -17,18 +17,10 @@ echo "Miniconda installed"
 source "_stage/miniconda3/bin/activate" base
 export CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
-conda create -n llvmdev -y
-
-# Create llvmdev environment and install manylinux llvmdev 14.0.6 from numba channel.
+# Create llvmdev environment and install llvmdev 14.0.6.
 echo "Installing manylinux llvmdev 14.0.6..."
-conda activate llvmdev
-if [ "${OS_NAME}" = "MacOSX" ]; then
-    conda install -y -c conda-forge llvmdev=14.0.6
-else
-    conda install -y -c conda-forge llvmdev=14.0.6
-fi
-conda deactivate
+conda create -n llvmdev -c conda-forge -y llvmdev=14.0.6
 
-echo "Installing clang 14.0.6..."
 # Create clang14 environment and install clang 14.0.6.
+echo "Installing clang 14.0.6..."
 conda create -n clang14 -c conda-forge -y clang=14.0.6
