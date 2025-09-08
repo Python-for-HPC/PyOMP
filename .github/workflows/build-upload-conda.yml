@@ -1,4 +1,4 @@
-name: Deploy pypi and conda (main)
+name: Deploy conda (main)
 
 on:
   release:
@@ -6,11 +6,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-pypi:
-    uses: ./.github/workflows/build-upload-pypi.yml
-    with:
-      label: main
-    secrets: inherit
   deploy-conda:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:

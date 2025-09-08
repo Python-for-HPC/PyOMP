@@ -13,11 +13,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-pypi:
-    uses: ./.github/workflows/build-upload-pypi.yml
-    with:
-      label: test
-    secrets: inherit
   deploy-conda:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:
