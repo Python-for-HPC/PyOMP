@@ -54,7 +54,7 @@ write_to = "src/numba/openmp/_version.py"
 archs = ["native"]
 before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = "rm -rf build dist src/numba/openmp/libs src/*.egg-info"
-skip = "*-musllinux_*"
+skip = ["*-musllinux_*", "cp38-*"]
 test-command = [
     # Run host OpenMP tests.
     "TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp",
