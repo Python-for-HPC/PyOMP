@@ -51,6 +51,7 @@ exclude = ["numba.openmp.tests*"]
 write_to = "src/numba/openmp/_version.py"
 
 [tool.cibuildwheel]
+archs = ["native"]
 before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = "rm -rf build dist src/numba/openmp/libs src/*.egg-info"
 skip = "*-musllinux_*"
