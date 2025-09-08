@@ -9,7 +9,7 @@ on:
 
 jobs:
   # Job to deploy the pyomp metapackage matrixed on the python version.
-  conda-deploy-pyomp:
+  build-wheels:
     name: Build wheels ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -36,3 +36,22 @@ jobs:
         with:
           name: ${{ inputs.label }}-cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
+
+  publish-pypi:
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.label == 'test' && 'testpypi' || 'pypi' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ${{ inputs.label }}-cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish testpypi
+        if: ${{ inputs.label == 'test' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
