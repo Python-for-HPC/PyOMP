@@ -32,9 +32,10 @@ jobs:
           python-version: "3.10"
           environment-file: ${{ inputs.env }}
           auto-update-conda: false
-          auto-activate-base: false
           show-channel-urls: true
       - name: Build and upload pyomp
+        # This ensures conda env is active.
+        shell: bash -l {0}
         run: |
           # Setup the anaconda environment.
           conda remove --name base conda-anaconda-telemetry
