@@ -49,6 +49,7 @@ exclude = ["numba.openmp.tests*"]
 # setuptools-scm config
 [tool.setuptools_scm]
 write_to = "src/numba/openmp/_version.py"
+local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
 archs = ["native"]

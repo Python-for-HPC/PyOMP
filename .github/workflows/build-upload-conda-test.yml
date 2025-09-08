@@ -1,4 +1,4 @@
-name: Deploy pypi and conda (test)
+name: Deploy conda (test)
 
 on:
   pull_request:

@@ -50,3 +50,5 @@ jobs:
 
       - name: Publish pypi
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
