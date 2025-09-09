@@ -3009,7 +3009,13 @@ class OnlyLowerCUDA(numba_cuda.compiler.CUDACompiler):
 
     def define_pipelines(self):
         pm = compiler_machinery.PassManager("cuda")
-        pm.add_pass(numba_cuda.compiler.CUDALegalization, "CUDA legalization")
+        # Numba <=0.57 implements CUDALegalization to support CUDA <11.2
+        # versions.  Numba >0.58 drops this support. We enclose in a try-except
+        # block to avoid errors, delegating to Numba support.
+        try:
+            pm.add_pass(numba_cuda.compiler.CUDALegalization, "CUDA legalization")
+        except AttributeError:
+            pass
         lowering_passes = self.define_cuda_lowering_pipeline(self.state)
         pm.passes.extend(lowering_passes.passes)
         pm.finalize()
