@@ -78,8 +78,11 @@ jobs:
       - name: Install and test wheel
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "numba==${{ matrix.numba-version }}"
-          python -m pip install --no-index --find-links dist/ pyomp
+          python -m pip install "numba==${{ matrix.numba-version }}" lark cffi setuptools
+          python -m pip install lark cffi setuptools
+          python -m pip install --pre --no-deps --no-index --find-links dist/ pyomp
+
+          # Verify the numba version.
           python -c "import numba; assert numba.__version__ == '${{ matrix.numba-version }}'"
 
           # Run host OpenMP tests.
