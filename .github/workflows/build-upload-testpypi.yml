@@ -3,7 +3,7 @@ name: Deploy testpypi wheels
 on:
   pull_request:
     paths:
-      - "buildscripts/conda-recipes/**"
+      - "buildscripts/cibuildwheel/**"
       - ".github/workflows/build-upload-testpypi.yml"
       - "src/**"
       - setup.py
@@ -47,21 +47,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python_version: ['3.9', '3.10', '3.11', '3.12']
-        numba_version: ['0.57.0', '0.57.1', '0.58.0', '0.58.1', '0.59.0', '0.59.1', '0.60.0']
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        numba-version: ['0.57.0', '0.57.1', '0.58.0', '0.58.1', '0.59.0', '0.59.1', '0.60.0']
         exclude:
         # Known incompatibilities based on numba's official support
         # Numba 0.57 supports Python 3.8-3.11
         - python-version: '3.12'
-          numba_version: '0.57.0'
+          numba-version: '0.57.0'
         - python-version: '3.12'
-          numba_version: '0.57.1'
+          numba-version: '0.57.1'
 
         # Numba 0.58 supports Python 3.8-3.11
         - python-version: '3.12'
-          numba_version: '0.58.0'
+          numba-version: '0.58.0'
         - python-version: '3.12'
-          numba_version: '0.58.1'
+          numba-version: '0.58.1'
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@v5
@@ -73,14 +73,14 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python_version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install and test wheel
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "numba==${{ matrix.numba_version }}"
+          python -m pip install "numba==${{ matrix.numba-version }}"
           python -m pip install --find-links dist/ pyomp
-          python -c "import numba; assert numba.__version__ == '${{ matrix.numba_version }}'"
+          python -c "import numba; assert numba.__version__ == '${{ matrix.numba-version }}'"
 
           # Run host OpenMP tests.
           TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
