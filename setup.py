@@ -1,5 +1,4 @@
 from pathlib import Path
-import sysconfig
 import subprocess
 import shutil
 import tarfile
@@ -9,7 +8,6 @@ import os
 from setuptools import setup, Extension
 from setuptools import Command
 from setuptools.command.build_ext import build_ext
-from setuptools.command.build_clib import build_clib
 from setuptools.command.sdist import sdist as _sdist
 
 try:
@@ -19,19 +17,6 @@ except ImportError:
 
 OPENMP_URL = "https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.6/openmp-14.0.6.src.tar.xz"
 OPENMP_SHA256 = "4f731ff202add030d9d68d4c6daabd91d3aeed9812e6a5b4968815cfdff0eb1f"
-
-nrt_static = (
-    "nrt_static",
-    {
-        # We extend those sources with the ones from the numba tree.
-        "sources": [
-            "src/libs/nrt/init.c",
-        ],
-        "include_dirs": [
-            sysconfig.get_paths()["include"],
-        ],
-    },
-)
 
 
 class CleanCommand(Command):
@@ -70,64 +55,6 @@ if _bdist_wheel:
             super().run()
 else:
     CustomBdistWheel = None
-
-
-class BuildStaticNRT(build_clib):
-    def run(self):
-        super().run()
-        # Find the built static library
-        libname = "libnrt_static.a"
-        build_lib_path = Path(self.build_clib) / libname
-        # Destination: your package directory
-        dest = Path("src/numba/openmp/libs/nrt") / libname
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(build_lib_path, dest)
-
-    def build_libraries(self, libraries):
-        for libname, build_info in libraries:
-            if libname == "nrt_static":
-                self._prepare_nrt_static(build_info)
-
-        super().build_libraries(libraries)
-
-    def _prepare_nrt_static(self, build_info):
-        # Copy numba tree installation to the temp directory for building the
-        # static library using relative paths.
-        import numba
-
-        numba_dir = numba.__path__[0]
-        shutil.copytree(
-            numba_dir,
-            f"{self.build_temp}/numba_src",
-            ignore=shutil.ignore_patterns(
-                "*.py",
-                "*.pyc",
-                "*.so",
-                "*.dylib",
-                "__pycache__",
-            ),
-            dirs_exist_ok=True,
-        )
-
-        sources = set(build_info["sources"])
-        sources.update(
-            [
-                f"{self.build_temp}/numba_src/_helpermod.c",
-                f"{self.build_temp}/numba_src/cext/utils.c",
-                f"{self.build_temp}/numba_src/cext/dictobject.c",
-                f"{self.build_temp}/numba_src/cext/listobject.c",
-                f"{self.build_temp}/numba_src/core/runtime/_nrt_pythonmod.c",
-                f"{self.build_temp}/numba_src/core/runtime/nrt.cpp",
-            ]
-        )
-        build_info["sources"] = list(sources)
-
-        # Add include dirs from numpy.
-        import numpy
-
-        includes = set(build_info["include_dirs"])
-        includes.update([numpy.get_include()])
-        build_info["include_dirs"] = list(includes)
 
 
 class CMakeExtension(Extension):
@@ -180,7 +107,7 @@ class BuildCMakeExt(build_ext):
             ext.sourcedir = tmp.parent / tf.getnames()[0]
             tf.extractall(tmp.parent)
 
-        for patch in Path(f"src/libs/{ext.name}/patches").absolute().glob("*.patch"):
+        for patch in Path(f"src/numba/openmp/libs/{ext.name}/patches").absolute().glob("*.patch"):
             print("applying patch", patch)
             subprocess.run(
                 ["patch", "-p1", "-i", str(patch)],
@@ -263,9 +190,8 @@ class BuildCMakeExt(build_ext):
 
 
 setup(
-    libraries=[nrt_static],
     ext_modules=[
-        CMakeExtension("pass", sourcedir="src/libs/pass"),
+        CMakeExtension("pass", sourcedir="src/numba/openmp/libs/pass"),
         CMakeExtension(
             "libomp",
             url=OPENMP_URL,
@@ -275,7 +201,6 @@ setup(
     ],
     cmdclass={
         "clean": CleanCommand,
-        "build_clib": BuildStaticNRT,
         "build_ext": BuildCMakeExt,
         "sdist": CustomSdist,
         **({"bdist_wheel": CustomBdistWheel} if CustomBdistWheel else {}),

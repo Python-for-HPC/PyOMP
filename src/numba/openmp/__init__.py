@@ -102,7 +102,7 @@ import ctypes
 from pathlib import Path
 from ._version import version as __version__
 
-libpath = Path(__file__).parent / "libs"
+libpath = Path(__file__).absolute().parent / "libs"
 
 ### START OF EXTENSIONS TO AVOID SUBPROCESS TOOLS ###
 # Python 3.12+ removed distutils; use the shim in setuptools.
@@ -110,11 +110,45 @@ try:
     from setuptools._distutils import ccompiler, sysconfig
 except Exception:  # Python <3.12, or older setuptools
     from distutils import ccompiler, sysconfig  # type: ignore
+def _get_static_nrt_library():
+    libnrt_dir = libpath / "nrt"
+
+    # Do not recompile if we find the static library. We assume the C files used
+    # for creating it are immutable.
+    libnrt_path = libnrt_dir / "libnrt.a"
+    if libnrt_path.exists():
+        return libnrt_path
+
+    # Gather source files for the NRT and helperlib static bundle.
+    numba_include_path = numba.extending.include_path()
+    sources = [
+        f"{libpath / 'nrt'}/init.c",
+        f"{numba_include_path}/numba/_helpermod.c",
+        f"{numba_include_path}/numba/cext/utils.c",
+        f"{numba_include_path}/numba/cext/dictobject.c",
+        f"{numba_include_path}/numba/cext/listobject.c",
+        f"{numba_include_path}/numba/core/runtime/_nrt_pythonmod.c",
+        f"{numba_include_path}/numba/core/runtime/nrt.cpp",
+    ]
+
+    # Create the compiler.
+    cc = ccompiler.new_compiler()
+    sysconfig.customize_compiler(cc)
+
+    # Set the include dirs to python's and numpy's.
+    include_dirs = [sysconfig.get_python_inc(), np.get_include()]
+
+    # Compile the objects and create the static library.
+    objs = cc.compile(
+        sources, output_dir=str(libnrt_dir / "build"), include_dirs=include_dirs
+    )
+    cc.create_static_lib(objs, output_dir=str(libnrt_dir), output_libname="nrt")
+
+    return str(libnrt_path.absolute())
 
 
 def link_shared_library(
     obj_path,
-    static_archive,
     out_path,
     *,
     install_name=None,  # macOS only (e.g. "@rpath/libpyomp_rt.dylib")
@@ -125,7 +159,6 @@ def link_shared_library(
     Uses distutils' compiler to remain platform-agnostic.
     """
     obj_path = str(Path(obj_path))
-    static_archive = str(Path(static_archive))
     out_path = str(Path(out_path))
 
     cc = ccompiler.new_compiler()
@@ -134,22 +167,23 @@ def link_shared_library(
     extra_pre = []
     extra_post = []
 
+    libnrt_path = _get_static_nrt_library()
     if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
         # Force-include *all* objects from the archive.
-        extra_pre += ["-Wl,--whole-archive", static_archive, "-Wl,--no-whole-archive"]
+        extra_pre += ["-Wl,--whole-archive", libnrt_path, "-Wl,--no-whole-archive"]
         # RPATH via argument (runtime_library_dirs also works, but this is explicit & robust)
         for rp in rpaths or []:
             extra_post += ["-Wl,-rpath," + rp]
     elif sys.platform == "darwin":
         # Mach-O does not have --whole-archive; use -force_load for a specific .a
-        extra_pre += ["-Wl,-force_load", static_archive]
+        extra_pre += ["-Wl,-force_load", libnrt_path]
         if install_name:
             extra_post += ["-Wl,-install_name," + install_name]
         for rp in rpaths or []:
             extra_post += ["-Wl,-rpath," + rp]
     elif os.name == "nt":
         # MSVC/LLD-COFF: whole-archive per library
-        extra_post += [f"/WHOLEARCHIVE:{static_archive}"]
+        extra_post += [f"/WHOLEARCHIVE:{libnrt_path}"]
         # export_symbols works here if you want to control exports
     else:
         raise RuntimeError(f"Unsupported platform: {sys.platform}")
@@ -167,7 +201,6 @@ def link_shared_library(
         )
     except Exception as e:
         raise RuntimeError(f"Link failed for {out_path}") from e
-
 
 ###
 
@@ -2692,7 +2725,6 @@ class openmp_region_start(ir.Stmt):
 
                 link_shared_library(
                     obj_path=filename_o,
-                    static_archive=libpath / "nrt/libnrt_static.a",
                     out_path=filename_so,
                     rpaths=[
                         "$ORIGIN"
