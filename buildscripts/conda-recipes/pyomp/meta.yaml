@@ -14,7 +14,7 @@ build:
   script:
     - export VERBOSE=1
     - export CPPFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -isystem ${PREFIX}/include -D_FORTIFY_SOURCE=2" # [osx]
-    - rm -rf build dist src/numba/openmp/libs src/*.egg-info
+    - rm -rf build dist src/*.egg-info
     - {{ PYTHON }} -m pip install -v .
 
 requirements:

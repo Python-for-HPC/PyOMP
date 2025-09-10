@@ -1,10 +1,5 @@
 [build-system]
-requires = [
-    "setuptools>=75.3",
-    "wheel",
-    "setuptools-scm>=8",
-    "cmake>=3.20",
-]
+requires = ["setuptools>=75.3", "wheel", "setuptools-scm>=8", "cmake>=3.20"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -52,7 +47,7 @@ local_scheme = "no-local-version"
 [tool.cibuildwheel]
 archs = ["native"]
 before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
-before-build = "rm -rf build dist src/numba/openmp/libs src/*.egg-info"
+before-build = ["rm -rf build dist src/*.egg-info"]
 skip = ["*-musllinux_*", "cp38-*"]
 test-command = [
     # Run host OpenMP tests.
