@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Job to deploy the pyomp metapackage matrixed on the python version.
+  # Build wheels per platform and upload artifacts.
   build-wheels:
     name: Build wheels ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -42,8 +42,58 @@ jobs:
           name: testpypi-cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
-  publish-testpypi:
+  # Test wheels matrixed on numba versions.
+  test-wheels:
     needs: build-wheels
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python_version: ['3.9', '3.10', '3.11', '3.12']
+        numba_version: ['0.57.0', '0.57.1', '0.58.0', '0.58.1', '0.59.0', '0.59.1', '0.60.0']
+        exclude:
+        # Known incompatibilities based on numba's official support
+        # Numba 0.57 supports Python 3.8-3.11
+        - python-version: '3.12'
+          numba_version: '0.57.0'
+        - python-version: '3.12'
+          numba_version: '0.57.1'
+
+        # Numba 0.58 supports Python 3.8-3.11
+        - python-version: '3.12'
+          numba_version: '0.58.0'
+        - python-version: '3.12'
+          numba_version: '0.58.1'
+    steps:
+      - name: Download built wheels
+        uses: actions/download-artifact@v5
+        with:
+          pattern: testpypi-cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - name: Install and test wheel
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numba==${{ matrix.numba_version }}"
+          python -m pip install --find-links dist/ pyomp
+          python -c "import numba; assert numba.__version__ == '${{ matrix.numba_version }}'"
+
+          # Run host OpenMP tests.
+          TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
+
+          # Run device (cpu target) OpenMP tests.
+          OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 \
+            python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget
+
+
+
+  publish-testpypi:
+    needs: [build-wheels, test-wheels]
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:

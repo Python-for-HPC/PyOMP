@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Job to deploy the pyomp metapackage matrixed on the python version.
+  # Build wheels per platform and upload artifacts.
   build-wheels:
     name: Build wheels ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -35,6 +35,7 @@ jobs:
           name: pypi-cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
+  # Publish wheel artifacts to pypi.
   publish-pypi:
     needs: build-wheels
     runs-on: ubuntu-latest

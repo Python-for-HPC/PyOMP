@@ -30,7 +30,7 @@ requirements:
     - pip
     - setuptools
     - setuptools_scm
-    - numba >=0.57, <0.59
+    - numba >=0.57, <0.61
     - clang 14.*
     - llvmdev 14.*
     - zlib
@@ -39,7 +39,7 @@ requirements:
   run:
     - python
     - setuptools
-    - numba >=0.57, <0.59
+    - numba >=0.57, <0.61
     - lark
     - cffi
 

@@ -7,7 +7,7 @@ name = "pyomp"
 dynamic = ["version"]
 description = "Python OpenMP library based on Numba"
 readme = "README.md"
-requires-python = ">=3.8, <3.12"
+requires-python = ">=3.8, <3.13"
 license = { text = "BSD-2-Clause" }
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -16,7 +16,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Compilers",
 ]
-dependencies = ["numba>=0.57, <0.59", "lark", "cffi", "setuptools"]
+dependencies = ["numba>=0.57, <0.61", "lark", "cffi", "setuptools"]
 maintainers = [
     { name = "Giorgis Georgakoudis", email = "georgakoudis1@llnl.gov" },
 ]
@@ -46,6 +46,7 @@ local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
 archs = ["native"]
+# We use miniconda3 to get the clang/llvm toolchain on Linux.
 before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = ["rm -rf build dist src/*.egg-info"]
 skip = ["*-musllinux_*", "cp38-*"]
