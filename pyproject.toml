@@ -33,7 +33,6 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["numba.openmp*"]
-exclude = ["numba.openmp.tests*"]
 
 # Bundle the CMake-installed artifacts into the wheel.
 [tool.setuptools.package-data]
