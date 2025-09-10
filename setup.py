@@ -40,7 +40,6 @@ class CleanCommand(Command):
 class CustomSdist(_sdist):
     def run(self):
         # Ensure all build steps are run before sdist
-        self.run_command("build_clib")
         self.run_command("build_ext")
         super().run()
 
@@ -50,7 +49,6 @@ if _bdist_wheel:
     class CustomBdistWheel(_bdist_wheel):
         def run(self):
             # Ensure all build steps are run before bdist_wheel
-            self.run_command("build_clib")
             self.run_command("build_ext")
             super().run()
 else:
