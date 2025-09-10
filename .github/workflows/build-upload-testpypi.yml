@@ -79,7 +79,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "numba==${{ matrix.numba-version }}"
-          python -m pip install --find-links dist/ pyomp
+          python -m pip install --no-index --find-links dist/ pyomp
           python -c "import numba; assert numba.__version__ == '${{ matrix.numba-version }}'"
 
           # Run host OpenMP tests.
@@ -88,8 +88,6 @@ jobs:
           # Run device (cpu target) OpenMP tests.
           OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 \
             python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget
-
-
 
   publish-testpypi:
     needs: [build-wheels, test-wheels]
