@@ -110,6 +110,8 @@ try:
     from setuptools._distutils import ccompiler, sysconfig
 except Exception:  # Python <3.12, or older setuptools
     from distutils import ccompiler, sysconfig  # type: ignore
+
+
 def _get_static_nrt_library():
     libnrt_dir = libpath / "nrt"
 
@@ -117,7 +119,7 @@ def _get_static_nrt_library():
     # for creating it are immutable.
     libnrt_path = libnrt_dir / "libnrt.a"
     if libnrt_path.exists():
-        return libnrt_path
+        return libnrt_path.absolute()
 
     # Gather source files for the NRT and helperlib static bundle.
     numba_include_path = numba.extending.include_path()
@@ -144,7 +146,7 @@ def _get_static_nrt_library():
     )
     cc.create_static_lib(objs, output_dir=str(libnrt_dir), output_libname="nrt")
 
-    return str(libnrt_path.absolute())
+    return libnrt_path.absolute()
 
 
 def link_shared_library(
@@ -160,6 +162,7 @@ def link_shared_library(
     """
     obj_path = str(Path(obj_path))
     out_path = str(Path(out_path))
+    libnrt_path = str(_get_static_nrt_library())
 
     cc = ccompiler.new_compiler()
     sysconfig.customize_compiler(cc)
@@ -167,7 +170,6 @@ def link_shared_library(
     extra_pre = []
     extra_post = []
 
-    libnrt_path = _get_static_nrt_library()
     if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
         # Force-include *all* objects from the archive.
         extra_pre += ["-Wl,--whole-archive", libnrt_path, "-Wl,--no-whole-archive"]
@@ -201,6 +203,7 @@ def link_shared_library(
         )
     except Exception as e:
         raise RuntimeError(f"Link failed for {out_path}") from e
+
 
 ###
 
