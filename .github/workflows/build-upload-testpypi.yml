@@ -4,8 +4,7 @@ on:
   pull_request:
     paths:
       - "buildscripts/conda-recipes/**"
-      - ".github/workflows/build-upload-conda-test.yml"
-      - ".github/workflows/build-upload-conda-base.yml"
+      - ".github/workflows/build-upload-testpypi.yml"
       - "src/**"
       - setup.py
       - MANIFEST.in
