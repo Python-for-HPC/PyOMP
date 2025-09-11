@@ -36,7 +36,7 @@ include = ["numba.openmp*"]
 
 # Bundle the CMake-installed artifacts into the wheel.
 [tool.setuptools.package-data]
-"numba.openmp.libs" = ["pass/*", "libomp/**/*", "nrt/*"]
+"numba.openmp.libs" = ["pass/*", "libomp/**/*"]
 
 # setuptools-scm config
 [tool.setuptools_scm]

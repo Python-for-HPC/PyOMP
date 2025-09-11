@@ -112,57 +112,32 @@ except Exception:  # Python <3.12, or older setuptools
     from distutils import ccompiler, sysconfig  # type: ignore
 
 
-def _get_static_nrt_library():
-    libnrt_dir = libpath / "nrt"
-
-    # Do not recompile if we find the static library. We assume the C files used
-    # for creating it are immutable.
-    libnrt_path = libnrt_dir / "libnrt.a"
-    if libnrt_path.exists():
-        return libnrt_path.absolute()
-
-    # Gather source files for the NRT and helperlib static bundle.
-    numba_include_path = numba.extending.include_path()
-    sources = [
-        f"{libpath / 'nrt'}/init.c",
-        f"{numba_include_path}/numba/_helpermod.c",
-        f"{numba_include_path}/numba/cext/utils.c",
-        f"{numba_include_path}/numba/cext/dictobject.c",
-        f"{numba_include_path}/numba/cext/listobject.c",
-        f"{numba_include_path}/numba/core/runtime/_nrt_pythonmod.c",
-        f"{numba_include_path}/numba/core/runtime/nrt.cpp",
-    ]
-
-    # Create the compiler.
-    cc = ccompiler.new_compiler()
-    sysconfig.customize_compiler(cc)
-
-    # Set the include dirs to python's and numpy's.
-    include_dirs = [sysconfig.get_python_inc(), np.get_include()]
-
-    # Compile the objects and create the static library.
-    objs = cc.compile(
-        sources, output_dir=str(libnrt_dir / "build"), include_dirs=include_dirs
-    )
-    cc.create_static_lib(objs, output_dir=str(libnrt_dir), output_libname="nrt")
-
-    return libnrt_path.absolute()
-
-
-def link_shared_library(
-    obj_path,
-    out_path,
-    *,
-    install_name=None,  # macOS only (e.g. "@rpath/libpyomp_rt.dylib")
-    rpaths=None,  # use ["$ORIGIN"] (ELF) or ["@loader_path"] (macOS)
-):
+def link_shared_library(obj_path, out_path):
     """
-    Produce a shared library from a single object file (+ one static archive).
-    Uses distutils' compiler to remain platform-agnostic.
+    Produce a shared library from a single object file and link numba C symbols.
+    Uses distutils' compiler.
     """
     obj_path = str(Path(obj_path))
     out_path = str(Path(out_path))
-    libnrt_path = str(_get_static_nrt_library())
+
+    from numba import _helperlib
+    from numba.core.runtime import _nrt_python as _nrt
+
+    # Prepare list of Numba C symbols to link against.
+    symbols = []
+    for py_name in _helperlib.c_helpers:
+        c_name = "numba_" + py_name
+        c_address = _helperlib.c_helpers[py_name]
+        symbols.append(f"-Wl,--defsym={c_name}=0x{c_address:x}")
+
+    for py_name in _nrt.c_helpers:
+        if py_name.startswith("_"):
+            # internal API
+            c_name = py_name
+        else:
+            c_name = "NRT_" + py_name
+        c_address = _nrt.c_helpers[py_name]
+        symbols.append(f"-Wl,--defsym={c_name}=0x{c_address:x}")
 
     cc = ccompiler.new_compiler()
     sysconfig.customize_compiler(cc)
@@ -171,29 +146,15 @@ def link_shared_library(
     extra_post = []
 
     if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
-        # Force-include *all* objects from the archive.
-        extra_pre += ["-Wl,--whole-archive", libnrt_path, "-Wl,--no-whole-archive"]
-        # RPATH via argument (runtime_library_dirs also works, but this is explicit & robust)
-        for rp in rpaths or []:
-            extra_post += ["-Wl,-rpath," + rp]
+        # Add numba symbols to the link.
+        extra_post += symbols
     elif sys.platform == "darwin":
-        # Mach-O does not have --whole-archive; use -force_load for a specific .a
-        extra_pre += ["-Wl,-force_load", libnrt_path]
-        if install_name:
-            extra_post += ["-Wl,-install_name," + install_name]
-        for rp in rpaths or []:
-            extra_post += ["-Wl,-rpath," + rp]
+        raise NotImplementedError("link_shared_library not implemented on Windows")
     elif os.name == "nt":
-        # MSVC/LLD-COFF: whole-archive per library
-        extra_post += [f"/WHOLEARCHIVE:{libnrt_path}"]
-        # export_symbols works here if you want to control exports
+        raise NotImplementedError("link_shared_library not implemented on Windows")
     else:
         raise RuntimeError(f"Unsupported platform: {sys.platform}")
 
-    # NOTE:
-    # - We do NOT pass `libraries=["nrt_static"]` because we want the *specific* archive path,
-    #   and we are wrapping whole-archive/force-load around it.
-    # - link_shared_object adds the right "/DLL", "-shared", etc for the platform.
     try:
         cc.link_shared_object(
             objects=[obj_path],
@@ -2726,13 +2687,7 @@ class openmp_region_start(ir.Stmt):
                 # Create shared library as required by the libomptarget host
                 # plugin.
 
-                link_shared_library(
-                    obj_path=filename_o,
-                    out_path=filename_so,
-                    rpaths=[
-                        "$ORIGIN"
-                    ],  # make runtime linker look in the .so's directory
-                )
+                link_shared_library(obj_path=filename_o, out_path=filename_so)
 
                 with open(filename_so, "rb") as f:
                     target_elf = f.read()
