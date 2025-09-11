@@ -1,4 +1,4 @@
-name: Deploy conda (test)
+name: conda (test)
 
 on:
   pull_request:
@@ -17,5 +17,4 @@ jobs:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:
       label: test
-      env: .github/workflows/envs/env-test.yml
     secrets: inherit

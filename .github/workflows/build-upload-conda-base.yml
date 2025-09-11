@@ -1,12 +1,9 @@
-name: Deploy conda base
+name: conda base
 
 on:
   workflow_call:
     inputs:
       label:
-        required: true
-        type: string
-      env:
         required: true
         type: string
 
@@ -30,7 +27,6 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: "3.10"
-          environment-file: ${{ inputs.env }}
           auto-update-conda: false
           show-channel-urls: true
       - name: Build and upload pyomp

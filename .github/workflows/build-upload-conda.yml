@@ -1,4 +1,4 @@
-name: Deploy conda (main)
+name: conda (main)
 
 on:
   release:
@@ -10,7 +10,6 @@ jobs:
     uses: ./.github/workflows/build-upload-conda-base.yml
     with:
       label: main
-      env: .github/workflows/envs/env.yml
     secrets: inherit
   deploy-containers:
     needs: deploy-conda
