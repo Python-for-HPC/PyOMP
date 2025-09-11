@@ -1,4 +1,4 @@
-name: Deploy testpypi wheels
+name: testpypi
 
 on:
   pull_request:
@@ -14,7 +14,6 @@ on:
 jobs:
   # Build wheels per platform and upload artifacts.
   build-wheels:
-    name: Build wheels ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -41,12 +40,13 @@ jobs:
           name: testpypi-cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
-  # Test wheels matrixed on numba versions.
+  # Test wheels matrixed on os, python, and numba versions.
   test-wheels:
     needs: build-wheels
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest, macOS-latest, ubuntu-24.04-arm]
         python-version: ['3.9', '3.10', '3.11', '3.12']
         numba-version: ['0.57.0', '0.57.1', '0.58.0', '0.58.1', '0.59.0', '0.59.1', '0.60.0']
         exclude:
