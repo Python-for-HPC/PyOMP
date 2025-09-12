@@ -19,6 +19,7 @@ RUN \
 
 RUN \
   source /home/pyompuser/miniconda3/bin/activate &&\
+  export CONDA_PLUGINS_AUTO_ACCEPT_TOS=true &&\
   conda create -y -n pyomp -c python-for-hpc -c conda-forge \
     pyomp jupyter notebook python=3.10 &&\
   echo "conda activate pyomp" >> /home/pyompuser/.bashrc
