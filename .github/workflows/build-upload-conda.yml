@@ -1,4 +1,4 @@
-name: conda (main)
+name: conda
 
 on:
   release:
