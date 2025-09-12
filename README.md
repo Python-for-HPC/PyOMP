@@ -1,4 +1,5 @@
 [![Documentation Status](https://readthedocs.org/projects/pyomp/badge/?version=latest)](https://pyomp.readthedocs.io/en/latest/?badge=latest)
+[![pypi](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-wheels.yml/badge.svg?branch=main&event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-wheels.yml)
 [![Deploy conda pkgs (main)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml/badge.svg?event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Python-for-HPC/binder/HEAD)
 
