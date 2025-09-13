@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements code generation for OpenMP from intrinsics embedded in
-// the IR, using the OpenMPIRBuilder
+// the IR.
 //
 //===-------------------------------------------------------------------------===//
 
@@ -31,12 +31,15 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+#include <cstddef>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/Passes/PassPlugin.h>
 
-#include "IntrinsicsOpenMP.h"
-#include "IntrinsicsOpenMP_CAPI.h"
 #include "CGIntrinsicsOpenMP.h"
 #include "DebugOpenMP.h"
+#include "IntrinsicsOpenMP.h"
+#include "IntrinsicsOpenMP_CAPI.h"
 
 #include <algorithm>
 #include <memory>
@@ -164,9 +167,7 @@ collectGlobalizedValues(DirectiveRegion &Directive) {
 
 struct IntrinsicsOpenMP {
 
-  IntrinsicsOpenMP() {
-    DebugOpenMPInit();
-  }
+  IntrinsicsOpenMP() { DebugOpenMPInit(); }
 
   bool runOnModule(Module &M) {
     // Codegen for nested or combined constructs assumes code is generated
@@ -185,7 +186,7 @@ struct IntrinsicsOpenMP {
     }
 
     DEBUG_ENABLE(dbgs() << "=== Dump Module\n"
-                      << M << "=== End of Dump Module\n");
+                        << M << "=== End of Dump Module\n");
 
     CGIntrinsicsOpenMP CGIOMP(M);
     // Find all calls to directive intrinsics.
@@ -649,19 +650,17 @@ struct IntrinsicsOpenMP {
         }
 
         if (verifyFunction(*Fn, &errs()))
-          FATAL_ERROR(
-              "Verification of IntrinsicsOpenMP lowering failed!");
+          FATAL_ERROR("Verification of IntrinsicsOpenMP lowering failed!");
       }
     }
 
     DEBUG_ENABLE(dbgs() << "=== Dump Lowered Module\n"
-                      << M << "=== End of Dump Lowered Module\n");
+                        << M << "=== End of Dump Lowered Module\n");
 
     DEBUG_ENABLE(dbgs() << "=== End of IntrinsicsOpenMP pass\n");
 
     return true;
   }
-
 };
 } // namespace
 
@@ -681,14 +680,15 @@ struct LegacyIntrinsicsOpenmMPPass : public ModulePass {
 };
 
 char LegacyIntrinsicsOpenmMPPass::ID = 0;
-static RegisterPass<LegacyIntrinsicsOpenmMPPass> X("intrinsics-openmp",
-                                        "Legacy IntrinsicsOpenMP Pass");
+static RegisterPass<LegacyIntrinsicsOpenmMPPass>
+    X("intrinsics-openmp", "Legacy IntrinsicsOpenMP Pass");
 
 ModulePass *llvm::createIntrinsicsOpenMPPass() {
   return new LegacyIntrinsicsOpenmMPPass();
 }
 
-void LLVMAddIntrinsicsOpenMPPass(LLVMPassManagerRef PM) {
+extern "C" __attribute__((visibility("default"))) void
+LLVMAddIntrinsicsOpenMPPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createIntrinsicsOpenMPPass());
 }
 
@@ -699,12 +699,11 @@ public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
     IntrinsicsOpenMP IOMP;
     bool Changed = IOMP.runOnModule(M);
-  
+
     if (Changed)
       return PreservedAnalyses::none();
-  
-    return PreservedAnalyses::all();
 
+    return PreservedAnalyses::all();
   }
 
   // Run always to lower OpenMP intrinsics.
@@ -729,4 +728,49 @@ llvm::PassPluginLibraryInfo getIntrinsicsOpenMPPluginInfo() {
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
   return getIntrinsicsOpenMPPluginInfo();
+}
+
+typedef void (*WriteCallback)(const void *data, size_t size);
+
+extern "C" int runIntrinsicsOpenMPPass(const char *BitcodePtr,
+                                       size_t BitcodeSize,
+                                       WriteCallback WriteCB) {
+  if (BitcodePtr == nullptr || BitcodeSize == 0 || WriteCB == nullptr) {
+    errs() << "Invalid arguments to runIntrinsicsOpenMPPass\n";
+    return 1;
+  }
+
+  MemoryBufferRef BufferRef{StringRef{BitcodePtr, BitcodeSize}, "module"};
+
+  llvm::LLVMContext Ctx;
+  auto ModOrErr = llvm::parseBitcodeFile(BufferRef, Ctx);
+  if (!ModOrErr) {
+    errs() << "Bitcode parse failed\n";
+    return 2;
+  }
+  std::unique_ptr<llvm::Module> M = std::move(*ModOrErr);
+
+  PassBuilder PB;
+
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
+
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+  ModulePassManager MPM;
+  MPM.addPass(IntrinsicsOpenMPPass());
+  MPM.run(*M, MAM);
+
+  SmallVector<char, 0> Buf;
+  raw_svector_ostream OS(Buf);
+  WriteBitcodeToFile(*M, OS);
+
+  WriteCB(Buf.data(), Buf.size());
+  return 0;
 }

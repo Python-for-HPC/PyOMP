@@ -1,5 +1,6 @@
 [![Documentation Status](https://readthedocs.org/projects/pyomp/badge/?version=latest)](https://pyomp.readthedocs.io/en/latest/?badge=latest)
-[![Deploy conda pkgs (main)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml/badge.svg?event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml)
+[![pypi](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-wheels.yml/badge.svg?branch=main&event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-wheels.yml)
+[![conda](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml/badge.svg?branch=main&event=release)](https://github.com/Python-for-HPC/PyOMP/actions/workflows/build-upload-conda.yml)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/Python-for-HPC/binder/HEAD)
 
 # PyOMP
@@ -12,10 +13,10 @@ compiler based on LLVM, which is competitive with equivalent C/C++ implementatio
 
 PyOMP is developed and distributed as an *extension* to Numba, so it uses
 Numba as a dependency.
-It is currently tested with Numba versions 0.57.x, 0.58.x on the following
-architecture and operating system combinations: linux-64 (x86_64), osx-arm64
-(mac), linux-arm64, and linux-ppc64le.
-Installation is possible through `conda`, detailed in the next section.
+It is currently tested with Numba versions 0.57.x, 0.58.x, 0.59.x, 0.60.x on the
+following architecture and operating system combinations: linux-64 (x86_64),
+osx-arm64 (mac), linux-arm64, and linux-ppc64le.
+Installation is possible through `pip` or `conda`, detailed in the next section.
 
 As PyOMP builds on top of the LLVM OpenMP infrastructure, it also inherits its
 limitations: GPU support is only available on Linux.
@@ -23,12 +24,20 @@ Also, PyOMP currently supports only NVIDIA GPUs with AMD GPU support planned for
 
 ## Installation
 
+### Pip
+PyOMP is distributed through PyPI, installable using the following command:
+
+```bash
+pip install pyomp
+```
+
 ### Conda
-PyOMP is distributed through Conda, easily installable using the following command:
+PyOMP is also distributed through Conda, installable using the following command:
 
 ```bash
 conda install -c python-for-hpc -c conda-forge pyomp
 ```
+
 Besides a standard installation, we also provide the following options to
 quickly try out PyOMP online or through a container.
 
@@ -70,8 +79,7 @@ Grep the url with the token from the output and copy it to the browser.
 
 ## Usage
 
-From `numba.openmp` import the `@njit` decorator and the `openmp_context` to
-create OpenMP regions using `with` contexts.
+From `numba.openmp` import the `@njit` decorator and the `openmp_context`.
 Decorate with `njit` the function you want to parallelize with OpenMP and
 describe parallelism in OpenMP directives using `with` contexts.
 Enjoy the simplicity of OpenMP with Python syntax and parallel performance.
@@ -79,10 +87,10 @@ Enjoy the simplicity of OpenMP with Python syntax and parallel performance.
 For a list of supported OpenMP directives and more detailed information, check
 out the [Documentation](https://pyomp.readthedocs.io).
 
-PyOMP supports both CPU and GPU programming implementing OpenMP's `target`
-directive for offloading.
-For GPU programming, PyOMP supports the `device` clause, with `device(0)` by
-convention offloading to a GPU device.
+PyOMP supports both CPU and GPU programming.
+For GPU programming, PyOMP implements OpenMP's `target` directive for offloading
+and supports the `device` clause, with `device(0)` by convention offloading to a
+GPU device.
 It is also possible to use the host as a multi-core CPU target device (mainly
 for testing purposes) by setting `device(1)`.
 
@@ -126,7 +134,7 @@ def calc_pi(num_steps):
                for i in range(num_steps):
                    tid = omp_get_thread_num()
                    x = (i+0.5)*step
-                   red_sum += 4.0 / (1.0 + x*x) 
+                   red_sum += 4.0 / (1.0 + x*x)
 
     pi = step * red_sum
     print("pi=", pi)
@@ -139,3 +147,11 @@ print("pi =", calc_pi(1000000))
 We welcome any feedback, bug reports, or feature requests.
 Please open an [Issue](https://github.com/Python-for-HPC/PyOMP/issues) or post
 in [Discussions](https://github.com/Python-for-HPC/PyOMP/discussions).
+
+## License
+
+PyOMP is licensed under the BSD-2-Clause license (see [LICENSE](LICENSE)).
+
+The package includes the LLVM OpenMP runtime library, which is distributed under
+the Apache License v2.0 with LLVM Exceptions. See
+[LICENSE-OPENMP.txt](LICENSE-OPENMP.txt) for details.

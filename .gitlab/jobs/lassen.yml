@@ -57,17 +57,12 @@ variables:
   parallel:
     matrix:
       - PYOMP_CI_PYTHON_VERSION:
-        - "3.8"
         - "3.9"
         - "3.10"
-
-build-llvm-openmp-dev-lassen:
-  extends: .base-job
-  variables:
-    PYOMP_CI_BUILD_PKG: "llvm-openmp-dev"
+        - "3.11"
+        - "3.12"
 
 build-pyomp-lassen:
   extends: [.base-job, .python-variants]
-  needs: ["build-llvm-openmp-dev-lassen"]
   variables:
     PYOMP_CI_BUILD_PKG: "pyomp"

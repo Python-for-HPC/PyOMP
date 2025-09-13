@@ -1,4 +1,4 @@
-{% set version = "0.2.0" %}
+{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0').lstrip('v') %}
 
 package:
   name: pyomp
@@ -12,25 +12,72 @@ build:
   script_env:
     - PY_VCRUNTIME_REDIST # [win]
   script:
-    - {{ PYTHON }} -m pip install . -vv
+    - export VERBOSE=1
+    - export CPPFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -isystem ${PREFIX}/include -D_FORTIFY_SOURCE=2" # [osx]
+    - rm -rf build dist src/*.egg-info
+    - {{ PYTHON }} -m pip install -v .
 
 requirements:
   build:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
     - cmake
+    - setuptools_scm
+    - elfutils # [linux]
+    - libffi # [linux]
   host:
     - python
     - pip
     - setuptools
-    - numba >=0.57, <0.58
+    - setuptools_scm
+    - numba >=0.57, <0.61
+    - clang 14.*
     - llvmdev 14.*
+    - zlib
+    - elfutils # [linux]
+    - libffi # [linux]
   run:
-    - numba >=0.57, <0.58
+    - python
+    - setuptools
+    - numba >=0.57, <0.61
     - lark
     - cffi
-    - llvm-openmp-dev
-    - llvmdev 14.*
+
+test:
+  commands:
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomp.dylib                        # [osx]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomp.so                           # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx1010.bc  # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx1030.bc  # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx1031.bc  # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx700.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx701.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx801.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx803.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx900.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx902.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx906.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx908.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-amdgpu-gfx90a.bc   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_35.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_37.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_50.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_52.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_53.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_60.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_61.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_62.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_70.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_72.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_75.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_80.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-new-nvptx-sm_86.bc     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.rtl.amdgpu.so          # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.rtl.cuda.so            # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.rtl.ppc64.so           # [linux and ppc64le]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.rtl.x86_64.so          # [linux and x86_64]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.rtl.aarch64.so         # [linux and aarch64]
+    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.so                     # [linux]
 
 about:
   home: https://github.com/Python-for-HPC/PyOMP

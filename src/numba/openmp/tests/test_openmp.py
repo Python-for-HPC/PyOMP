@@ -1,78 +1,21 @@
 import contextlib
 import math
-import time
-import dis
 import numbers
 import os
 import platform
-import sys
-import subprocess
-import warnings
-from functools import reduce
 import numpy as np
-from numpy.random import randn
-import operator
-from collections import defaultdict, namedtuple
-import copy
-from itertools import cycle, chain
-import subprocess as subp
 
-from numba import typeof
 from numba.core import (
-    types,
-    utils,
-    typing,
-    errors,
-    ir,
-    rewrites,
-    typed_passes,
-    inline_closurecall,
-    config,
     compiler,
-    cpu,
 )
-from numba.extending import (
-    overload_method,
-    register_model,
-    typeof_impl,
-    unbox,
-    NativeValue,
-    models,
-)
-from numba.core.registry import cpu_target
-from numba.core.annotations import type_annotations
-from numba.core.ir_utils import (
-    find_callname,
-    guard,
-    build_definitions,
-    get_definition,
-    is_getitem,
-    is_setitem,
-    index_var_of_get_setitem,
-)
-from numba.np.unsafe.ndarray import empty_inferred as unsafe_empty
-from numba.core.bytecode import ByteCodeIter
+
 from numba.core.compiler import (
-    compile_isolated,
     Flags,
-    CompilerBase,
-    DefaultPassBuilder,
 )
-from numba.core.compiler_machinery import register_pass, AnalysisPass
-from numba.core.typed_passes import IRLegalization
 from numba.tests.support import (
     TestCase,
-    captured_stdout,
-    MemoryLeakMixin,
     override_env_config,
     linux_only,
-    tag,
-    _32bit,
-    needs_blas,
-    needs_lapack,
-    disabled_test,
-    skip_unless_scipy,
-    needs_subprocess,
 )
 
 import numba.openmp
@@ -258,27 +201,6 @@ class TestOpenmpBase(TestCase):
         omp_set_num_threads(self.beforeThreads)
         omp_set_max_active_levels(self.beforeLevels)
 
-    def _compile_this(self, func, sig, flags):
-        return compile_isolated(func, sig, flags=flags)
-
-    def compile_njit_openmp_disabled(self, func, sig):
-        with override_config("OPENMP_DISABLED", True):
-            return self._compile_this(func, sig, flags=self.cflags)
-
-    def compile_njit(self, func, sig):
-        return self._compile_this(func, sig, flags=self.cflags)
-
-    def compile_all(self, pyfunc, *args, **kwargs):
-        sig = tuple([typeof(x) for x in args])
-
-        # compile the OpenMP-disabled njit function
-        cdfunc = self.compile_njit_openmp_disabled(pyfunc, sig)
-
-        # compile a standard njit of the original function
-        cfunc = self.compile_njit(pyfunc, sig)
-
-        return cfunc, cdfunc
-
     def assert_outputs_equal(self, *outputs):
         assert len(outputs) > 1
 
@@ -303,97 +225,6 @@ class TestOpenmpBase(TestCase):
                 np.testing.assert_approx_equal(op1, op2)
             else:
                 raise ValueError("Unsupported output type encountered")
-
-    def check_openmp_vs_others(self, pyfunc, cfunc, cdfunc, *args, **kwargs):
-        """
-        Checks python, njit and njit without OpenMP impls produce the same result.
-
-        Arguments:
-            pyfunc - the python function to test
-            cfunc - CompilerResult from njit of pyfunc
-            cdfunc - CompilerResult from OpenMP-disabled njit of pyfunc
-            args - arguments for the function being tested
-        Keyword Arguments:
-            scheduler_type - 'signed', 'unsigned' or None, default is None.
-                           Supply in cases where the presence of a specific
-                           scheduler is to be asserted.
-            fastmath_pcres - a fastmath parallel compile result, if supplied
-                             will be run to make sure the result is correct
-            check_arg_equality - some functions need to check that a
-                                 parameter is modified rather than a certain
-                                 value returned.  If this keyword argument
-                                 is supplied, it should be a list of
-                                 comparison functions such that the i'th
-                                 function in the list is used to compare the
-                                 i'th parameter of the njit and OpenMP-disabled
-                                 functions against the i'th parameter of the
-                                 standard Python function, asserting if they
-                                 differ.  The length of this list must be equal
-                                 to the number of parameters to the function.
-                                 The null comparator is available for use
-                                 when you do not desire to test if some
-                                 particular parameter is changed.
-            Remaining kwargs are passed to np.testing.assert_almost_equal
-        """
-        check_args_for_equality = kwargs.pop("check_arg_equality", None)
-
-        def copy_args(*args):
-            if not args:
-                return tuple()
-            new_args = []
-            for x in args:
-                if isinstance(x, np.ndarray):
-                    new_args.append(x.copy("k"))
-                elif isinstance(x, np.number):
-                    new_args.append(x.copy())
-                elif isinstance(x, numbers.Number):
-                    new_args.append(x)
-                elif isinstance(x, tuple):
-                    new_args.append(copy.deepcopy(x))
-                elif isinstance(x, list):
-                    new_args.append(x[:])
-                elif isinstance(x, str):
-                    new_args.append(x)
-                else:
-                    raise ValueError("Unsupported argument type encountered")
-            return tuple(new_args)
-
-        # python result
-        py_args = copy_args(*args)
-        py_expected = pyfunc(*py_args)
-
-        # njit result
-        njit_args = copy_args(*args)
-        njit_output = cfunc.entry_point(*njit_args)
-
-        # OpenMP-disabled result
-        openmp_disabled_args = copy_args(*args)
-        openmp_disabled_output = cdfunc.entry_point(*openmp_disabled_args)
-
-        if check_args_for_equality is None:
-            self.assert_outputs_equal(py_expected, njit_output, openmp_disabled_output)
-        else:
-            assert len(py_args) == len(check_args_for_equality)
-            for pyarg, njitarg, noomparg, argcomp in zip(
-                py_args, njit_args, openmp_disabled_args, check_args_for_equality
-            ):
-                argcomp(njitarg, pyarg, **kwargs)
-                argcomp(noomparg, pyarg, **kwargs)
-
-    # TODO: remove this check function and check_openmp_vs_others and check
-    # directly expected results.
-    def check(self, pyfunc, *args, **kwargs):
-        """Checks that pyfunc compiles for *args under njit OpenMP-disabled and
-        njit and asserts that all version execute and produce the same result
-        """
-        cfunc, cdfunc = self.compile_all(pyfunc, *args)
-        self.check_openmp_vs_others(pyfunc, cfunc, cdfunc, *args, **kwargs)
-
-    def check_variants(self, impl, arg_gen, **kwargs):
-        """Run self.check(impl, ...) on array data generated from arg_gen."""
-        for args in arg_gen():
-            with self.subTest(list(map(typeof, args))):
-                self.check(impl, *args, **kwargs)
 
 
 class TestPipeline(object):
@@ -651,15 +482,17 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
         TestOpenmpBase.__init__(self, *args)
 
     def test_parallel_for_set_elements(self):
+        @njit
         def test_impl(v):
             with openmp("parallel for"):
                 for i in range(len(v)):
                     v[i] = 1.0
             return v
 
-        self.check(test_impl, np.zeros(100))
+        r = test_impl(np.zeros(100))
+        np.testing.assert_array_equal(r, np.ones(100))
 
-    def test_separate_parallel_for_set_elements(self):
+    def test_parallel_nested_for_set_elements(self):
         def test_impl(v):
             with openmp("parallel"):
                 with openmp("for"):
@@ -667,7 +500,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                         v[i] = 1.0
             return v
 
-        self.check(test_impl, np.zeros(100))
+        r = test_impl(np.zeros(100))
+        np.testing.assert_array_equal(r, np.ones(100))
 
     def test_parallel_for_const_var_omp_statement(self):
         def test_impl(v):
@@ -677,7 +511,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                     v[i] = 1.0
             return v
 
-        self.check(test_impl, np.zeros(100))
+        r = test_impl(np.zeros(100))
+        np.testing.assert_array_equal(r, np.ones(100))
 
     def test_parallel_for_string_conditional(self):
         def test_impl(S):
@@ -688,7 +523,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                         capitalLetters += 1
             return capitalLetters
 
-        self.check(test_impl, "OpenMPstrTEST")
+        r = test_impl("OpenMPstrTEST")
+        np.testing.assert_equal(r, 7)
 
     def test_parallel_for_tuple(self):
         def test_impl(t):
@@ -698,9 +534,11 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                     len_total += len(t[i])
             return len_total
 
-        self.check(test_impl, ("32", "4", "test", "567", "re", ""))
+        r = test_impl(("32", "4", "test", "567", "re", ""))
+        np.testing.assert_equal(r, 12)
 
     def test_parallel_for_range_step_2(self):
+        @njit
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
             with openmp("parallel for"):
@@ -709,7 +547,10 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
 
             return a
 
-        self.check(test_impl, 12)
+        r = test_impl(12)
+        np.testing.assert_array_equal(
+            r, np.array([1, 0, 3, 0, 5, 0, 7, 0, 9, 0, 11, 0], dtype=np.int32)
+        )
 
     def test_parallel_for_range_step_arg(self):
         def test_impl(N, step):
@@ -720,7 +561,10 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
 
             return a
 
-        self.check(test_impl, 12, 2)
+        r = test_impl(12, 2)
+        np.testing.assert_array_equal(
+            r, np.array([1, 0, 3, 0, 5, 0, 7, 0, 9, 0, 11, 0], dtype=np.int32)
+        )
 
     def test_parallel_for_incremented_step(self):
         @njit
@@ -731,9 +575,13 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                         v[j] = i + 1
             return v
 
-        self.check(test_impl, np.zeros(100), 3)
+        r = test_impl(np.zeros(10), 3)
+        np.testing.assert_array_equal(
+            r, np.array([3.0, 1.0, 2.0, 3.0, 2.0, 1.0, 3.0, 1.0, 2.0, 3.0])
+        )
 
     def test_parallel_for_range_backward_step(self):
+        @njit
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
             with openmp("parallel for"):
@@ -742,7 +590,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
 
             return a
 
-        self.check(test_impl, 12)
+        r = test_impl(12)
+        np.testing.assert_array_equal(r, np.arange(1, 13, dtype=np.int32))
 
     """
     def test_parallel_for_dictionary(self):
@@ -752,10 +601,11 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                 for i in range(N):
                     l[i] = i % c
             return l
-        self.check(test_impl, 32, 5)
+        # check
     """
 
     def test_parallel_for_num_threads(self):
+        @njit
         def test_impl(nt):
             a = np.zeros(nt)
             with openmp("parallel num_threads(nt)"):
@@ -764,7 +614,8 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
                         a[i] = i
             return a
 
-        self.check(test_impl, 15)
+        r = test_impl(15)
+        np.testing.assert_array_equal(r, np.arange(15))
 
     def test_parallel_for_only_inside_var(self):
         @njit
@@ -832,38 +683,11 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
 
-    """
-    def test_static_work_calculation(self):
-        def test_impl(N, nt):
-            v = np.zeros(N)
-            step = -2
-            omp_set_num_threads(nt)
-            with openmp("parallel private(thread_num)"):
-                running_omp = omp_in_parallel()
-                thread_num = omp_get_thread_num()
-                if not running_omp:
-                    iters = N // abs(step)
-                    itersPerThread = iters // nt
-                    finishToThread = {}
-                    for t in range(N):
-                        f = itersPerThread*(t+1)-1 + min(iters%itersPerThread, t+1)
-                        finishToThread[f] = t
-                with openmp("for schedule(static)"):
-                    for index, i in enumerate(range(N-1, N%2 - 1, -2)):
-                        if not running_omp:
-                            for finish in finishToThread.keys():
-                                if index <= finish:
-                                    thread_num = finishToThread[finish]
-                        if i % (thread_num+1) == 0:
-                            v[i] = i/(thread_num+1)
-            print(v)
-            return v
-        self.check(test_impl, 100, 8)
-    """
-
     # Giorgis pass doesn't support static with chunksize yet?
-    @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Abort - unimplemented")
+    # @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Abort - unimplemented")
+    # TODO: check the schedule
     def test_avg_sched_const(self):
+        @njit
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
@@ -873,7 +697,10 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        np.testing.assert_array_equal(
+            r, [0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        )
 
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Abort - unimplemented")
     def test_avg_sched_var(self):
@@ -887,7 +714,8 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        # create check
 
     def test_static_distribution(self):
         @njit
@@ -1062,6 +890,7 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
         np.testing.assert_array_equal(r[3], np.zeros(size))
 
     def test_avg_arr_prev_two_elements_base(self):
+        @njit
         def test_impl(n, a):
             b = np.zeros(n)
             omp_set_num_threads(5)
@@ -1071,9 +900,13 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
                     b[i] = (a[i] + a[i - 1]) / 2.0
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        np.testing.assert_array_equal(
+            r, [0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        )
 
     def test_avg_num_threads_clause(self):
+        @njit
         def test_impl(n, a):
             b = np.zeros(n)
             with openmp("parallel for num_threads(5)"):
@@ -1082,9 +915,13 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        np.testing.assert_array_equal(
+            r, [0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        )
 
     def test_avg_num_threads_clause_var(self):
+        @njit
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
@@ -1094,11 +931,13 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        np.testing.assert_array_equal(
+            r, [0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        )
 
-    # Uses apparently unsupported chunking.
-    @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Abort - unimplemented")
     def test_avg_if_const(self):
+        @njit
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
@@ -1108,10 +947,14 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        np.testing.assert_array_equal(
+            r, [0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        )
 
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Abort - unimplemented")
     def test_avg_if_var(self):
+        @njit
         def test_impl(n, a):
             b = np.zeros(n)
             nt = 5
@@ -1123,9 +966,13 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 10, np.ones(10))
+        r = test_impl(10, np.ones(10))
+        np.testing.assert_array_equal(
+            r, [0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        )
 
-    def test_teams1(self):
+    def test_teams(self):
+        @njit
         def test_impl():
             a = 1
             with openmp("teams"):
@@ -1133,7 +980,8 @@ class TestOpenmpParallelClauses(TestOpenmpBase):
                     a = 123
             return a
 
-        self.check(test_impl)
+        r = test_impl()
+        np.testing.assert_equal(r, 123)
 
 
 class TestReductions(TestOpenmpBase):
@@ -1606,6 +1454,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         assert test_impl() == 0
 
     def test_privates(self):
+        @njit
         def test_impl(N):
             a = np.zeros(N, dtype=np.int32)
             x = 7
@@ -1619,7 +1468,9 @@ class TestOpenmpDataClauses(TestOpenmpBase):
 
             return a, zzzz
 
-        self.check(test_impl, 100)
+        r, z = test_impl(10)
+        np.testing.assert_array_equal(r, np.arange(7, 17))
+        np.testing.assert_equal(z, 9)
 
     def test_private_retain_value(self):
         @njit
@@ -1715,6 +1566,7 @@ class TestOpenmpDataClauses(TestOpenmpBase):
             np.testing.assert_array_equal(r[1], np.ones(r[0].shape))
 
     def test_private_divide_work(self):
+        @njit
         def test_impl(v, npoints):
             omp_set_num_threads(3)
 
@@ -1730,7 +1582,8 @@ class TestOpenmpDataClauses(TestOpenmpBase):
                     v[istart + i] = 123.456
             return v
 
-        self.check(test_impl, np.zeros(12), 12)
+        r = test_impl(np.zeros(12), 12)
+        np.testing.assert_array_equal(r, np.full(12, 123.456))
 
     def test_firstprivate(self):
         @njit
@@ -2220,7 +2073,8 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             return count
 
         iters = 1000
-        self.check(test_impl, 2, iters)
+        r = test_impl(2, iters)
+        np.testing.assert_equal(r, iters)
 
     def test_critical_threads2(self):
         @njit
@@ -2326,7 +2180,8 @@ class TestOpenmpConcurrency(TestOpenmpBase):
     #                        count = p
     #        return count
     #    iters = 1000
-    #    self.check(test_impl, 2, iters)
+    #    r = test_impl(2, iters)
+    #    create check
 
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Unimplemented")
     def test_atomic(self):
@@ -2507,8 +2362,9 @@ class TestOpenmpConcurrency(TestOpenmpBase):
     #
     #            return b, y
     #        n, m = 10, 20
-    #        self.check(test_impl, n, m, np.ones(n), np.zeros(n),
+    #        r = test_impl(n, m, np.ones(n), np.zeros(n),
     #                    np.zeros(m), np.full(m, 13))
+    # create check
 
     def test_nested_parallel_for(self):
         @njit
@@ -2611,6 +2467,7 @@ class TestOpenmpTask(TestOpenmpBase):
         TestOpenmpBase.__init__(self, *args)
 
     def test_task_basic(self):
+        @njit
         def test_impl(ntsks):
             a = np.zeros(ntsks)
             with openmp("parallel"):
@@ -2620,7 +2477,8 @@ class TestOpenmpTask(TestOpenmpBase):
                             a[i] = 1
             return a
 
-        self.check(test_impl, 15)
+        r = test_impl(15)
+        np.testing.assert_array_equal(r, np.ones(15))
 
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Sometimes segmentation fault")
     def test_task_thread_assignment(self):
@@ -2730,6 +2588,7 @@ class TestOpenmpTask(TestOpenmpBase):
         assert test_impl(4)
 
     def test_taskwait(self):
+        @njit
         def test_impl(ntsks):
             a = np.zeros(ntsks)
             with openmp("parallel private(i)"):
@@ -2744,10 +2603,11 @@ class TestOpenmpTask(TestOpenmpBase):
                                     sum -= 1
                             a[i] = 1 + sum
                     with openmp("taskwait"):
-                        ret = np.all(a)
+                        ret = np.sum(a)
             return ret
 
-        self.check(test_impl, 15)
+        r = test_impl(15)
+        np.testing.assert_equal(r, 15)
 
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Sometimes segmentation fault")
     def test_taskwait_descendants(self):
@@ -2991,7 +2851,8 @@ class TestOpenmpTask(TestOpenmpBase):
                                 a[i] = x
             return a, da
 
-        self.check(test_impl, 15)
+        r = test_impl(15)
+        # create check
 
     # Affinity clause should not affect result
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Unimplemented")
@@ -3010,14 +2871,17 @@ class TestOpenmpTask(TestOpenmpBase):
                                 a[i] = np.sum(b)
             return a
 
-        self.check(test_impl, 15, 4)
+        test_impl(15, 4)
+        # create check
 
+    # What does this test?
     def test_shared_array(self):
+        @njit
         def test_impl(mode):
-            if mode == 0:
-                return
-
             b = np.zeros(100)
+            if mode == 0:
+                return b
+
             with openmp("parallel"):
                 with openmp("single"):
                     a = np.ones(100)
@@ -3033,9 +2897,12 @@ class TestOpenmpTask(TestOpenmpBase):
 
             return b
 
-        self.check(test_impl, 0)
-        self.check(test_impl, 1)
-        self.check(test_impl, 2)
+        r = test_impl(0)
+        np.testing.assert_array_equal(r, np.zeros(100))
+        r = test_impl(1)
+        np.testing.assert_array_equal(r, np.zeros(100))
+        r = test_impl(2)
+        np.testing.assert_array_equal(r, np.full(100, 200.0))
 
 
 @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Unimplemented")
@@ -3053,7 +2920,8 @@ class TestOpenmpTaskloop(TestOpenmpBase):
                             a[i] = 1
             return a
 
-        self.check(test_impl, 15)
+        r = test_impl(15)
+        # create check
 
     def test_taskloop_num_tasks(self):
         @njit
@@ -4815,6 +4683,7 @@ class TestOpenmpPi(TestOpenmpBase):
         TestOpenmpBase.__init__(self, *args)
 
     def test_pi_loop(self):
+        @njit
         def test_impl(num_steps):
             step = 1.0 / num_steps
 
@@ -4830,9 +4699,11 @@ class TestOpenmpPi(TestOpenmpBase):
             pi = step * the_sum
             return pi
 
-        self.check(test_impl, 100000)
+        r = test_impl(100000)
+        np.testing.assert_almost_equal(r, 3.141632653198149)
 
     def test_pi_loop_combined(self):
+        @njit
         def test_impl(num_steps):
             step = 1.0 / num_steps
 
@@ -4847,7 +4718,8 @@ class TestOpenmpPi(TestOpenmpBase):
             pi = step * the_sum
             return pi
 
-        self.check(test_impl, 100000)
+        r = test_impl(100000)
+        np.testing.assert_almost_equal(r, 3.141632653198149)
 
     def test_pi_loop_directive(self):
         def test_impl(num_steps):
@@ -4864,9 +4736,12 @@ class TestOpenmpPi(TestOpenmpBase):
             pi = step * the_sum
             return pi
 
-        self.check(test_impl, 100000)
+        r = test_impl(100000)
+        np.testing.assert_almost_equal(r, 3.141632653198149)
 
+    # Why does this pi calculated value differ from the others?
     def test_pi_spmd(self):
+        @njit
         def test_impl(num_steps):
             step = 1.0 / num_steps
             MAX_THREADS = 8
@@ -4893,7 +4768,8 @@ class TestOpenmpPi(TestOpenmpBase):
             pi = step * full_sum
             return pi
 
-        self.check(test_impl, 10000000)
+        r = test_impl(1000000)
+        np.testing.assert_almost_equal(r, 3.1415926535897643)
 
     def test_pi_task(self):
         def test_pi_comp(Nstart, Nfinish, step):

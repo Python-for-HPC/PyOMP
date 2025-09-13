@@ -74,7 +74,7 @@ from numba.core.callconv import (
     excinfo_t,
     CPUCallConv,
 )
-from functools import cached_property
+from functools import cached_property, lru_cache
 from numba.core.datamodel.registry import register_default as model_register
 from numba.core.datamodel.registry import default_manager as model_manager
 from numba.core.datamodel.models import OpaqueModel
@@ -98,11 +98,135 @@ import subprocess
 import tempfile
 import types as python_types
 import numba
+import ctypes
 from pathlib import Path
+from ._version import version as __version__
 
-llvm_binpath = None
-llvm_libpath = None
-libpath = Path(__file__).parent / "libs"
+libpath = Path(__file__).absolute().parent / "libs"
+
+### START OF EXTENSIONS TO AVOID SUBPROCESS TOOLS ###
+# Python 3.12+ removed distutils; use the shim in setuptools.
+try:
+    from setuptools._distutils import ccompiler, sysconfig
+except Exception:  # Python <3.12, or older setuptools
+    from distutils import ccompiler, sysconfig  # type: ignore
+
+
+def link_shared_library(obj_path, out_path):
+    # Generate trampolines for numba/NRT symbols. We use trampolines to link the
+    # absolute symbol addresses from numba to the self-contained shared library
+    # for the OpenMP target CPU module.
+    # TODO: ask numba upstream to provide a static library with these symbols.
+    @lru_cache
+    def generate_trampolines():
+        from numba import _helperlib
+        from numba.core.runtime import _nrt_python as _nrt
+
+        # Signature mapping for numba/NRT functions. Add more as needed.
+        SIGNATURES = {
+            # GIL management
+            "numba_gil_ensure": ("void", []),
+            "numba_gil_release": ("void", []),
+            # Memory allocation
+            "NRT_MemInfo_alloc": ("void*", ["size_t"]),
+            "NRT_MemInfo_alloc_safe": ("void*", ["size_t"]),
+            "NRT_MemInfo_alloc_aligned": ("void*", ["size_t", "size_t"]),
+            "NRT_MemInfo_alloc_safe_aligned": ("void*", ["size_t", "size_t"]),
+            "NRT_MemInfo_free": ("void", ["void*"]),
+        }
+
+        trampoline_c = """#include <stddef.h>"""
+
+        symbols = []
+        # Process _helperlib symbols
+        for py_name in _helperlib.c_helpers:
+            c_name = "numba_" + py_name
+            c_address = _helperlib.c_helpers[py_name]
+
+            if c_name in SIGNATURES:
+                ret_type, params = SIGNATURES[c_name]
+                symbols.append((c_name, c_address, ret_type, params))
+
+        # Process _nrt symbols
+        for py_name in _nrt.c_helpers:
+            if py_name.startswith("_"):
+                c_name = py_name
+            else:
+                c_name = "NRT_" + py_name
+            c_address = _nrt.c_helpers[py_name]
+
+            if c_name in SIGNATURES:
+                ret_type, params = SIGNATURES[c_name]
+                symbols.append((c_name, c_address, ret_type, params))
+
+        # Generate trampolines
+        for c_name, c_address, ret_type, params in sorted(symbols):
+            # Build parameter list
+            if not params:
+                param_list = "void"
+                arg_list = ""
+            else:
+                param_list = ", ".join(
+                    f"{ptype} arg{i}" for i, ptype in enumerate(params)
+                )
+                arg_list = ", ".join(f"arg{i}" for i in range(len(params)))
+
+            # Build function pointer type
+            func_ptr_type = f"{ret_type} (*)({', '.join(params) if params else 'void'})"
+
+            # Generate the trampoline
+            trampoline_c += f"""
+    __attribute__((visibility("default")))
+    {ret_type} {c_name}({param_list}) {{
+        {"" if ret_type == "void" else "return "}(({func_ptr_type})0x{c_address:x})({arg_list});
+    }}
+    """
+
+        return trampoline_c
+
+    """
+    Produce a shared library from a single object file and link numba C symbols.
+    Uses distutils' compiler.
+    """
+    obj_path = str(Path(obj_path))
+    out_path = str(Path(out_path))
+
+    trampoline_code = generate_trampolines()
+    fd, trampoline_c = tempfile.mkstemp(".c")
+    os.close(fd)
+    with open(trampoline_c, "w") as f:
+        f.write(trampoline_code)
+
+    cc = ccompiler.new_compiler()
+    sysconfig.customize_compiler(cc)
+    extra_pre = []
+    extra_post = []
+
+    try:
+        trampoline_o = cc.compile([trampoline_c])
+    except Exception as e:
+        raise RuntimeError(
+            f"Compilation failed for trampolines in {trampoline_c}"
+        ) from e
+    finally:
+        os.remove(trampoline_c)
+
+    objs = [obj_path] + trampoline_o
+    try:
+        cc.link_shared_object(
+            objects=objs,
+            output_filename=out_path,
+            extra_preargs=extra_pre,
+            extra_postargs=extra_post,
+        )
+    except Exception as e:
+        raise RuntimeError(f"Link failed for {out_path}") from e
+    finally:
+        for file_o in trampoline_o:
+            os.remove(file_o)
+
+
+###
 
 
 ###### START OF NUMBA EXTENSIONS ######
@@ -198,34 +322,40 @@ class LowerNoSROA(Lower):
 
 def run_intrinsics_openmp_pass(ll_module):
     libpass = (
-        libpath / f"libIntrinsicsOpenMP.{'dylib' if sys.platform == 'darwin' else 'so'}"
+        libpath
+        / "pass"
+        / f"libIntrinsicsOpenMP.{'dylib' if sys.platform == 'darwin' else 'so'}"
     )
 
-    try:
-        r = subprocess.run(
-            [
-                llvm_binpath + "/opt",
-                "-f",
-                f"-load-pass-plugin={libpass}",
-                "-passes=intrinsics-openmp",
-            ],
-            input=ll_module.as_bitcode(),
-            check=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print("Error running LLVM pass:", e, file=sys.stderr)
-        print("Command:", e.cmd, file=sys.stderr)
-        print("Return code:", e.returncode, file=sys.stderr)
-        print("Output:", e.output.decode(), file=sys.stderr)
-        print("Error output:", e.stderr.decode(), file=sys.stderr)
-        raise
+    # Roundtrip the LLVM module through the intrinsics OpenMP pass.
+    WRITE_CB = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_size_t)
 
+    out = bytearray()
+
+    def _writer_cb(ptr, size):
+        out.extend(ctypes.string_at(ptr, size))
+
+    writer_cb = WRITE_CB(_writer_cb)
+
+    lib = ctypes.CDLL(str(libpass))
+    lib.runIntrinsicsOpenMPPass.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        WRITE_CB,
+    ]
+    lib.runIntrinsicsOpenMPPass.restype = ctypes.c_int
+
+    bc = ll_module.as_bitcode()
+    buf = ctypes.create_string_buffer(bc)
+    ptr = ctypes.cast(buf, ctypes.c_void_p)
+    rc = lib.runIntrinsicsOpenMPPass(ptr, len(bc), writer_cb)
+    if rc != 0:
+        raise RuntimeError(f"Running IntrinsicsOpenMPPass failed with return code {rc}")
+
+    bc_out = bytes(out)
+    lowered_module = ll.parse_bitcode(bc_out)
     if DEBUG_OPENMP_LLVM_PASS >= 1:
-        print(r.stderr.decode(), file=sys.stderr)
-
-    bitcode_output = r.stdout
-    lowered_module = ll.parse_bitcode(bitcode_output)
+        print(lowered_module)
 
     return lowered_module
 
@@ -454,36 +584,32 @@ class CallInstrWithOperandBundle(lir.instructions.CallInstr):
 
 
 def _init():
-    global llvm_binpath
-    global llvm_libpath
-
     sys_platform = sys.platform
 
-    llvm_version = (
-        subprocess.check_output(["llvm-config", "--version"]).decode().strip()
-    )
-    if llvm_version != "14.0.6":
+    llvm_major, llvm_minor, llvm_patch = ll.llvm_version_info
+    if llvm_major != 14:
         raise RuntimeError(
-            f"Incompatible LLVM version {llvm_version}, PyOMP expects LLVM 14.0.6"
+            f"Incompatible LLVM version {llvm_major}.{llvm_minor}.{llvm_patch}, PyOMP expects LLVM 14.x"
         )
 
-    llvm_binpath = subprocess.check_output(["llvm-config", "--bindir"]).decode().strip()
-    llvm_libpath = subprocess.check_output(["llvm-config", "--libdir"]).decode().strip()
-    iomplib = (
-        llvm_libpath + "/libomp" + (".dylib" if sys_platform == "darwin" else ".so")
+    omplib = (
+        libpath
+        / "libomp"
+        / "lib"
+        / f"libomp{'.dylib' if sys_platform == 'darwin' else '.so'}"
     )
     if DEBUG_OPENMP >= 1:
-        print("Found OpenMP runtime library at", iomplib)
-    ll.load_library_permanently(iomplib)
+        print("Found OpenMP runtime library at", omplib)
+    ll.load_library_permanently(str(omplib))
 
     # libomptarget is unavailable on apple, windows, so return.
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
-    omptargetlib = llvm_libpath + "/libomptarget.so"
+    omptargetlib = libpath / "libomp" / "lib" / "libomptarget.so"
     if DEBUG_OPENMP >= 1:
         print("Found OpenMP target runtime library at", omptargetlib)
-    ll.load_library_permanently(omptargetlib)
+    ll.load_library_permanently(str(omptargetlib))
 
 
 _init()
@@ -2611,7 +2737,8 @@ class openmp_region_start(ir.Stmt):
                         f.write(cres_library.get_llvm_str())
 
                 fd_o, filename_o = tempfile.mkstemp(".o")
-                fd_so, filename_so = tempfile.mkstemp(shared_ext)
+                os.close(fd_o)
+                filename_so = Path(filename_o).with_suffix(".so")
 
                 target_elf = cres_library.emit_native_object()
                 with open(filename_o, "wb") as f:
@@ -2620,32 +2747,15 @@ class openmp_region_start(ir.Stmt):
                 # Create shared library as required by the libomptarget host
                 # plugin.
 
-                subprocess.run(
-                    [
-                        # Use the compiler driver to create the shared library
-                        # and avoid missing symbols.
-                        "c++",
-                        "-shared",
-                        filename_o,
-                        # Do whole archive to include all symbols, esp. for the
-                        # PyOMP_NRT_Init constructor.
-                        "-Wl,--whole-archive",
-                        libpath / "libnrt_static.a",
-                        "-Wl,--no-whole-archive",
-                        "-o",
-                        filename_so,
-                    ],
-                    check=True,
-                )
+                link_shared_library(obj_path=filename_o, out_path=filename_so)
 
                 with open(filename_so, "rb") as f:
                     target_elf = f.read()
                 if DEBUG_OPENMP >= 1:
                     print("filename_o", filename_o, "filename_so", filename_so)
 
-                os.close(fd_o)
+                # Remove the temporary files.
                 os.remove(filename_o)
-                os.close(fd_so)
                 os.remove(filename_so)
 
                 if DEBUG_OPENMP >= 1:
@@ -2666,11 +2776,14 @@ class openmp_region_start(ir.Stmt):
                         with open(self.libdevice_path, "rb") as f:
                             self.libs_mod = ll.parse_bitcode(f.read())
                         self.libomptarget_arch = (
-                            llvm_libpath + "/libomptarget-new-nvptx-" + self.sm + ".bc"
+                            libpath
+                            / "libomp"
+                            / "lib"
+                            / f"libomptarget-new-nvptx-{self.sm}.bc"
                         )
                         with open(self.libomptarget_arch, "rb") as f:
                             libomptarget_mod = ll.parse_bitcode(f.read())
-                        # Link in device, openmp libraries.
+                        ## Link in device, openmp libraries.
                         self.libs_mod.link_in(libomptarget_mod)
                         # Initialize asm printers to codegen ptx.
                         ll.initialize_all_targets()
@@ -2678,7 +2791,9 @@ class openmp_region_start(ir.Stmt):
                         target = ll.Target.from_triple(CUDA_TRIPLE)
                         self.tm = target.create_target_machine(cpu=self.sm, opt=3)
 
-                    def _get_target_image_in_memory(self, mod, filename_prefix):
+                    def _get_target_image(
+                        self, mod, filename_prefix, use_toolchain=False
+                    ):
                         if DEBUG_OPENMP_LLVM_PASS >= 1:
                             with open(filename_prefix + ".ll", "w") as f:
                                 f.write(str(mod))
@@ -2750,105 +2865,60 @@ class openmp_region_start(ir.Stmt):
 
                         # Generate ptx assemlby.
                         ptx = self.tm.emit_assembly(mod)
-
-                        if DEBUG_OPENMP_LLVM_PASS >= 1:
+                        if use_toolchain:
+                            # ptxas does file I/O, so output the assembly and ingest the generated cubin.
                             with open(
                                 filename_prefix + "-intrinsics_omp-linked-opt.s", "w"
                             ) as f:
                                 f.write(ptx)
 
-                        linker_kwargs = {}
-                        for x in ompx_attrs:
-                            linker_kwargs[x.arg[0]] = (
-                                tuple(x.arg[1]) if len(x.arg[1]) > 1 else x.arg[1][0]
+                            subprocess.run(
+                                [
+                                    "ptxas",
+                                    "-m64",
+                                    "--gpu-name",
+                                    self.sm,
+                                    filename_prefix + "-intrinsics_omp-linked-opt.s",
+                                    "-o",
+                                    filename_prefix + "-intrinsics_omp-linked-opt.o",
+                                ],
+                                check=True,
                             )
-                        # NOTE: DO NOT set cc, since the linker will always
-                        # compile for the existing GPU context and it is
-                        # incompatible with the launch_bounds ompx_attribute.
-                        linker = driver.Linker.new(**linker_kwargs)
-                        linker.add_ptx(ptx.encode())
-                        cubin = linker.complete()
 
-                        if DEBUG_OPENMP_LLVM_PASS >= 1:
                             with open(
-                                filename_prefix + "-intrinsics_omp-linked-opt.o", "wb"
+                                filename_prefix + "-intrinsics_omp-linked-opt.o", "rb"
                             ) as f:
-                                f.write(cubin)
+                                cubin = f.read()
+                        else:
+                            if DEBUG_OPENMP_LLVM_PASS >= 1:
+                                with open(
+                                    filename_prefix + "-intrinsics_omp-linked-opt.s",
+                                    "w",
+                                ) as f:
+                                    f.write(ptx)
+
+                            linker_kwargs = {}
+                            for x in ompx_attrs:
+                                linker_kwargs[x.arg[0]] = (
+                                    tuple(x.arg[1])
+                                    if len(x.arg[1]) > 1
+                                    else x.arg[1][0]
+                                )
+                            # NOTE: DO NOT set cc, since the linker will always
+                            # compile for the existing GPU context and it is
+                            # incompatible with the launch_bounds ompx_attribute.
+                            linker = driver.Linker.new(**linker_kwargs)
+                            linker.add_ptx(ptx.encode())
+                            cubin = linker.complete()
+
+                            if DEBUG_OPENMP_LLVM_PASS >= 1:
+                                with open(
+                                    filename_prefix + "-intrinsics_omp-linked-opt.o",
+                                    "wb",
+                                ) as f:
+                                    f.write(cubin)
 
                         return cubin
-
-                    def _get_target_image_toolchain(self, mod, filename_prefix):
-                        with open(filename_prefix + ".ll", "w") as f:
-                            f.write(str(mod))
-
-                        # Lower openmp intrinsics.
-                        mod = run_intrinsics_openmp_pass(mod)
-                        with ll.create_module_pass_manager() as pm:
-                            pm.add_cfg_simplification_pass()
-                            pm.run(mod)
-
-                        with open(filename_prefix + "-intrinsics_omp.ll", "w") as f:
-                            f.write(str(mod))
-
-                        if DEBUG_OPENMP >= 1:
-                            print("libomptarget_arch", self.libomptarget_arch)
-                        subprocess.run(
-                            [
-                                llvm_binpath + "/llvm-link",
-                                "--suppress-warnings",
-                                "--internalize",
-                                "-S",
-                                filename_prefix + "-intrinsics_omp.ll",
-                                self.libomptarget_arch,
-                                self.libdevice_path,
-                                "-o",
-                                filename_prefix + "-intrinsics_omp-linked.ll",
-                            ],
-                            check=True,
-                        )
-                        subprocess.run(
-                            [
-                                llvm_binpath + "/opt",
-                                "-S",
-                                "-O3",
-                                filename_prefix + "-intrinsics_omp-linked.ll",
-                                "-o",
-                                filename_prefix + "-intrinsics_omp-linked-opt.ll",
-                            ],
-                            check=True,
-                        )
-
-                        subprocess.run(
-                            [
-                                llvm_binpath + "/llc",
-                                "-O3",
-                                "-march=nvptx64",
-                                f"-mcpu={self.sm}",
-                                f"-mattr=+ptx64,+{self.sm}",
-                                filename_prefix + "-intrinsics_omp-linked-opt.ll",
-                                "-o",
-                                filename_prefix + "-intrinsics_omp-linked-opt.s",
-                            ],
-                            check=True,
-                        )
-
-                        subprocess.run(
-                            [
-                                "ptxas",
-                                "-m64",
-                                "--gpu-name",
-                                self.sm,
-                                filename_prefix + "-intrinsics_omp-linked-opt.s",
-                                "-o",
-                                filename_prefix + "-intrinsics_omp-linked-opt.o",
-                            ],
-                            check=True,
-                        )
-                        with open(
-                            filename_prefix + "-intrinsics_omp-linked-opt.o", "rb"
-                        ) as f:
-                            target_elf = f.read()
-                        return target_elf
 
                     def get_target_image(self, cres):
                         filename_prefix = cres_library.name
@@ -2857,13 +2927,11 @@ class openmp_region_start(ir.Stmt):
                         for mod in allmods[1:]:
                             linked_mod.link_in(ll.parse_assembly(str(mod)))
                         if OPENMP_DEVICE_TOOLCHAIN >= 1:
-                            return self._get_target_image_toolchain(
-                                linked_mod, filename_prefix
+                            return self._get_target_image(
+                                linked_mod, filename_prefix, use_toolchain=True
                             )
                         else:
-                            return self._get_target_image_in_memory(
-                                linked_mod, filename_prefix
-                            )
+                            return self._get_target_image(linked_mod, filename_prefix)
 
                 target_extension._active_context.target = orig_target
                 omp_cuda_cg = OpenMPCUDACodegen()
@@ -2991,7 +3059,13 @@ class OnlyLowerCUDA(numba_cuda.compiler.CUDACompiler):
 
     def define_pipelines(self):
         pm = compiler_machinery.PassManager("cuda")
-        pm.add_pass(numba_cuda.compiler.CUDALegalization, "CUDA legalization")
+        # Numba <=0.57 implements CUDALegalization to support CUDA <11.2
+        # versions.  Numba >0.58 drops this support. We enclose in a try-except
+        # block to avoid errors, delegating to Numba support.
+        try:
+            pm.add_pass(numba_cuda.compiler.CUDALegalization, "CUDA legalization")
+        except AttributeError:
+            pass
         lowering_passes = self.define_cuda_lowering_pipeline(self.state)
         pm.passes.extend(lowering_passes.passes)
         pm.finalize()
