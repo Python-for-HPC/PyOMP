@@ -11,6 +11,7 @@
 #include "llvm/Transforms/Utils/CodeExtractor.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <stdexcept>
@@ -65,6 +66,44 @@ static CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
 
 } // namespace
 
+InsertPointTy CGIntrinsicsOpenMP::emitReductions(
+    const OpenMPIRBuilder::LocationDescription &Loc, InsertPointTy AllocaIP,
+    ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos) {
+  // If targeting the host runtime, use the OpenMP IR builder.
+  if (!isOpenMPDeviceRuntime())
+    return OMPBuilder.createReductions(Loc, AllocaIP, ReductionInfos);
+
+  // Reductions for the GPU runtime use atomics in global memory.
+  // TODO: optimize with hierarchical processing: warp -> block -> grid.
+  BasicBlock *InsertBlock = Loc.IP.getBlock();
+  BasicBlock *ContinuationBlock =
+      InsertBlock->splitBasicBlock(Loc.IP.getPoint(), "reduce.finalize");
+  InsertBlock->getTerminator()->eraseFromParent();
+
+  OMPBuilder.Builder.SetInsertPoint(InsertBlock, InsertBlock->end());
+
+  for (auto &RI : ReductionInfos) {
+    assert(RI.Variable && "Expected non-null variable");
+    assert(RI.PrivateVariable && "eExpected non-null private variable");
+    assert(RI.AtomicReductionGen &&
+           "Expected non-null atomic reduction generator callback");
+    assert(RI.Variable->getType() == RI.PrivateVariable->getType() &&
+           "Expected variables and their private equivalents to have the same "
+           "type");
+    assert(RI.Variable->getType()->isPointerTy() &&
+           "Expected variables to be pointers");
+
+    OMPBuilder.Builder.restoreIP(
+        RI.AtomicReductionGen(OMPBuilder.Builder.saveIP(), RI.ElementType,
+                              RI.Variable, RI.PrivateVariable));
+  }
+
+  OMPBuilder.Builder.CreateBr(ContinuationBlock);
+
+  OMPBuilder.Builder.SetInsertPoint(ContinuationBlock);
+  return OMPBuilder.Builder.saveIP();
+}
+
 void CGIntrinsicsOpenMP::setDeviceGlobalizedValues(
     const ArrayRef<Value *> GlobalizedValues) {
   DeviceGlobalizedValues.clear();
@@ -89,7 +128,8 @@ Value *CGIntrinsicsOpenMP::createScalarCast(Value *V, Type *DestTy) {
 Function *CGIntrinsicsOpenMP::createOutlinedFunction(
     DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap, Function *OuterFn,
     BasicBlock *StartBB, BasicBlock *EndBB,
-    SmallVectorImpl<Value *> &CapturedVars, StringRef Suffix) {
+    SmallVectorImpl<Value *> &CapturedVars, StringRef Suffix,
+    bool EmitReductions) {
   SmallVector<Value *, 16> Privates;
   SmallVector<Value *, 16> CapturedShared;
   SmallVector<Value *, 16> CapturedFirstprivate;
@@ -362,32 +402,42 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
     SetVector<Use *> Uses;
     CollectUses(V, Uses);
 
-    if (VMap)
-      (*VMap)[V] = AI;
+    Value *ReplacementValue = nullptr;
 
-    InsertPointTy AllocaIP(OutlinedEntryBB,
-                           OutlinedEntryBB->getFirstInsertionPt());
+    // Private the reduction variable and initialize it.
+    if (EmitReductions) {
+      InsertPointTy AllocaIP(OutlinedEntryBB,
+                             OutlinedEntryBB->getFirstInsertionPt());
 
-    Value *Priv = nullptr;
-    switch (DSAValueMap[V].Type) {
-    case DSA_REDUCTION_ADD:
-      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_ADD>(
-          OMPBuilder.Builder, AllocaIP, AI, ReductionInfos);
-      break;
-    case DSA_REDUCTION_SUB:
-      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_SUB>(
-          OMPBuilder.Builder, AllocaIP, AI, ReductionInfos);
-      break;
-    case DSA_REDUCTION_MUL:
-      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MUL>(
-          OMPBuilder.Builder, AllocaIP, AI, ReductionInfos);
-      break;
-    default:
-      FATAL_ERROR("Unsupported reduction");
+      Value *Priv = nullptr;
+      switch (DSAValueMap[V].Type) {
+      case DSA_REDUCTION_ADD:
+        Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_ADD>(
+            OMPBuilder.Builder, AllocaIP, AI, ReductionInfos);
+        break;
+      case DSA_REDUCTION_SUB:
+        Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_SUB>(
+            OMPBuilder.Builder, AllocaIP, AI, ReductionInfos);
+        break;
+      case DSA_REDUCTION_MUL:
+        Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MUL>(
+            OMPBuilder.Builder, AllocaIP, AI, ReductionInfos);
+        break;
+      default:
+        FATAL_ERROR("Unsupported reduction");
+      }
+
+      assert(Priv && "Expected non-null private reduction variable");
+      ReplacementValue = Priv;
+    } else {
+      ReplacementValue = AI;
     }
 
-    assert(Priv && "Expected non-null private reduction variable");
-    ReplaceUses(Uses, Priv);
+    assert(ReplacementValue && "Expected non-null replacement value");
+    if (VMap)
+      (*VMap)[V] = ReplacementValue;
+
+    ReplaceUses(Uses, ReplacementValue);
 
     ++AI;
   }
@@ -397,11 +447,12 @@ Function *CGIntrinsicsOpenMP::createOutlinedFunction(
   EndBB->getTerminator()->setSuccessor(0, OutlinedExitBB);
   OMPBuilder.Builder.SetInsertPoint(OutlinedExitBB);
   OMPBuilder.Builder.CreateRetVoid();
-  if (!ReductionInfos.empty())
-    OMPBuilder.createReductions(
-        InsertPointTy(OutlinedExitBB, OutlinedExitBB->begin()),
-        InsertPointTy(OutlinedEntryBB, OutlinedEntryBB->begin()),
-        ReductionInfos);
+
+  if (EmitReductions)
+    if (!ReductionInfos.empty())
+      emitReductions(InsertPointTy(OutlinedExitBB, OutlinedExitBB->begin()),
+                     InsertPointTy(OutlinedEntryBB, OutlinedEntryBB->begin()),
+                     ReductionInfos);
 
   // Deterministic insertion of BBs, BlockVector needs ExitBB to move to the
   // outlined function.
@@ -471,9 +522,9 @@ void CGIntrinsicsOpenMP::emitOMPParallelHostRuntime(
   Value *ThreadID = OMPBuilder.getOrCreateThreadID(Ident);
 
   SmallVector<Value *, 16> CapturedVars;
-  Function *OutlinedFn =
-      createOutlinedFunction(DSAValueMap, VMap, Fn, StartBB, EndBB,
-                             CapturedVars, ".omp_outlined_parallel");
+  Function *OutlinedFn = createOutlinedFunction(
+      DSAValueMap, VMap, Fn, StartBB, EndBB, CapturedVars,
+      ".omp_outlined_parallel", ParRegionInfo.EmitReductions);
 
   auto EmitForkCall = [&](InsertPointTy InsertIP) {
     OMPBuilder.Builder.restoreIP(InsertIP);
@@ -743,7 +794,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelHostRuntimeOMPIRBuilder(
       /* IsCancellable */ false);
 
   if (!ReductionInfos.empty())
-    OMPBuilder.createReductions(BodyIP, BodyAllocaIP, ReductionInfos);
+    emitReductions(BodyIP, BodyAllocaIP, ReductionInfos);
 
   BranchInst::Create(AfterBB, AfterIP.getBlock());
 
@@ -761,9 +812,9 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
     ParRegionInfoStruct &ParRegionInfo) {
   // Extract parallel region
   SmallVector<Value *, 16> CapturedVars;
-  Function *OutlinedFn =
-      createOutlinedFunction(DSAValueMap, VMap, Fn, StartBB, EndBB,
-                             CapturedVars, ".omp_outlined_parallel");
+  Function *OutlinedFn = createOutlinedFunction(
+      DSAValueMap, VMap, Fn, StartBB, EndBB, CapturedVars,
+      ".omp_outlined_parallel", ParRegionInfo.EmitReductions);
 
   // Create wrapper for worker threads
   SmallVector<Type *, 2> Params;
@@ -1462,9 +1513,9 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
     PrivatizeWithReductions();
     if (!ReductionInfos.empty()) {
       OMPBuilder.Builder.SetInsertPoint(ForEndBB->getTerminator());
-      OMPBuilder.createReductions(OpenMPIRBuilder::LocationDescription(
-                                      OMPBuilder.Builder.saveIP(), Loc.DL),
-                                  AllocaIP, ReductionInfos);
+      emitReductions(OpenMPIRBuilder::LocationDescription(
+                         OMPBuilder.Builder.saveIP(), Loc.DL),
+                     AllocaIP, ReductionInfos);
     }
 
     OMPBuilder.Builder.SetInsertPoint(ExitBB->getTerminator());
@@ -1869,6 +1920,9 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
       if (IsTargetRegion)
         MapType |= OMP_TGT_MAPTYPE_TARGET_PARAM;
       break;
+    case DSA_REDUCTION_ADD:
+    case DSA_REDUCTION_SUB:
+    case DSA_REDUCTION_MUL:
     case DSA_MAP_TOFROM:
       MapType = OMP_TGT_MAPTYPE_TO | OMP_TGT_MAPTYPE_FROM;
       if (IsTargetRegion)
@@ -1914,6 +1968,9 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     case DSA_MAP_TO:
     case DSA_MAP_FROM:
     case DSA_MAP_TOFROM:
+    case DSA_REDUCTION_ADD:
+    case DSA_REDUCTION_SUB:
+    case DSA_REDUCTION_MUL:
       Size = ConstantInt::get(OMPBuilder.SizeTy,
                               M.getDataLayout().getTypeAllocSize(V->getType()));
       EmitMappingEntry(Size, GetMapType(DSA), V, V);
@@ -1995,7 +2052,7 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
       break;
     }
     default:
-      FATAL_ERROR("Unknown mapping type");
+      FATAL_ERROR("Unsupported mapping type " + toString(DSA));
     }
   }
 
@@ -2561,9 +2618,9 @@ void CGIntrinsicsOpenMP::emitOMPTeamsDeviceRuntime(
     Function *Fn, BasicBlock *BBEntry, BasicBlock *StartBB, BasicBlock *EndBB,
     BasicBlock *AfterBB, TeamsInfoStruct &TeamsInfo) {
   SmallVector<Value *, 16> CapturedVars;
-  Function *OutlinedFn =
-      createOutlinedFunction(DSAValueMap, VMap, Fn, StartBB, EndBB,
-                             CapturedVars, ".omp_outlined_teams");
+  Function *OutlinedFn = createOutlinedFunction(
+      DSAValueMap, VMap, Fn, StartBB, EndBB, CapturedVars,
+      ".omp_outlined_teams", TeamsInfo.EmitReductions);
 
   // Set up the call to the teams outlined function.
   BBEntry->getTerminator()->eraseFromParent();
@@ -2653,7 +2710,7 @@ void CGIntrinsicsOpenMP::emitOMPTeamsHostRuntime(
   SmallVector<Value *, 16> CapturedVars;
   Function *OutlinedFn = createOutlinedFunction(
       DSAValueMap, /*ValueToValueMapTy */ VMap, Fn, StartBB, EndBB,
-      CapturedVars, ".omp_outlined_teams");
+      CapturedVars, ".omp_outlined_teams", TeamsInfo.EmitReductions);
 
   // Set up the call to the teams outlined function.
   BBEntry->getTerminator()->eraseFromParent();
@@ -2958,71 +3015,12 @@ void CGIntrinsicsOpenMP::emitOMPDistributeParallelFor(
   }
 }
 
-void CGIntrinsicsOpenMP::emitOMPTargetTeamsDistributeParallelFor(
-    DSAValueMapTy &DSAValueMap, const DebugLoc &DL, Function *Fn,
-    BasicBlock *EntryBB, BasicBlock *StartBB, BasicBlock *EndBB,
-    BasicBlock *ExitBB, BasicBlock *AfterBB, OMPLoopInfoStruct &OMPLoopInfo,
-    ParRegionInfoStruct &ParRegionInfo, TargetInfoStruct &TargetInfo,
-    StructMapTy &StructMappingInfoMap, bool IsDeviceTargetRegion) {
-
-  emitOMPDistributeParallelFor(DSAValueMap, StartBB, ExitBB, OMPLoopInfo,
-                               ParRegionInfo,
-                               /* isStandalone */ false);
-
-  emitOMPTargetTeams(DSAValueMap, nullptr, DL, Fn, EntryBB, StartBB, EndBB,
-                     AfterBB, TargetInfo, &OMPLoopInfo, StructMappingInfoMap,
-                     IsDeviceTargetRegion);
-
-  // Alternative codegen, starting from top-down and renaming values using the
-  // ValueToValueMap.
-#if 0
-  ValueToValueMapTy VMap;
-  // Lower target_teams.
-  emitOMPTargetTeams(DSAValueMap, &VMap, DL, Fn, EntryBB, StartBB, EndBB, AfterBB,
-                     TargetInfo, &OMPLoopInfo, StructMappingInfoMap,
-                     IsDeviceTargetRegion);
-
-  dbgs() << "=== VMap\n";
-  for(auto VV : VMap) {
-    dbgs() << "V " << *VV.first << " -> " << *VV.second << "\n";
-  }
-  dbgs() << "=== End of VMap\n";
-  getchar();
-
-  // Update DSAValueMap
-  SmallVector<Value *, 8> ToDelete;
-  for(auto &It : DSAValueMap) {
-    Value *V = It.first;
-    if(!VMap.count(V))
-      continue;
-
-    DSAValueMap[VMap[V]] = It.second;
-    dbgs() << "Update DSAValueMap " << *VMap[V] << " ~> " << It.second.Type << "\n";
-    ToDelete.push_back(V);
-  }
-  for(auto *V : ToDelete) {
-    dbgs() << "Update DSAValueMAp delete " << *V << "\n";
-    DSAValueMap.erase(V);
-  }
-
-  // Update OMPLoopInfo
-  OMPLoopInfo.IV = VMap[OMPLoopInfo.IV];
-  OMPLoopInfo.Start = VMap[OMPLoopInfo.Start];
-  OMPLoopInfo.LB = VMap[OMPLoopInfo.LB];
-  OMPLoopInfo.UB = VMap[OMPLoopInfo.UB];
-
-  emitOMPDistributeParallelFor(DSAValueMap, StartBB, ExitBB, OMPLoopInfo,
-                               ParRegionInfo,
-                               /* isStandalone */ false);
-#endif
-}
-
 void CGIntrinsicsOpenMP::emitOMPTargetTeams(
     DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap, const DebugLoc &DL,
     Function *Fn, BasicBlock *EntryBB, BasicBlock *StartBB, BasicBlock *EndBB,
     BasicBlock *AfterBB, TargetInfoStruct &TargetInfo,
-    OMPLoopInfoStruct *OMPLoopInfo, StructMapTy &StructMappingInfoMap,
-    bool IsDeviceTargetRegion) {
+    TeamsInfoStruct &TeamsInfo, OMPLoopInfoStruct *OMPLoopInfo,
+    StructMapTy &StructMappingInfoMap, bool IsDeviceTargetRegion) {
 
   BasicBlock *TeamsEntryBB = SplitBlock(EntryBB, EntryBB->getTerminator());
   TeamsEntryBB->setName("omp.teams.entry");
@@ -3032,10 +3030,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetTeams(
   BasicBlock *TeamsEndBB =
       splitBlockBefore(EndBB, &*EndBB->getFirstInsertionPt(), nullptr, nullptr,
                        nullptr, "omp.teams.end");
-  // TargetInfo contains teams info.
-  TeamsInfoStruct TeamsInfo;
-  TeamsInfo.NumTeams = TargetInfo.NumTeams;
-  TeamsInfo.ThreadLimit = TargetInfo.ThreadLimit;
+
   emitOMPTeams(DSAValueMap, VMap, DL, Fn, TeamsEntryBB, TeamsStartBB,
                TeamsEndBB, EndBB, TeamsInfo);
 

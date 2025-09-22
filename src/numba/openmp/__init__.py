@@ -2410,7 +2410,7 @@ class openmp_region_start(ir.Stmt):
             if DEBUG_OPENMP >= 1:
                 print("ins:", ins, type(ins))
                 print("outs:", outs, type(outs))
-                print("args:", state.args)
+                # print("args:", state.args)
                 print("rettype:", state.return_type, type(state.return_type))
                 print("target_args_unordered:", target_args_unordered)
             # Re-use Numba loop lifting code to extract the target region as
@@ -3712,21 +3712,15 @@ def is_target_arg(name):
 
 
 def is_pointer_target_arg(name, typ):
+    if name.startswith("QUAL.OMP.REDUCTION"):
+        return True
     if name.startswith("QUAL.OMP.MAP"):
-        if isinstance(typ, types.npytypes.Array):
-            return True
-        else:
-            return True
-    if name in ["QUAL.OMP.FIRSTPRIVATE", "QUAL.OMP.PRIVATE"]:
-        return False
+        return True
     if name in ["QUAL.OMP.TARGET.IMPLICIT"]:
         if isinstance(typ, types.npytypes.Array):
             return True
-        else:
-            return False
+
     return False
-    # print("is_pointer_target_arg:", name, typ, type(typ))
-    assert False
 
 
 def is_internal_var(var):
@@ -7404,6 +7398,7 @@ openmp_grammar = r"""
                        | data_default_clause
                        | data_sharing_clause
                 //     | reduction_default_only_clause
+                       | reduction_clause
                        | ompx_attribute
 
     target_teams_distribute_simd_directive: TARGET TEAMS DISTRIBUTE SIMD [target_teams_distribute_simd_clause*]
