@@ -107,6 +107,47 @@ static const DenseMap<StringRef, DSAType> StringToDSA = {
     {"QUAL.OMP.MAP.FROM.STRUCT", DSA_MAP_FROM_STRUCT},
     {"QUAL.OMP.MAP.TOFROM.STRUCT", DSA_MAP_TOFROM_STRUCT}};
 
+inline std::string toString(DSAType DSA) {
+  switch (DSA) {
+  case DSA_NONE:
+    return "DSA_NONE";
+  case DSA_PRIVATE:
+    return "DSA_PRIVATE";
+  case DSA_FIRSTPRIVATE:
+    return "DSA_FIRSTPRIVATE";
+  case DSA_LASTPRIVATE:
+    return "DSA_LASTPRIVATE";
+  case DSA_SHARED:
+    return "DSA_SHARED";
+  case DSA_REDUCTION_ADD:
+    return "DSA_REDUCTION_ADD";
+  case DSA_REDUCTION_SUB:
+    return "DSA_REDUCTION_SUB";
+  case DSA_REDUCTION_MUL:
+    return "DSA_REDUCTION_MUL";
+  case DSA_MAP_ALLOC:
+    return "DSA_MAP_ALLOC";
+  case DSA_MAP_TO:
+    return "DSA_MAP_TO";
+  case DSA_MAP_FROM:
+    return "DSA_MAP_FROM";
+  case DSA_MAP_TOFROM:
+    return "DSA_MAP_TOFROM";
+  case DSA_MAP_ALLOC_STRUCT:
+    return "DSA_MAP_ALLOC_STRUCT";
+  case DSA_MAP_TO_STRUCT:
+    return "DSA_MAP_TO_STRUCT";
+  case DSA_MAP_FROM_STRUCT:
+    return "DSA_MAP_FROM_STRUCT";
+  case DSA_MAP_TOFROM_STRUCT:
+    return "DSA_MAP_TOFROM_STRUCT";
+  case DSA_MAP_STRUCT:
+    return "DSA_MAP_STRUCT";
+  default:
+    FATAL_ERROR("Unknown DSA: " + std::to_string(DSA));
+  }
+}
+
 /// Data attributes for each data reference used in an OpenMP target region.
 enum tgt_map_type {
   // No flags
@@ -188,21 +229,27 @@ struct TargetInfoStruct {
 struct ParRegionInfoStruct {
   Value *NumThreads = nullptr;
   Value *IfCondition = nullptr;
+  // Controls whether to emit or not reductions, depending on the combined or
+  // not parallel construct.
+  bool EmitReductions = false;
 };
 
 struct TeamsInfoStruct {
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
+  // Controls whether to emit or not reductions, depending on the combined or
+  // not teams construct.
+  bool EmitReductions = false;
 };
 
 struct CGReduction {
   template <DSAType ReductionOperator>
   static Value *emitOperation(IRBuilderBase &IRB, Value *LHS, Value *RHS);
 
-  template<DSAType ReductionOperator>
+  template <DSAType ReductionOperator>
   static OpenMPIRBuilder::InsertPointTy
   reductionNonAtomic(OpenMPIRBuilder::InsertPointTy IP, Value *LHS, Value *RHS,
-               Value *&Result) {
+                     Value *&Result) {
     IRBuilder<> Builder(IP.getBlock(), IP.getPoint());
     Result = emitOperation<ReductionOperator>(Builder, LHS, RHS);
     return Builder.saveIP();
@@ -210,7 +257,7 @@ struct CGReduction {
 
   template <DSAType ReductionOperator>
   static InsertPointTy emitAtomicOperationRMW(IRBuilderBase &IRB, Value *LHS,
-                                  Value *Partial);
+                                              Value *Partial);
 
   template <DSAType ReductionOperator>
   static InsertPointTy emitAtomicOperationCmpxchg(IRBuilderBase &IRB,
@@ -226,8 +273,7 @@ struct CGReduction {
     auto SaveIP = IRB.saveIP();
     // TODO: move alloca to function entry point, may be outlined later, e.g.,
     // for nested under parallel.
-    Value *AllocaTemp =
-        IRB.CreateAlloca(IntTy, nullptr, "atomic.alloca.tmp");
+    Value *AllocaTemp = IRB.CreateAlloca(IntTy, nullptr, "atomic.alloca.tmp");
     IRB.restoreIP(SaveIP);
 
     Value *CastLHS =
@@ -241,9 +287,9 @@ struct CGReduction {
     Value *CastFAdd =
         IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
 
-    auto *CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadAtomic, CastFAdd,
-                                                None, AtomicOrdering::Monotonic,
-                                                AtomicOrdering::Monotonic);
+    auto *CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadAtomic, CastFAdd, None,
+                                            AtomicOrdering::Monotonic,
+                                            AtomicOrdering::Monotonic);
 
     auto *Returned = IRB.CreateExtractValue(CmpXchg, 0);
     auto *StoreTemp = IRB.CreateStore(Returned, AllocaTemp);
@@ -263,11 +309,10 @@ struct CGReduction {
     auto *CastLoad = IRB.CreateBitCast(LoadReturned, VTy);
     // FAdd = IRB.CreateFAdd(CastLoad, Partial, "retry.add");
     RedOp = emitOperation<ReductionOperator>(IRB, CastLoad, Partial);
-    CastFAdd =
-        IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
+    CastFAdd = IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
     CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadReturned, CastFAdd, None,
-                                          AtomicOrdering::Monotonic,
-                                          AtomicOrdering::Monotonic);
+                                      AtomicOrdering::Monotonic,
+                                      AtomicOrdering::Monotonic);
     Returned = IRB.CreateExtractValue(CmpXchg, 0);
     StoreTemp = IRB.CreateStore(Returned, AllocaTemp);
     Cond = IRB.CreateExtractValue(CmpXchg, 1);
@@ -286,28 +331,28 @@ struct CGReduction {
     IRBuilder<> Builder(IP.getBlock(), IP.getPoint());
     Value *Partial = Builder.CreateLoad(VTy, RHS, "red.partial");
     if (VTy->isIntegerTy())
-        switch (ReductionOperator) {
-        case DSA_REDUCTION_ADD:
-        case DSA_REDUCTION_SUB:
-            return emitAtomicOperationRMW<ReductionOperator>(Builder, LHS, Partial);
-            break;
-        case DSA_REDUCTION_MUL:
-            // RMW does not support mul.
-            return emitAtomicOperationCmpxchg<ReductionOperator>(Builder, IP, VTy, LHS,
-                                                          Partial);
-        default:
-            FATAL_ERROR("Unsupported reduction operation");
-        }
+      switch (ReductionOperator) {
+      case DSA_REDUCTION_ADD:
+      case DSA_REDUCTION_SUB:
+        return emitAtomicOperationRMW<ReductionOperator>(Builder, LHS, Partial);
+        break;
+      case DSA_REDUCTION_MUL:
+        // RMW does not support mul.
+        return emitAtomicOperationCmpxchg<ReductionOperator>(Builder, IP, VTy,
+                                                             LHS, Partial);
+      default:
+        FATAL_ERROR("Unsupported reduction operation");
+      }
     else if (VTy->isFloatTy() || VTy->isDoubleTy()) {
-        // NOTE: Using atomicrmw for floats is buggy for aarch64, fallback to
-        // cmpxchg codegen for now similarly to Clang. Revisit with newer LLVM
-        // versions.
-        // Builder.CreateAtomicRMW(AtomicRMWInst::FAdd, LHS, Partial, None,
-        //                        AtomicOrdering::Monotonic);
-        return emitAtomicOperationCmpxchg<ReductionOperator>(Builder, IP, VTy, LHS,
-                                                      Partial);
+      // NOTE: Using atomicrmw for floats is buggy for aarch64, fallback to
+      // cmpxchg codegen for now similarly to Clang. Revisit with newer LLVM
+      // versions.
+      // Builder.CreateAtomicRMW(AtomicRMWInst::FAdd, LHS, Partial, None,
+      //                        AtomicOrdering::Monotonic);
+      return emitAtomicOperationCmpxchg<ReductionOperator>(Builder, IP, VTy,
+                                                           LHS, Partial);
     } else
-        FATAL_ERROR("Unsupported type for reductionAtomic");
+      FATAL_ERROR("Unsupported type for reductionAtomic");
   }
 
   template <DSAType ReductionOperator>
@@ -315,39 +360,34 @@ struct CGReduction {
       IRBuilderBase &IRB, InsertPointTy AllocaIP, Value *Orig,
       SmallVectorImpl<OpenMPIRBuilder::ReductionInfo> &ReductionInfos) {
     auto GetIdentityValue = []() {
-        switch (ReductionOperator) {
-        case DSA_REDUCTION_ADD:
-        case DSA_REDUCTION_SUB:
-            return 0;
-        case DSA_REDUCTION_MUL:
-            return 1;
-        default:
-            FATAL_ERROR("Unknown reduction type");
-        }
+      switch (ReductionOperator) {
+      case DSA_REDUCTION_ADD:
+      case DSA_REDUCTION_SUB:
+        return 0;
+      case DSA_REDUCTION_MUL:
+        return 1;
+      default:
+        FATAL_ERROR("Unknown reduction type");
+      }
     };
 
     Type *VTy = Orig->getType()->getPointerElementType();
     auto SaveIP = IRB.saveIP();
     IRB.restoreIP(AllocaIP);
     Value *Priv = IRB.CreateAlloca(VTy, /* ArraySize */ nullptr,
-                                               Orig->getName() + ".red.priv");
+                                   Orig->getName() + ".red.priv");
     IRB.restoreIP(SaveIP);
 
     // Store identity value based on operation and type.
     if (VTy->isIntegerTy()) {
-      IRB.CreateStore(ConstantInt::get(VTy, GetIdentityValue()),
-                      Priv);
+      IRB.CreateStore(ConstantInt::get(VTy, GetIdentityValue()), Priv);
     } else if (VTy->isFloatTy() || VTy->isDoubleTy()) {
-      IRB.CreateStore(ConstantFP::get(VTy, GetIdentityValue()),
-                      Priv);
-    }
-    else
-      FATAL_ERROR(
-          "Unsupported type to init with identity reduction value");
+      IRB.CreateStore(ConstantFP::get(VTy, GetIdentityValue()), Priv);
+    } else
+      FATAL_ERROR("Unsupported type to init with identity reduction value");
 
     ReductionInfos.push_back(
-        {VTy, Orig, Priv,
-         CGReduction::reductionNonAtomic<ReductionOperator>,
+        {VTy, Orig, Priv, CGReduction::reductionNonAtomic<ReductionOperator>,
          CGReduction::reductionAtomic<ReductionOperator>});
 
     return Priv;
@@ -436,17 +476,11 @@ public:
                                     ParRegionInfoStruct &ParRegionInfo,
                                     bool IsStandalone);
 
-  void emitOMPTargetTeamsDistributeParallelFor(
-      DSAValueMapTy &DSAValueMap, const DebugLoc &DL, Function *Fn,
-      BasicBlock *EntryBB, BasicBlock *StartBB, BasicBlock *EndBB,
-      BasicBlock *ExitBB, BasicBlock *AfterBB, OMPLoopInfoStruct &OMPLoopInfo,
-      ParRegionInfoStruct &ParRegionInfo, TargetInfoStruct &TargetInfo,
-      StructMapTy &StructMappingInfoMap, bool IsDeviceTargetRegion);
-
   void emitOMPTargetTeams(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,
                           const DebugLoc &DL, Function *Fn, BasicBlock *EntryBB,
                           BasicBlock *StartBB, BasicBlock *EndBB,
                           BasicBlock *AfterBB, TargetInfoStruct &TargetInfo,
+                          TeamsInfoStruct &TeamsInfo,
                           OMPLoopInfoStruct *OMPLoopInfo,
                           StructMapTy &StructMappingInfoMap,
                           bool IsDeviceTargetRegion);
@@ -460,7 +494,7 @@ public:
                                    ValueToValueMapTy *VMap, Function *OuterFn,
                                    BasicBlock *StartBB, BasicBlock *EndBB,
                                    SmallVectorImpl<llvm::Value *> &CapturedVars,
-                                   StringRef Suffix);
+                                   StringRef Suffix, bool EmitReductions);
 
   void setDeviceGlobalizedValues(const ArrayRef<Value *> GlobalizedValues);
 
@@ -472,6 +506,7 @@ private:
                                     BasicBlock *AfterBB,
                                     FinalizeCallbackTy FiniCB,
                                     ParRegionInfoStruct &ParRegionInfo);
+
   void emitOMPParallelHostRuntime(DSAValueMapTy &DSAValueMap,
                                   ValueToValueMapTy *VMap, const DebugLoc &DL,
                                   Function *Fn, BasicBlock *BBEntry,
@@ -513,6 +548,11 @@ private:
                 BasicBlock *StartBB, BasicBlock *ExitBB, bool IsStandalone,
                 bool IsDistribute, bool IsDistributeParallelFor,
                 OMPDistributeInfoStruct *OMPDistributeInfo = nullptr);
+
+  InsertPointTy
+  emitReductions(const OpenMPIRBuilder::LocationDescription &Loc,
+                 InsertPointTy AllocaIP,
+                 ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos);
 
   FunctionCallee getKmpcForStaticInit(Type *Ty);
   FunctionCallee getKmpcDistributeStaticInit(Type *Ty);

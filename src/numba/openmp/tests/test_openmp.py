@@ -4658,6 +4658,93 @@ class TestOpenmpTarget(TestOpenmpBase):
         c = test_impl(n)
         np.testing.assert_array_equal(c, np.full((n, n), 2))
 
+    def target_teams_reduction(self, device):
+        target_pragma = (
+            f"""target teams device({device}) map(from: nteams) reduction(+:sum)"""
+        )
+
+        @njit
+        def test_impl():
+            sum = 0
+            nteams = 0
+            with openmp(target_pragma):
+                sum += 1
+                with openmp("single"):
+                    nteams = omp_get_num_teams()
+
+            return nteams, sum
+
+        nteams, sum = test_impl()
+        self.assertEqual(nteams, sum)
+
+    def target_nest_teams_reduction(self, device):
+        target_pragma = (
+            f"""target device({device}) map(from: nteams) map(tofrom: sum)"""
+        )
+
+        @njit
+        def test_impl():
+            sum = 0
+            nteams = 0
+            with openmp(target_pragma):
+                with openmp("teams reduction(+:sum)"):
+                    sum += 1
+                    with openmp("single"):
+                        nteams = omp_get_num_teams()
+
+            return nteams, sum
+
+        nteams, sum = test_impl()
+        self.assertEqual(nteams, sum)
+
+    def target_teams_distribute_parallel_for_reduction(self, device):
+        target_pragma = f"""target teams distribute parallel for device({device}) reduction(+:sum)"""
+
+        @njit
+        def test_impl():
+            sum = 0
+            with openmp(target_pragma):
+                for _ in range(1000):
+                    sum += 1
+
+            return sum
+
+        sum = test_impl()
+        self.assertEqual(sum, 1000)
+
+    def target_nest_teams_distribute_parallel_for_reduction(self, device):
+        target_pragma = f"""target map(tofrom:sum) device({device})"""
+
+        @njit
+        def test_impl():
+            sum = 0
+            with openmp(target_pragma):
+                with openmp("teams distribute parallel for reduction(+:sum)"):
+                    for _ in range(1000):
+                        sum += 1
+
+            return sum
+
+        sum = test_impl()
+        self.assertEqual(sum, 1000)
+
+    def target_nest_teams_nest_distribute_parallel_for_reduction(self, device):
+        target_pragma = f"""target map(tofrom:sum) device({device})"""
+
+        @njit
+        def test_impl():
+            sum = 0
+            with openmp(target_pragma):
+                with openmp("teams"):
+                    with openmp("distribute parallel for reduction(+:sum)"):
+                        for _ in range(1000):
+                            sum += 1
+
+            return sum
+
+        sum = test_impl()
+        self.assertEqual(sum, 1000)
+
 
 for memberName in dir(TestOpenmpTarget):
     if memberName.startswith("target"):
