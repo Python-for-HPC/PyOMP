@@ -125,21 +125,23 @@ from numba.openmp import njit
 from numba.openmp import openmp_context as openmp
 from numba.openmp import omp_get_thread_num
 
+
 @njit
 def calc_pi(num_steps):
-    step = 1.0/num_steps
+    step = 1.0 / num_steps
     red_sum = 0.0
     with openmp("target map(tofrom: red_sum)"):
         with openmp("loop private(x) reduction(+:red_sum)"):
-               for i in range(num_steps):
-                   tid = omp_get_thread_num()
-                   x = (i+0.5)*step
-                   red_sum += 4.0 / (1.0 + x*x)
+            for i in range(num_steps):
+                x = (i + 0.5) * step
+                red_sum += 4.0 / (1.0 + x * x)
 
     pi = step * red_sum
-    print("pi=", pi)
+    return pi
+
 
 print("pi =", calc_pi(1000000))
+
 ```
 
 ## Support
