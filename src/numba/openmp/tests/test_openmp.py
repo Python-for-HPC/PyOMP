@@ -1240,6 +1240,123 @@ class TestReductions(TestOpenmpBase):
         redux = test_impl()
         self.assertEqual(redux, 2.0**10)
 
+    def test_parallel_nest_for_reduction_add_int(self):
+        @njit
+        def test_impl():
+            redux = 0
+            with openmp("parallel"):
+                with openmp("for reduction(+:redux)"):
+                    for i in range(10):
+                        redux += 1
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 10)
+
+    def test_parallel_nest_for_reduction_sub_int(self):
+        @njit
+        def test_impl():
+            redux = 0
+            with openmp("parallel"):
+                with openmp("for reduction(-:redux)"):
+                    for i in range(10):
+                        redux += 1
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 10)
+
+    def test_parallel_nest_for_reduction_mul_int(self):
+        @njit
+        def test_impl():
+            redux = 1
+            with openmp("parallel"):
+                with openmp("for reduction(*:redux)"):
+                    for i in range(10):
+                        redux *= 2
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 2**10)
+
+    def test_parallel_nest_for_reduction_add_fp64(self):
+        @njit
+        def test_impl():
+            redux = np.float64(0.0)
+            with openmp("parallel"):
+                with openmp("for reduction(+:redux)"):
+                    for i in range(10):
+                        redux += np.float64(1.0)
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 10.0)
+
+    def test_parallel_nest_for_reduction_sub_fp64(self):
+        @njit
+        def test_impl():
+            redux = np.float64(0.0)
+            with openmp("parallel"):
+                with openmp("for reduction(-:redux)"):
+                    for i in range(10):
+                        redux += np.float64(1.0)
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 10.0)
+
+    def test_parallel_nest_for_reduction_mul_fp64(self):
+        @njit
+        def test_impl():
+            redux = np.float64(1.0)
+            with openmp("parallel"):
+                with openmp("for reduction(*:redux)"):
+                    for i in range(10):
+                        redux *= np.float64(2.0)
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 2.0**10)
+
+    def test_parallel_nest_for_reduction_add_fp32(self):
+        @njit
+        def test_impl():
+            redux = np.float32(0.0)
+            with openmp("parallel"):
+                with openmp("for reduction(+:redux)"):
+                    for i in range(10):
+                        redux += np.float32(1.0)
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 10.0)
+
+    def test_parallel_nest_for_reduction_sub_fp32(self):
+        @njit
+        def test_impl():
+            redux = np.float32(0.0)
+            with openmp("parallel"):
+                with openmp("for reduction(-:redux)"):
+                    for i in range(10):
+                        redux += np.float32(1.0)
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 10.0)
+
+    def test_parallel_nest_for_reduction_mul_fp32(self):
+        @njit
+        def test_impl():
+            redux = np.float32(1.0)
+            with openmp("parallel"):
+                with openmp("for reduction(*:redux)"):
+                    for i in range(10):
+                        redux *= np.float32(2.0)
+            return redux
+
+        redux = test_impl()
+        self.assertEqual(redux, 2.0**10)
+
     def test_parallel_reduction_add_int_10(self):
         @njit
         def test_impl():
@@ -1300,17 +1417,17 @@ class TestReductions(TestOpenmpBase):
         redux = test_impl()
         self.assertEqual(redux, 10 + 10)
 
-    def test_parallel_for_reduction_add_fp32(self):
+    def test_parallel_for_reduction_add_fp32_10(self):
         @njit
         def test_impl():
-            redux = np.float32(0.0)
+            redux = np.float32(10.0)
             with openmp("parallel for reduction(+:redux)"):
                 for i in range(10):
                     redux += np.float32(1.0)
             return redux
 
         redux = test_impl()
-        self.assertEqual(redux, 10.0)
+        self.assertEqual(redux, 10.0 + 10.0)
 
     def test_parallel_for_reduction_add_fp64_10(self):
         @njit
