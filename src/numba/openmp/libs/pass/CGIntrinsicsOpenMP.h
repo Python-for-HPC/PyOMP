@@ -222,24 +222,26 @@ struct TargetInfoStruct {
   ConstantDataArray *ELF = nullptr;
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
-  OMPTgtExecModeFlags ExecMode = (OMPTgtExecModeFlags)0;
+  OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
   bool NoWait = false;
 };
 
 struct ParRegionInfoStruct {
   Value *NumThreads = nullptr;
   Value *IfCondition = nullptr;
-  // Controls whether to emit or not reductions, depending on the combined or
-  // not parallel construct.
-  bool EmitReductions = false;
 };
 
 struct TeamsInfoStruct {
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
-  // Controls whether to emit or not reductions, depending on the combined or
-  // not teams construct.
-  bool EmitReductions = false;
+  OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
+};
+
+struct OutlinedInfoStruct {
+  Function *Fn;
+  BasicBlock *EntryBB;
+  BasicBlock *ExitBB;
+  SmallVector<OpenMPIRBuilder::ReductionInfo> ReductionInfos;
 };
 
 struct CGReduction {
@@ -358,7 +360,8 @@ struct CGReduction {
   template <DSAType ReductionOperator>
   static Value *emitInitAndAppendInfo(
       IRBuilderBase &IRB, InsertPointTy AllocaIP, Value *Orig,
-      SmallVectorImpl<OpenMPIRBuilder::ReductionInfo> &ReductionInfos) {
+      SmallVectorImpl<OpenMPIRBuilder::ReductionInfo> &ReductionInfos,
+      bool IsGPUTeamsReduction) {
     auto GetIdentityValue = []() {
       switch (ReductionOperator) {
       case DSA_REDUCTION_ADD:
@@ -374,8 +377,20 @@ struct CGReduction {
     Type *VTy = Orig->getType()->getPointerElementType();
     auto SaveIP = IRB.saveIP();
     IRB.restoreIP(AllocaIP);
-    Value *Priv = IRB.CreateAlloca(VTy, /* ArraySize */ nullptr,
-                                   Orig->getName() + ".red.priv");
+    Value *Priv = nullptr;
+
+    if (IsGPUTeamsReduction) {
+      Module *M = IRB.GetInsertBlock()->getModule();
+      GlobalVariable *ShmemGV = new GlobalVariable(
+          *M, VTy, false, GlobalValue::InternalLinkage, UndefValue::get(VTy),
+          Orig->getName() + ".red.priv.shmem", nullptr,
+          llvm::GlobalValue::NotThreadLocal, 3, false);
+      Value *AddrCast = IRB.CreateAddrSpaceCast(ShmemGV, Orig->getType());
+      Priv = AddrCast;
+    } else {
+      Priv = IRB.CreateAlloca(VTy, /* ArraySize */ nullptr,
+                              Orig->getName() + ".red.priv");
+    }
     IRB.restoreIP(SaveIP);
 
     // Store identity value based on operation and type.
@@ -490,11 +505,12 @@ public:
 
   Twine getDevWrapperFuncPrefix() { return "__omp_offload_numba_"; }
 
-  Function *createOutlinedFunction(DSAValueMapTy &DSAValueMap,
-                                   ValueToValueMapTy *VMap, Function *OuterFn,
-                                   BasicBlock *StartBB, BasicBlock *EndBB,
-                                   SmallVectorImpl<llvm::Value *> &CapturedVars,
-                                   StringRef Suffix, bool EmitReductions);
+  OutlinedInfoStruct
+  createOutlinedFunction(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,
+                         Function *OuterFn, BasicBlock *StartBB,
+                         BasicBlock *EndBB,
+                         SmallVectorImpl<llvm::Value *> &CapturedVars,
+                         StringRef Suffix, omp::Directive Kind);
 
   void setDeviceGlobalizedValues(const ArrayRef<Value *> GlobalizedValues);
 
@@ -550,9 +566,13 @@ private:
                 OMPDistributeInfoStruct *OMPDistributeInfo = nullptr);
 
   InsertPointTy
-  emitReductions(const OpenMPIRBuilder::LocationDescription &Loc,
-                 InsertPointTy AllocaIP,
-                 ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos);
+  emitReductionsHost(const OpenMPIRBuilder::LocationDescription &Loc,
+                     InsertPointTy AllocaIP,
+                     ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos);
+
+  InsertPointTy emitReductionsDevice(
+      const OpenMPIRBuilder::LocationDescription &Loc, InsertPointTy AllocaIP,
+      ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos, bool IsTeamSPMD);
 
   FunctionCallee getKmpcForStaticInit(Type *Ty);
   FunctionCallee getKmpcDistributeStaticInit(Type *Ty);

@@ -552,7 +552,6 @@ struct IntrinsicsOpenMP {
         DR->getEntry()->eraseFromParent();
 
         if (Dir == OMPD_parallel) {
-          ParRegionInfo.EmitReductions = true;
           CGIOMP.emitOMPParallel(DSAValueMap, nullptr, DL, Fn, BBEntry, StartBB,
                                  EndBB, AfterBB, FiniCB, ParRegionInfo);
         } else if (Dir == OMPD_single) {
@@ -568,7 +567,6 @@ struct IntrinsicsOpenMP {
           CGIOMP.emitOMPFor(DSAValueMap, OMPLoopInfo, StartBB, BBExit,
                             /* IsStandalone */ false, false);
 
-          ParRegionInfo.EmitReductions = true;
           CGIOMP.emitOMPParallel(DSAValueMap, nullptr, DL, Fn, BBEntry, StartBB,
                                  EndBB, AfterBB, FiniCB, ParRegionInfo);
         } else if (Dir == OMPD_task) {
@@ -581,7 +579,6 @@ struct IntrinsicsOpenMP {
                                StructMappingInfoMap, TargetInfo,
                                /* OMPLoopInfo */ nullptr, IsDeviceTargetRegion);
         } else if (Dir == OMPD_teams) {
-          TeamsInfo.EmitReductions = true;
           CGIOMP.emitOMPTeams(DSAValueMap, nullptr, DL, Fn, BBEntry, StartBB,
                               EndBB, AfterBB, TeamsInfo);
         } else if (Dir == OMPD_distribute) {
@@ -590,16 +587,13 @@ struct IntrinsicsOpenMP {
         } else if (Dir == OMPD_teams_distribute) {
           CGIOMP.emitOMPDistribute(DSAValueMap, OMPLoopInfo, StartBB, BBExit,
                                    /* IsStandalone */ false, false);
-          TeamsInfo.EmitReductions = true;
           CGIOMP.emitOMPTeams(DSAValueMap, nullptr, DL, Fn, BBEntry, StartBB,
                               EndBB, AfterBB, TeamsInfo);
         } else if (Dir == OMPD_teams_distribute_parallel_for) {
-          ParRegionInfo.EmitReductions = true;
           CGIOMP.emitOMPDistributeParallelFor(DSAValueMap, StartBB, BBExit,
                                               OMPLoopInfo, ParRegionInfo,
                                               /* IsStandalone */ false);
 
-          TeamsInfo.EmitReductions = false;
           CGIOMP.emitOMPTeams(DSAValueMap, nullptr, DL, Fn, BBEntry, StartBB,
                               EndBB, AfterBB, TeamsInfo);
         } else if (Dir == OMPD_target_teams) {
@@ -609,7 +603,6 @@ struct IntrinsicsOpenMP {
           TeamsInfoStruct TeamsInfo;
           TeamsInfo.NumTeams = TargetInfo.NumTeams;
           TeamsInfo.ThreadLimit = TargetInfo.ThreadLimit;
-          TeamsInfo.EmitReductions = true;
           CGIOMP.emitOMPTargetTeams(DSAValueMap, nullptr, DL, Fn, BBEntry,
                                     StartBB, EndBB, AfterBB, TargetInfo,
                                     TeamsInfo,
@@ -649,28 +642,25 @@ struct IntrinsicsOpenMP {
           TeamsInfoStruct TeamsInfo;
           TeamsInfo.NumTeams = TargetInfo.NumTeams;
           TeamsInfo.ThreadLimit = TargetInfo.ThreadLimit;
-          TeamsInfo.EmitReductions = true;
           CGIOMP.emitOMPTargetTeams(DSAValueMap, nullptr, DL, Fn, BBEntry,
                                     StartBB, EndBB, AfterBB, TargetInfo,
                                     TeamsInfo, &OMPLoopInfo,
                                     StructMappingInfoMap, IsDeviceTargetRegion);
         } else if (Dir == OMPD_distribute_parallel_for) {
-          ParRegionInfo.EmitReductions = true;
           CGIOMP.emitOMPDistributeParallelFor(DSAValueMap, StartBB, BBExit,
                                               OMPLoopInfo, ParRegionInfo,
                                               /* isStandalone */ false);
         } else if (Dir == OMPD_target_teams_distribute_parallel_for) {
-          ParRegionInfo.EmitReductions = true;
           CGIOMP.emitOMPDistributeParallelFor(DSAValueMap, StartBB, BBExit,
                                               OMPLoopInfo, ParRegionInfo,
                                               /* isStandalone */ false);
 
           TargetInfo.ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_SPMD;
-          // Construct teams info from target info.
+          //  Construct teams info from target info.
           TeamsInfoStruct TeamsInfo;
           TeamsInfo.NumTeams = TargetInfo.NumTeams;
           TeamsInfo.ThreadLimit = TargetInfo.ThreadLimit;
-          TeamsInfo.EmitReductions = false;
+          TeamsInfo.ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_SPMD;
           CGIOMP.emitOMPTargetTeams(DSAValueMap, nullptr, DL, Fn, BBEntry,
                                     StartBB, EndBB, AfterBB, TargetInfo,
                                     TeamsInfo, &OMPLoopInfo,
