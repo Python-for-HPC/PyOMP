@@ -7448,7 +7448,7 @@ openmp_grammar = r"""
                                   | thread_limit_clause
                                   | data_default_clause
                                   | data_sharing_clause
-                           //     | reduction_default_only_clause
+                                  | reduction_clause
                                   | lastprivate_clause
                                   | collapse_clause
                                   | dist_schedule_clause
