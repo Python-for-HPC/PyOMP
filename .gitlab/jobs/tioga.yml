@@ -12,9 +12,9 @@
 # definition of these variables in a generic fashion. By overriding the
 # following section, projects can specify the variables to define in the
 # reproducer to exactly reproduce the CI build.
-.ruby_reproducer_vars:
+.tioga_reproducer_vars:
   script:
-    - export WITH_CUDA="Off"
+    - echo -e "Running on tioga\n"
 
 # With GitLab CI, included files cannot be empty.
 # TODO: remove when you have at least on job defined.
@@ -39,14 +39,24 @@ variables:
 ## Note: placing the extends section first allows you to override part of the
 ## shared implementation if needed (and if you know what you are doing).
 #<job-name (typically build target description)>:
-#  extends: .job_on_ruby
+#  extends: .job_on_tioga
 #  variables:
 #    <A_VARIABLE>: "<with job specific value>"
 
-build-run-ruby:
-  extends: .job_on_ruby
+.base-job:
+  extends: .job_on_tioga
   after_script:
-    - rm -rf ${CI_BUILDS_DIR}
-    - rm -rf ${CI_PROJET_DIR}
-  variables:
+    - conda config --set anaconda_upload no
+    - rm -rf ${CI_BUILDS_DIR} ${CI_PROJECT_DIR}
 
+.python-variants:
+  parallel:
+    matrix:
+      - PYOMP_CI_PYTHON_VERSION:
+        - "3.9"
+        - "3.10"
+        - "3.11"
+        - "3.12"
+
+build-and-test-tioga:
+  extends: [.base-job, .python-variants]
