@@ -29,42 +29,7 @@
 # Comment the jobs for machines you don’t need.
 ###
 
-# RUBY
-#ruby-up-check:
-#  variables:
-#    CI_MACHINE: "ruby"
-#  extends: [.machine-check]
-#
-#ruby-build-and-test:
-#  variables:
-#    CI_MACHINE: "ruby"
-#  needs: [ruby-up-check]
-#  extends: [.build-and-test]
 
-## POODLE
-#poodle-up-check:
-#  variables:
-#    CI_MACHINE: "poodle"
-#  extends: [.machine-check]
-#
-#poodle-build-and-test:
-#  variables:
-#    CI_MACHINE: "poodle"
-#  needs: [poodle-up-check]
-#  extends: [.build-and-test]
-#
-## CORONA
-#corona-up-check:
-#  variables:
-#    CI_MACHINE: "corona"
-#  extends: [.machine-check]
-#
-#corona-build-and-test:
-#  variables:
-#    CI_MACHINE: "corona"
-#  needs: [corona-up-check]
-#  extends: [.build-and-test]
-#
 ## TIOGA
 #tioga-up-check:
 #  variables:
@@ -76,16 +41,3 @@
 #    CI_MACHINE: "tioga"
 #  needs: [tioga-up-check]
 #  extends: [.build-and-test]
-
-# LASSEN
-lassen-up-check:
-  variables:
-    CI_MACHINE: "lassen"
-  extends: [.machine-check]
-
-lassen-build-and-test:
-  variables:
-    CI_MACHINE: "lassen"
-  needs: [lassen-up-check]
-  extends: [.build-and-test]
-
