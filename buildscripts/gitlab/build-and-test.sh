@@ -11,7 +11,7 @@ pushd ${TMPDIR}
 export CONDA_ENVS_DIRS="${TMPDIR}/_stage/miniconda3/envs"
 
 # Install miniconda and llvmdev, clang14 environments.
-bash ${CI_PROJECT_DIR}/buildscripts/cibuildwheel/setup-miniconda3.sh
+source ${CI_PROJECT_DIR}/buildscripts/cibuildwheel/setup-miniconda3.sh
 
 # Export environment variables for building and testing.
 export LLVM_DIR="${CONDA_ENVS_DIRS}/llvmdev"
