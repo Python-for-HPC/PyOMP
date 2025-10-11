@@ -10,7 +10,7 @@ fi
 
 # Create a temporary directory for the build to clone the full repo for package
 # versioning.
-TMPDIR=/tmp/ggeorgak/${CI_JOB_ID}
+TMPDIR=/tmp/pyomp/${CI_JOB_ID}
 mkdir -p ${TMPDIR}
 pushd ${TMPDIR}
 
@@ -21,7 +21,7 @@ git fetch origin ${CI_COMMIT_SHA}
 git checkout ${CI_COMMIT_SHA}
 
 # Set pkg dir per job to avoid conflicts.
-export CONDA_PKGS_DIRS=/tmp/ggeorgak/conda-pkgs-${CI_JOB_ID}
+export CONDA_PKGS_DIRS=/tmp/pyomp/conda-pkgs-${CI_JOB_ID}
 mkdir -p "$CONDA_PKGS_DIRS"
 
 function deploy_conda() {
@@ -31,7 +31,7 @@ function deploy_conda() {
 
   set -x
 
-  export CONDA_BLD_PATH="/tmp/ggeorgak/conda-build-${PYOMP_CI_BUILD_PKG}-${PYOMP_CI_PYTHON_VERSION}"
+  export CONDA_BLD_PATH="/tmp/pyomp/conda-build-${PYOMP_CI_BUILD_PKG}-${PYOMP_CI_PYTHON_VERSION}"
   conda build --no-lock --no-locking --user python-for-hpc --label ${LABEL} \
     -c python-for-hpc/label/${LABEL} -c conda-forge \
     --python ${PYOMP_CI_PYTHON_VERSION} \

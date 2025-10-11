@@ -3,7 +3,7 @@
 set -e
 
 # Create a unique temporary directory for this job.
-TMPDIR=/tmp/ggeorgak/${CI_JOB_ID}
+TMPDIR=/tmp/pyomp/${CI_JOB_ID}
 mkdir -p ${TMPDIR}
 pushd ${TMPDIR}
 

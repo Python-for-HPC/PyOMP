@@ -46,7 +46,6 @@ variables:
 .base-job:
   extends: .job_on_tioga
   after_script:
-    - conda config --set anaconda_upload no
     - rm -rf ${CI_BUILDS_DIR} ${CI_PROJECT_DIR}
 
 .python-variants:
