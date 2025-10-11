@@ -24,7 +24,7 @@ conda create -n py-${PYOMP_CI_PYTHON_VERSION} -c conda-forge -y python=${PYOMP_C
 conda activate py-${PYOMP_CI_PYTHON_VERSION}
 
 # Install pyomp.
-python -m pip install -v ${CI_PROJECT_DIR}
+CC=gcc CXX=g++ python -m pip install -v ${CI_PROJECT_DIR}
 
 # Run host OpenMP tests.
 TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
