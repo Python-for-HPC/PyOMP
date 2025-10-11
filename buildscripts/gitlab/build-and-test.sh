@@ -23,8 +23,14 @@ export PIP_NO_INPUT="1"
 conda create -n py-${PYOMP_CI_PYTHON_VERSION} -c conda-forge -y python=${PYOMP_CI_PYTHON_VERSION}
 conda activate py-${PYOMP_CI_PYTHON_VERSION}
 
+# Clone and fetch the commit with history for package versioning.
+git clone https://github.com/${GITHUB_PROJECT_ORG}/${GITHUB_PROJECT_NAME}.git --single-branch
+cd ${GITHUB_PROJECT_NAME}
+git fetch origin ${CI_COMMIT_SHA}
+git checkout ${CI_COMMIT_SHA}
+
 # Install pyomp.
-CC=gcc CXX=g++ python -m pip install -v ${CI_PROJECT_DIR}
+CC=gcc CXX=g++ python -m pip install -v .
 
 # Run host OpenMP tests.
 TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
