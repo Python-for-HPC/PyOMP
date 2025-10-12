@@ -133,6 +133,8 @@ def link_shared_library(obj_path, out_path):
             "NRT_MemInfo_alloc_aligned": ("void*", ["size_t", "size_t"]),
             "NRT_MemInfo_alloc_safe_aligned": ("void*", ["size_t", "size_t"]),
             "NRT_MemInfo_free": ("void", ["void*"]),
+            # Helperlib
+            "numba_unpickle": ("void*", ["void*", "int", "void*"]),
         }
 
         trampoline_c = """#include <stddef.h>"""
