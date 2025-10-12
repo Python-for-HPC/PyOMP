@@ -15,9 +15,9 @@ variables:
 # Tioga
 # Arguments for top level allocation
 # OPTIONAL: "-o per-resource.count=2" allows to get 2 jobs running on each node.
-#  TIOGA_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=15m --nodes=1"
+  TIOGA_SHARED_ALLOC: "--queue=pci --exclusive --time-limit=30m --nodes=1"
 # Arguments for job level allocation
-#  TIOGA_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
+  TIOGA_JOB_ALLOC: "--nodes=1 --begin-time=+5s"
 # Add variables that should apply to all the jobs on a machine:
 #  TIOGA_MY_VAR: "..."
 

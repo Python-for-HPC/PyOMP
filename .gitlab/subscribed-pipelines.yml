@@ -31,13 +31,13 @@
 
 
 ## TIOGA
-#tioga-up-check:
-#  variables:
-#    CI_MACHINE: "tioga"
-#  extends: [.machine-check]
-#
-#tioga-build-and-test:
-#  variables:
-#    CI_MACHINE: "tioga"
-#  needs: [tioga-up-check]
-#  extends: [.build-and-test]
+tioga-up-check:
+  variables:
+    CI_MACHINE: "tioga"
+  extends: [.machine-check]
+
+tioga-build-and-test:
+  variables:
+    CI_MACHINE: "tioga"
+  needs: [tioga-up-check]
+  extends: [.build-and-test]
