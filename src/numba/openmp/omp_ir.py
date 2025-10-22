@@ -348,7 +348,7 @@ def replace_np_empty_with_cuda_shared(
                     new_block_body.append(
                         ir.Assign(
                             ir.Global("np", np, stmt.loc),
-                            ir.Var(stmt.scope, mk_unique_var(".np_global"), stmt.loc),
+                            ir.Var(stmt.target.scope, mk_unique_var(".np_global"), stmt.loc),
                             stmt.loc,
                         )
                     )
@@ -358,7 +358,7 @@ def replace_np_empty_with_cuda_shared(
                             ir.Expr.getattr(
                                 new_block_body[-1].target, str(dtype_to_use), stmt.loc
                             ),
-                            ir.Var(stmt.scope, mk_unique_var(".np_dtype"), stmt.loc),
+                            ir.Var(stmt.target.scope, mk_unique_var(".np_dtype"), stmt.loc),
                             stmt.loc,
                         )
                     )
