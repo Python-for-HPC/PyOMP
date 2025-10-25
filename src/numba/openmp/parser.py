@@ -1,4 +1,4 @@
-from lark import Lark, Transformer
+from lark import Lark
 
 from .omp_grammar import openmp_grammar
 

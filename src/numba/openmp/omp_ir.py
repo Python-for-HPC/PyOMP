@@ -742,7 +742,7 @@ class openmp_region_start(ir.Stmt):
 
         if (
             not hasattr(cctyp, "pyomp_patch_installed")
-            or cctyp.pyomp_patch_installed == False
+            or not cctyp.pyomp_patch_installed
         ):
             cctyp.pyomp_patch_installed = True
             # print("update_context", "id(cctyp.return_user_exec)", id(cctyp.return_user_exc), "id(context)", id(context))
@@ -779,7 +779,7 @@ class openmp_region_start(ir.Stmt):
 
         if (
             not hasattr(cemtyp, "pyomp_patch_installed")
-            or cemtyp.pyomp_patch_installed == False
+            or not cemtyp.pyomp_patch_installed
         ):
             cemtyp.pyomp_patch_installed = True
             # print("update_context", "id(cemtyp.return_user_exec)", id(cemtyp.fp_zero_division), "id(context)", id(context))
@@ -799,7 +799,7 @@ class openmp_region_start(ir.Stmt):
 
         if (
             not hasattr(ptyp, "pyomp_patch_installed")
-            or ptyp.pyomp_patch_installed == False
+            or not ptyp.pyomp_patch_installed
         ):
             ptyp.pyomp_patch_installed = True
             # print("update_context", "id(ptyp.emit_environment_sentry)", id(ptyp.emit_environment_sentry), "id(context)", id(context))
@@ -838,7 +838,6 @@ class openmp_region_start(ir.Stmt):
             typemap[k] = v
 
     def lower(self, lowerer):
-        typingctx = lowerer.context.typing_context
         targetctx = lowerer.context
         typemap = lowerer.fndesc.typemap
         calltypes = lowerer.fndesc.calltypes
@@ -920,7 +919,6 @@ class openmp_region_start(ir.Stmt):
                     assert isinstance(cur_tag_var, str)
                     cur_tag_typ = typemap_lookup(typemap, cur_tag_var)
                     if isinstance(cur_tag_typ, types.npytypes.Array):
-                        cur_tag_ndim = cur_tag_typ.ndim
                         stride_typ = lowerer.context.get_value_type(
                             types.intp
                         )  # lir.Type.int(64)
@@ -1082,7 +1080,7 @@ class openmp_region_start(ir.Stmt):
             for extra in extras_before:
                 lowerer.lower_inst(extra)
 
-        elif target_num is not None and self.target_copy != True:
+        elif target_num is not None and not self.target_copy:
             var_table = get_name_var_table(lowerer.func_ir.blocks)
 
             ompx_attrs = list(
@@ -1108,7 +1106,7 @@ class openmp_region_start(ir.Stmt):
                 for otag in self.tags:
                     print("tag in target:", otag, type(otag.arg))
 
-            from numba.core.compiler import Compiler, Flags
+            from numba.core.compiler import Flags
 
             if DEBUG_OPENMP >= 1:
                 print("openmp start region lower has target", type(lowerer.func_ir))
@@ -1220,7 +1218,6 @@ class openmp_region_start(ir.Stmt):
                 print("fndesc:", fndesc, type(fndesc))
                 print("func_ir type:", type(func_ir))
             dprint_func_ir(func_ir, "target func_ir")
-            internal_codegen = targetctx._internal_codegen
 
             # Find the start and end IR blocks for this offloaded region.
             start_block, end_block = find_target_start_end(func_ir, target_num)
@@ -1585,10 +1582,6 @@ class openmp_region_start(ir.Stmt):
                         id(func_ir.blocks[k].body),
                     )
 
-            shared_ext = ".so"
-            if sys.platform.startswith("win"):
-                shared_ext = ".dll"
-
             # TODO: move device pipelines in numba proper.
             if selected_device == 1:
                 if DEBUG_OPENMP >= 1:
@@ -1911,12 +1904,7 @@ class openmp_region_end(ir.Stmt):
         return list_vars_from_tags(self.tags)
 
     def lower(self, lowerer):
-        typingctx = lowerer.context.typing_context
-        targetctx = lowerer.context
-        typemap = lowerer.fndesc.typemap
-        context = lowerer.context
         builder = lowerer.builder
-        library = lowerer.library
 
         if DEBUG_OPENMP >= 2:
             print("openmp_region_end::lower", id(self), id(self.start_region))
@@ -1941,7 +1929,7 @@ class openmp_region_end(ir.Stmt):
             # Process the accumulated allocas in the start region.
             self.start_region.process_alloca_queue()
 
-            assert self.start_region.omp_region_var != None
+            assert self.start_region.omp_region_var is not None
             if DEBUG_OPENMP >= 2:
                 print(
                     "before adding exit", self.start_region.omp_region_var._get_name()

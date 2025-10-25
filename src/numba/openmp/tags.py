@@ -454,7 +454,7 @@ class openmp_tag(object):
             self.arg = replace_vars_inner(self.arg, var_dict)
 
     def add_to_usedef_set(self, use_set, def_set, start):
-        assert start == True or start == False
+        assert start in (True, False)
         if DEBUG_OPENMP >= 3:
             print("add_to_usedef_set", start, self.name, "is_dsa=", is_dsa(self.name))
 
