@@ -106,6 +106,7 @@ class openmp_tag(object):
             assert var_table is not None
 
         typemap = lowerer.fndesc.typemap
+        xtyp = None
 
         if isinstance(x, NameSlice):
             if DEBUG_OPENMP >= 2:
@@ -172,6 +173,7 @@ class openmp_tag(object):
                     print("xtyp:", xtyp, type(xtyp))
                 lowerer._alloca_var(x, xtyp)
                 if self.load:
+                    # breakpoint()
                     if not self.loaded_arg:
                         self.loaded_arg = lowerer.loadvar(x)
                     lop = self.loaded_arg.operands[0]
@@ -191,6 +193,8 @@ class openmp_tag(object):
                         )
 
                 if struct_lower and isinstance(xtyp, types.npytypes.Array):
+                    print("xtyp", xtyp)
+                    input("press enter to continue...")
                     dm = lowerer.context.data_model_manager.lookup(xtyp)
                     cur_tag_ndim = xtyp.ndim
                     stride_typ = lowerer.context.get_value_type(
@@ -244,6 +248,12 @@ class openmp_tag(object):
             decl = "i32 " + str(x)
         else:
             print("unknown arg type:", x, type(x))
+
+        # Add type information using a poison value operand for non-alloca pointers.
+        if xtyp is not None:
+            if not isinstance(lowerer.getvar(x), lir.instructions.AllocaInstr):
+                llvm_type = lowerer.context.get_value_type(xtyp)
+                decl += f", {llvm_type} poison"
 
         if self.omp_slice is not None:
 

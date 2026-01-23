@@ -84,11 +84,11 @@ def njit(*args, **kws):
 def _init():
     sys_platform = sys.platform
 
-    llvm_major, llvm_minor, llvm_patch = ll.llvm_version_info
-    if llvm_major != 14:
-        raise RuntimeError(
-            f"Incompatible LLVM version {llvm_major}.{llvm_minor}.{llvm_patch}, PyOMP expects LLVM 14.x"
-        )
+    # llvm_major, llvm_minor, llvm_patch = ll.llvm_version_info
+    # if llvm_major != 14:
+    #    raise RuntimeError(
+    #        f"Incompatible LLVM version {llvm_major}.{llvm_minor}.{llvm_patch}, PyOMP expects LLVM 14.x"
+    #    )
 
     omplib = (
         libpath

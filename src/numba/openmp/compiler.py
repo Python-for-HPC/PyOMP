@@ -278,6 +278,7 @@ class LowerNoSROA(Lower):
                 argname = value.name
                 argty = self.typeof("arg." + argname)
                 if isinstance(argty, types.CPointer):
+                    # breakpoint()
                     llty = self.context.get_value_type(argty)
                     ptr = lir.values.Argument(self.module, llty, "arg." + argname)
                     self.varmap[value.name] = ptr

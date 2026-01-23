@@ -1,4 +1,3 @@
-from cffi import FFI
 from numba.core import types
 from numba.core.types.functions import ExternalFunction
 from numba.core.datamodel.registry import register_default as model_register
@@ -16,28 +15,42 @@ class _OpenmpExternalFunction(types.ExternalFunction):
         ):
             return super(ExternalFunction, self).__call__(*args)
 
-        ffi = FFI()
+        # Resolve the function address via llvmlite's symbol table so we
+        # call the same LLVM-registered symbol the JIT uses. Then wrap
+        # it with ctypes CFUNCTYPE to call from Python. This avoids
+        # dlopen/dlsym namespace mismatches.
+        import llvmlite.binding as ll
+        import ctypes
+
         fname = self.symbol
-        ret_typ = str(self.sig.return_type)
 
-        def numba_to_c(ret_typ):
-            if ret_typ == "int32":
-                return "int"
-            elif ret_typ == "none":
-                return "void"
-            elif ret_typ == "float64":
-                return "double"
+        addr = ll.address_of_symbol(fname)
+        if not addr:
+            raise RuntimeError(
+                f"symbol {fname} not found via llvmlite.address_of_symbol"
+            )
+
+        def numba_to_ctype(tstr):
+            if tstr == "int32":
+                return ctypes.c_int
+            elif tstr == "none":
+                return None
+            elif tstr == "float64":
+                return ctypes.c_double
             else:
-                assert False
+                raise RuntimeError(f"unsupported type: {tstr}")
 
-        ret_typ = numba_to_c(ret_typ)
-        arg_str = ",".join([numba_to_c(str(x)) for x in self.sig.args])
-        proto = f"{ret_typ} {fname}({arg_str});"
-        ffi.cdef(proto)
-        # Should be loaded into the process by the load_library_permanently
-        # at the top of this file.
-        C = ffi.dlopen(None)
-        return getattr(C, fname)(*args)
+        restype = numba_to_ctype(str(self.sig.return_type))
+        argtypes = [numba_to_ctype(str(a)) for a in self.sig.args]
+
+        # CFUNCTYPE requires a valid ctypes restype; None maps to None (void)
+        cfunctype = (
+            ctypes.CFUNCTYPE(restype, *argtypes)
+            if argtypes
+            else ctypes.CFUNCTYPE(restype)
+        )
+        cfunc = cfunctype(addr)
+        return cfunc(*args)
 
 
 model_register(_OpenmpExternalFunction)(OpaqueModel)

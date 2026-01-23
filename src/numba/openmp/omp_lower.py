@@ -2423,6 +2423,7 @@ class OpenmpVisitor(Transformer):
     # Don't need a rule for single_construct.
 
     def single_directive(self, args):
+        # TODO: check for openmp semantic errors, e.g., single must be nested inside parallel region.
         sblk = self.blocks[self.blk_start]
         eblk = self.blocks[self.blk_end]
 

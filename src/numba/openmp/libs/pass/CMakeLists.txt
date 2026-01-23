@@ -1,13 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
 project(pyomp-pass)
 
-find_package(LLVM REQUIRED CONFIG)
+if(NOT DEFINED LLVM_DIR OR LLVM_DIR STREQUAL "")
+  message(FATAL_ERROR
+    "LLVM_DIR is required but not defined. "
+    "Please specify it with: cmake -DLLVM_DIR=/path/to/llvm/install ...")
+endif()
 
-if(NOT LLVM_VERSION_MAJOR EQUAL 14)
+find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH PATHS
+  ${LLVM_DIR}
+)
+
+if(NOT LLVM_VERSION_MAJOR EQUAL 16)
   message(FATAL_ERROR "Found LLVM ${LLVM_VERSION_MAJOR}, but need LLVM 14.x")
 endif()
 
-include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
+include_directories(${LLVM_INCLUDE_DIRS})
+message(STATUS "Found LLVM include dirs: ${LLVM_INCLUDE_DIRS}")
 
 # Use the same C++ standard as LLVM does
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "")
@@ -28,6 +37,8 @@ endif()
 
 # Use static library components to avoid issues with shared library dependencies.
 set(llvm_libs LLVMPasses)
+
+message(STATUS "Found LLVM libs ${llvm_libs}")
 
 if(NOT APPLE)
   target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,--no-undefined")

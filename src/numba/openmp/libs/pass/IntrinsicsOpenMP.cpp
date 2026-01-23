@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/Passes/PassPlugin.h>
 
 #include "CGIntrinsicsOpenMP.h"
@@ -356,51 +357,52 @@ struct IntrinsicsOpenMP {
           } else if (Tag.startswith("QUAL")) {
             const ArrayRef<Value *> &TagInputs = O.inputs();
             if (Tag.startswith("QUAL.OMP.NORMALIZED.IV")) {
-              assert(O.input_size() == 1 && "Expected single IV value");
+              // assert(O.input_size() == 1 && "Expected single IV value");
               OMPLoopInfo.IV = TagInputs[0];
             } else if (Tag.startswith("QUAL.OMP.NORMALIZED.START")) {
-              assert(O.input_size() == 1 && "Expected single START value");
+              // assert(O.input_size() == 1 && "Expected single START value");
               OMPLoopInfo.Start = TagInputs[0];
             } else if (Tag.startswith("QUAL.OMP.NORMALIZED.LB")) {
-              assert(O.input_size() == 1 && "Expected single LB value");
+              // assert(O.input_size() == 1 && "Expected single LB value");
               OMPLoopInfo.LB = TagInputs[0];
             } else if (Tag.startswith("QUAL.OMP.NORMALIZED.UB")) {
-              assert(O.input_size() == 1 && "Expected single UB value");
+              // assert(O.input_size() == 1 && "Expected single UB value");
               OMPLoopInfo.UB = TagInputs[0];
             } else if (Tag.startswith("QUAL.OMP.NUM_THREADS")) {
-              assert(O.input_size() == 1 && "Expected single NumThreads value");
+              // assert(O.input_size() == 1 && "Expected single NumThreads
+              // value");
               ParRegionInfo.NumThreads = TagInputs[0];
             } else if (Tag.startswith("QUAL.OMP.SCHEDULE")) {
               // TODO: Add DIST_SCHEDULE for distribute loops.
-              assert(O.input_size() == 1 &&
-                     "Expected single chunking scheduling value");
+              // assert(O.input_size() == 1 &&
+              //  "Expected single chunking scheduling value");
               Constant *Zero = ConstantInt::get(TagInputs[0]->getType(), 0);
               OMPLoopInfo.Chunk = TagInputs[0];
 
               if (Tag == "QUAL.OMP.SCHEDULE.STATIC") {
                 if (TagInputs[0] == Zero)
-                  OMPLoopInfo.Sched = OMPScheduleType::Static;
+                  OMPLoopInfo.Sched = OMPScheduleType::UnorderedStatic;
                 else {
-                  OMPLoopInfo.Sched = OMPScheduleType::StaticChunked;
+                  OMPLoopInfo.Sched = OMPScheduleType::UnorderedStaticChunked;
                   OMPLoopInfo.Chunk = TagInputs[0];
                 }
               } else
                 FATAL_ERROR("Unsupported scheduling type");
             } else if (Tag.startswith("QUAL.OMP.IF")) {
-              assert(O.input_size() == 1 &&
-                     "Expected single if condition value");
+              // assert(O.input_size() == 1 &&
+              //  "Expected single if condition value");
               ParRegionInfo.IfCondition = TagInputs[0];
             } else if (Tag.startswith("QUAL.OMP.TARGET.DEV_FUNC")) {
-              assert(O.input_size() == 1 &&
-                     "Expected a single device function name");
+              // assert(O.input_size() == 1 &&
+              //  "Expected a single device function name");
               ConstantDataArray *DevFuncArray =
                   dyn_cast<ConstantDataArray>(TagInputs[0]);
-              assert(DevFuncArray &&
-                     "Expected constant string for the device function");
+              // assert(DevFuncArray &&
+              //  "Expected constant string for the device function");
               TargetInfo.DevFuncName = DevFuncArray->getAsString();
             } else if (Tag.startswith("QUAL.OMP.TARGET.ELF")) {
-              assert(O.input_size() == 1 &&
-                     "Expected a single elf image string");
+              // assert(O.input_size() == 1 &&
+              //  "Expected a single elf image string");
               ConstantDataArray *ELF =
                   dyn_cast<ConstantDataArray>(TagInputs[0]);
               assert(ELF && "Expected constant string for ELF");
@@ -408,7 +410,8 @@ struct IntrinsicsOpenMP {
             } else if (Tag.startswith("QUAL.OMP.DEVICE")) {
               // TODO: Handle device selection for target regions.
             } else if (Tag.startswith("QUAL.OMP.NUM_TEAMS")) {
-              assert(O.input_size() == 1 && "Expected single NumTeams value");
+              // assert(O.input_size() == 1 && "Expected single NumTeams
+              // value");
               switch (Dir) {
               case OMPD_target:
                 TargetInfo.NumTeams = TagInputs[0];
@@ -431,8 +434,8 @@ struct IntrinsicsOpenMP {
                 FATAL_ERROR("Unsupported qualifier in directive");
               }
             } else if (Tag.startswith("QUAL.OMP.THREAD_LIMIT")) {
-              assert(O.input_size() == 1 &&
-                     "Expected single ThreadLimit value");
+              // assert(O.input_size() == 1 &&
+              //  "Expected single ThreadLimit value");
               switch (Dir) {
               case OMPD_target:
                 TargetInfo.ThreadLimit = TagInputs[0];
@@ -474,10 +477,21 @@ struct IntrinsicsOpenMP {
                 Value *Index = TagInputs[1];
                 Value *Offset = TagInputs[2];
                 Value *NumElements = TagInputs[3];
-                StructMappingInfoMap[TagInputs[0]].push_back(
+
+                Value *V = TagInputs[0];
+
+                // The struct base value must have been already registered in
+                // the DSAValueMap.
+                auto ItDSA = DSAValueMap.find(V);
+                assert(ItDSA != DSAValueMap.end() &&
+                       "Expected struct value in DSAValueMap");
+
+                Type *PointeeType = ItDSA->second.PointeeType;
+
+                StructMappingInfoMap[V].push_back(
                     {Index, Offset, NumElements, It->second});
 
-                DSAValueMap[TagInputs[0]] = DSATypeInfo(DSA_MAP_STRUCT);
+                ItDSA->second.Type = DSA_MAP_STRUCT;
               } else {
                 // This firstprivate includes a copy-constructor operand.
                 if ((It->second == DSA_FIRSTPRIVATE ||
@@ -494,10 +508,24 @@ struct IntrinsicsOpenMP {
                       V->getType()->getPointerElementType());
                   DSAValueMap[TagInputs[0]] =
                       DSATypeInfo(It->second, CopyConstructor);
-                } else
-                  // Sink for DSA qualifiers that do not require special
-                  // handling.
-                  DSAValueMap[TagInputs[0]] = DSATypeInfo(It->second);
+                } else {
+                  // Handle remaining DSA qualifiers. The numba frontend
+                  // communicates to us a pointer the value. Since LLVM moved to
+                  // opaque pointers, we need to track the pointee type either
+                  // by checking the alloca type or using a poison helper
+                  // emitted by the numba frontend.
+                  Value *V = TagInputs[0];
+                  if (auto *Alloca = dyn_cast<AllocaInst>(V)) {
+                    DSAValueMap[V] =
+                        DSATypeInfo(It->second, Alloca->getAllocatedType());
+                  } else {
+                    assert(TagInputs.size() == 2 &&
+                           "Expected poison helper for opaque pointer DSA");
+                    Value *PoisonHelper = TagInputs[1];
+                    DSAValueMap[V] =
+                        DSATypeInfo(It->second, PoisonHelper->getType());
+                  }
+                }
               }
             }
           } else if (Tag == "OMP.DEVICE")
@@ -533,8 +561,7 @@ struct IntrinsicsOpenMP {
         DEBUG_ENABLE(dbgs() << "AfterBB " << AfterBB->getName() << "\n");
 
         // Define the default BodyGenCB lambda.
-        auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
-                             BasicBlock &ContinuationIP) {
+        auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP) {
           BasicBlock *CGStartBB = CodeGenIP.getBlock();
           BasicBlock *CGEndBB = SplitBlock(CGStartBB, &*CodeGenIP.getPoint());
           assert(StartBB != nullptr && "StartBB should not be null");

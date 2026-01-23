@@ -1,0 +1,53 @@
+diff --git a/libomptarget/CMakeLists.txt b/libomptarget/CMakeLists.txt
+index bc6e615..2c41595 100644
+--- a/libomptarget/CMakeLists.txt
++++ b/libomptarget/CMakeLists.txt
+@@ -24,6 +24,19 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${LIBOMPTARGET_LIBRARY_DIR})
+ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${LIBOMPTARGET_LIBRARY_DIR})
+ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${LIBOMPTARGET_LIBRARY_DIR})
+ 
++# Define plugin install directory for runtime plugin loading. Prefer
++# standardized install libdir when available, fall back to ${CMAKE_INSTALL_PREFIX}/lib.
++if(NOT DEFINED LIBOMPTARGET_PLUGIN_DIR)
++  if(DEFINED CMAKE_INSTALL_LIBDIR)
++    set(LIBOMPTARGET_PLUGIN_DIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}" CACHE PATH "Path where libomptarget plugins are installed")
++  else()
++    set(LIBOMPTARGET_PLUGIN_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Path where libomptarget plugins are installed")
++  endif()
++endif()
++
++# Expose the plugin directory to sources as a compile-time definition.
++add_definitions(-DLIBOMPTARGET_PLUGIN_DIR=\"${LIBOMPTARGET_PLUGIN_DIR}\")
++
+ # Message utilities.
+ include(LibomptargetUtils)
+ 
+diff --git a/libomptarget/src/rtl.cpp b/libomptarget/src/rtl.cpp
+index 230a829..ff7e704 100644
+--- a/libomptarget/src/rtl.cpp
++++ b/libomptarget/src/rtl.cpp
+@@ -118,12 +118,22 @@ void RTLsTy::loadRTLs() {
+ 
+ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
+   const char *Name = RTLName.c_str();
+-
+   DP("Loading library '%s'...\n", Name);
+ 
++  // First, try to load the plugin from the configured plugin directory
++  // (LIBOMPTARGET_PLUGIN_DIR), falling back to the system library lookup.
+   std::string ErrMsg;
++  std::string PluginPath = std::string(LIBOMPTARGET_PLUGIN_DIR) + "/" + RTLName;
+   auto DynLibrary = std::make_unique<sys::DynamicLibrary>(
+-      sys::DynamicLibrary::getPermanentLibrary(Name, &ErrMsg));
++      sys::DynamicLibrary::getPermanentLibrary(PluginPath.c_str(), &ErrMsg));
++
++  if (!DynLibrary->isValid()) {
++    DP("Unable to load library from plugin dir: %s\n", ErrMsg.c_str());
++    // Try default lookup (PATH/LD_LIBRARY_PATH/etc.)
++    ErrMsg.clear();
++    DynLibrary = std::make_unique<sys::DynamicLibrary>(
++        sys::DynamicLibrary::getPermanentLibrary(Name, &ErrMsg));
++  }
+ 
+   if (!DynLibrary->isValid()) {
+     // Library does not exist or cannot be found.

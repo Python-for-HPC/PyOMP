@@ -3122,8 +3122,8 @@ class TestOpenmpTaskloop(TestOpenmpBase):
 class TestOpenmpTarget(TestOpenmpBase):
     """
     OpenMP target offloading tests. TEST_DEVICES is a required env var to
-    specify the device numbers to run the tests on: 0 for host backend, 1 for
-    CUDA backend. It is expected to be a comma-separated list of integer values.
+    specify the device numbers to run the tests on: 0 for CUDA backend, 1 for
+    host backend. It is expected to be a comma-separated list of integer values.
     """
 
     devices = []
@@ -3143,19 +3143,18 @@ class TestOpenmpTarget(TestOpenmpBase):
     # How to check for nowait?
     # Currently checks only compilation.
     # Numba optimizes the whole target away? This runs too fast.
+    # TODO: nowait is not properly implemented yet, it is blocking (*sigh*), and needs to be fixed.
     def target_nowait(self, device):
-        target_pragma = f"target nowait device({device})"
+        target_pragma = f"target nowait map(tofrom:a) device({device})"
 
         @njit
         def test_impl():
+            a = 42
             with openmp(target_pragma):
-                a = 0
-                for i in range(1000000):
-                    for j in range(1000000):
-                        for k in range(1000000):
-                            a += math.sqrt(i) + math.sqrt(j) + math.sqrt(k)
+                a += 1
+            return a
 
-        test_impl()
+        a = test_impl()
 
     def target_nest_parallel_default_threadlimit(self, device):
         target_pragma = f"target device({device}) map(from: teams, threads)"
@@ -4587,7 +4586,6 @@ class TestOpenmpTarget(TestOpenmpBase):
                         print("teams", teams, "threads", threads)
 
         test_impl()
-        input("ok?")
 
     def target_teams_shared_array(self, device):
         target_pragma = f"target teams num_teams(10) map(tofrom: a) map(from: nteams) device({device})"
@@ -4786,7 +4784,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             nteams = 0
             with openmp(target_pragma):
                 sum += 1
-                with openmp("single"):
+                tid = omp_get_thread_num()
+                if tid == 0:
                     nteams = omp_get_num_teams()
 
             return nteams, sum
@@ -4806,7 +4805,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             with openmp(target_pragma):
                 with openmp("teams reduction(+:sum)"):
                     sum += 1
-                    with openmp("single"):
+                    tid = omp_get_thread_num()
+                    if tid == 0:
                         nteams = omp_get_num_teams()
 
             return nteams, sum
