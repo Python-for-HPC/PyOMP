@@ -11,10 +11,6 @@ find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH PATHS
   ${LLVM_DIR}
 )
 
-if(NOT LLVM_VERSION_MAJOR EQUAL 16)
-  message(FATAL_ERROR "Found LLVM ${LLVM_VERSION_MAJOR}, but need LLVM 14.x")
-endif()
-
 include_directories(${LLVM_INCLUDE_DIRS})
 message(STATUS "Found LLVM include dirs: ${LLVM_INCLUDE_DIRS}")
 
