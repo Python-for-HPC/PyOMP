@@ -141,34 +141,36 @@ class BuildCMakeExt(build_ext):
 
 
 def _prepare_source_libomp(sha256=None):
-    # LLVM_VERSION = os.environ.get("LLVM_VERSION", "14.0.6")
-    LLVM_VERSION = "16.0.6"
+    LLVM_VERSION = os.environ.get("LLVM_VERSION", None)
+    assert LLVM_VERSION is not None, "LLVM_VERSION environment variable must be set."
     url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/openmp-{LLVM_VERSION}.src.tar.xz"
-    # TODO: make it configurable with llvm version.
-    cmake_url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/cmake-{LLVM_VERSION}.src.tar.xz"
 
     tmp = Path("_downloads/libomp") / f"openmp-{LLVM_VERSION}.tar.gz"
     tmp.parent.mkdir(parents=True, exist_ok=True)
 
     # Download the source tarball if it does not exist.
     if not tmp.exists():
-        print("url:", url)
+        print(f"download open version {LLVM_VERSION} url:", url)
         with urllib.request.urlopen(url) as r:
             with tmp.open("wb") as f:
                 f.write(r.read())
 
-    cmake_file = Path("_downloads/libomp") / f"cmake-{LLVM_VERSION}.tar.gz"
-
-    if not cmake_file.exists():
-        with urllib.request.urlopen(cmake_url) as r:
-            with cmake_file.open("wb") as f:
-                f.write(r.read())
-    with tarfile.open(cmake_file) as tf:
-        tf.extractall(cmake_file.parent)
-        src = cmake_file.parent / tf.getnames()[0]
-        dst = cmake_file.parent / "cmake"
-        if not dst.exists():
-            src.rename(dst)
+    # Extract only the major version.
+    llvm_major_version = tuple(map(int, LLVM_VERSION.split(".")))[0]
+    # For LLVM versions > 14, we also need to download CMake files.
+    if llvm_major_version > 14:
+        cmake_url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/cmake-{LLVM_VERSION}.src.tar.xz"
+        cmake_file = Path("_downloads/libomp") / f"cmake-{LLVM_VERSION}.tar.gz"
+        if not cmake_file.exists():
+            with urllib.request.urlopen(cmake_url) as r:
+                with cmake_file.open("wb") as f:
+                    f.write(r.read())
+        with tarfile.open(cmake_file) as tf:
+            tf.extractall(cmake_file.parent)
+            src = cmake_file.parent / tf.getnames()[0]
+            dst = cmake_file.parent / "cmake"
+            if not dst.exists():
+                src.rename(dst)
 
     if sha256:
         import hashlib
