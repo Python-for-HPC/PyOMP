@@ -1919,6 +1919,24 @@ class TestOpenmpDataClauses(TestOpenmpBase):
         np.testing.assert_array_equal(r[0], np.arange(2, N * 2 - 1, 4))
         assert r[1] == N // 2 - 1
 
+    def test_firstprivate_array(self):
+        @njit
+        def test_impl():
+            a = np.zeros(12)
+            a_copy = np.zeros(12)
+            with openmp("parallel for firstprivate(a) shared(a_copy) num_threads(4)"):
+                for i in range(12):
+                    a[i] = omp_get_thread_num() + 1
+                    a_copy[i] = a[i]
+
+            return a, a_copy
+
+        a, a_copy = test_impl()
+        np.testing.assert_array_equal(a, np.zeros(12))
+        np.testing.assert_array_equal(
+            a_copy, np.array([1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4])
+        )
+
 
 class TestOpenmpConstraints(TestOpenmpBase):
     """Tests designed to confirm that errors occur when expected, or
