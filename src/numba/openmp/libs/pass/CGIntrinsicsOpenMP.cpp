@@ -13,6 +13,7 @@
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include <cstdio>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
+// #include <llvm/Frontend/OpenMP/OMPDeviceConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -70,9 +71,22 @@ CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
 }
 
 // Since LLVM moved to opaque pointers, we need to track the pointee type.
-// We use the DSAValueMap to store the pointee type for opaque pointer values.
+// We retrieve the type from use the DSAValueMap to store the pointee type for
+// opaque pointer values.
 Type *getPointeeType(DSAValueMapTy &DSAValueMap, Value *V) {
-  assert(V->getType()->isOpaquePointerTy() && "Expected opaque pointer type");
+#if LLVM_VERSION_MAJOR <= 15
+  return V->getType()->getPointerElementType();
+#else
+  // assert(V->getType()->isOpaquePointerTy() && "Expected opaque pointer
+  // type");
+  assert(V->getType()->isPointerTy() && "Expected pointer type");
+#endif
+
+  if (auto *Alloca = dyn_cast<AllocaInst>(V)) {
+    return Alloca->getAllocatedType();
+  } else if (auto *Load = dyn_cast<LoadInst>(V)) {
+    return Load->getType();
+  }
 
   auto It = DSAValueMap.find(V);
   assert(It != DSAValueMap.end() && "Value missing from DSAValueMap");
@@ -90,8 +104,20 @@ using namespace iomp::helpers;
 InsertPointTy CGIntrinsicsOpenMP::emitReductionsHost(
     const OpenMPIRBuilder::LocationDescription &Loc, InsertPointTy AllocaIP,
     ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos) {
-  // If targeting the host runtime, use the OpenMP IR builder.
+// If targeting the host runtime, use the OpenMP IR builder.
+#if LLVM_VERSION_MAJOR <= 16
   return OMPBuilder.createReductions(Loc, AllocaIP, ReductionInfos);
+#else
+  // TODO: look into the ByRef parameter.
+  SmallVector<bool> IsByRef(ReductionInfos.size(), false);
+  auto IPOrError =
+      OMPBuilder.createReductions(Loc, AllocaIP, ReductionInfos, IsByRef);
+  if (auto E = IPOrError.takeError())
+    FATAL_ERROR("Error in createReductions:" + toString(std::move(E)));
+
+  return *IPOrError;
+
+#endif
 }
 
 InsertPointTy CGIntrinsicsOpenMP::emitReductionsDevice(
@@ -142,9 +168,19 @@ InsertPointTy CGIntrinsicsOpenMP::emitReductionsDevice(
     assert(RI.Variable->getType()->isPointerTy() &&
            "Expected variables to be pointers");
 
+#if LLVM_VERSION_MAJOR <= 16
     OMPBuilder.Builder.restoreIP(
         RI.AtomicReductionGen(OMPBuilder.Builder.saveIP(), RI.ElementType,
                               RI.Variable, RI.PrivateVariable));
+#else
+    auto IPOrErr =
+        RI.AtomicReductionGen(OMPBuilder.Builder.saveIP(), RI.ElementType,
+                              RI.Variable, RI.PrivateVariable);
+    if (auto E = IPOrErr.takeError())
+      FATAL_ERROR("Error in AtomicReductionGen: " + toString(std::move(E)));
+
+    OMPBuilder.Builder.restoreIP(*IPOrErr);
+#endif
   }
 
   // Add terminator branch to the continuation block.
@@ -162,15 +198,8 @@ void CGIntrinsicsOpenMP::setDeviceGlobalizedValues(
 }
 
 Value *CGIntrinsicsOpenMP::createScalarCast(Value *V, Type *DestTy) {
-  Value *Scalar = nullptr;
-  assert(V && "Expected non-null value");
-  if (V->getType()->isPointerTy()) {
-    Value *Load =
-        OMPBuilder.Builder.CreateLoad(V->getType()->getPointerElementType(), V);
-    Scalar = OMPBuilder.Builder.CreateTruncOrBitCast(Load, DestTy);
-  } else {
-    Scalar = OMPBuilder.Builder.CreateTruncOrBitCast(V, DestTy);
-  }
+  assert(!V->getType()->isPointerTy() && "Expected scalar type, found pointer");
+  Value *Scalar = OMPBuilder.Builder.CreateTruncOrBitCast(V, DestTy);
 
   return Scalar;
 }
@@ -206,7 +235,7 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
                           /* AssumptionCache */ nullptr,
                           /* AllowVarArgs */ true,
                           /* AllowAlloca */ true,
-#if LLVM_VERSION_MAJOR >= 16
+#if LLVM_VERSION_MAJOR >= 15
                           /* AllocationBlock */ nullptr,
 #endif
                           /* Suffix */ ".");
@@ -2063,22 +2092,14 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
   }
 
   OffloadingMappingArgs.Size = MapperInfos.size();
+  // These operations could be also implemented with GEPs on the allocas, not
+  // sure what's best, revisit.
   OffloadingMappingArgs.BasePtrs =
       OMPBuilder.Builder.CreateBitCast(BasePtrsAlloca, OMPBuilder.VoidPtrPtr);
   OffloadingMappingArgs.Ptrs =
       OMPBuilder.Builder.CreateBitCast(PtrsAlloca, OMPBuilder.VoidPtrPtr);
   OffloadingMappingArgs.Sizes = OMPBuilder.Builder.CreateBitCast(
       SizesAlloca, OMPBuilder.SizeTy->getPointerTo());
-
-  // OffloadingMappingArgs.BasePtrs = OMPBuilder.Builder.CreateInBoundsGEP(
-  //     BasePtrsAlloca->getType()->getPointerElementType(), BasePtrsAlloca,
-  //     {OMPBuilder.Builder.getInt32(0), OMPBuilder.Builder.getInt32(0)});
-  // OffloadingMappingArgs.Ptrs = OMPBuilder.Builder.CreateInBoundsGEP(
-  //     PtrsAlloca->getType()->getPointerElementType(), PtrsAlloca,
-  //     {OMPBuilder.Builder.getInt32(0), OMPBuilder.Builder.getInt32(0)});
-  // OffloadingMappingArgs.Sizes = OMPBuilder.Builder.CreateInBoundsGEP(
-  //     SizesAlloca->getType()->getPointerElementType(), SizesAlloca,
-  //     {OMPBuilder.Builder.getInt32(0), OMPBuilder.Builder.getInt32(0)});
 }
 
 void CGIntrinsicsOpenMP::emitOMPSingle(Function *Fn, BasicBlock *BBEntry,
@@ -2091,9 +2112,22 @@ void CGIntrinsicsOpenMP::emitOMPSingle(Function *Fn, BasicBlock *BBEntry,
   OpenMPIRBuilder::LocationDescription Loc(
       InsertPointTy(BBEntry, BBEntry->end()), DL);
 
-  // TODO: handle nowait clause.
+// TODO: handle nowait clause.
+#if LLVM_VERSION_MAJOR <= 16
   InsertPointTy AfterIP = OMPBuilder.createSingle(
       Loc, BodyGenCB, FiniCB, /* IsNoWait*/ false, /*DidIt*/ nullptr);
+#else
+
+  auto IPOrError =
+      OMPBuilder.createSingle(Loc, BodyGenCB, FiniCB, /* IsNoWait*/ false,
+                              /*DidIt*/ nullptr);
+  if (auto E = IPOrError.takeError()) {
+    FATAL_ERROR("Error creating OpenMP single region: " +
+                toString(std::move(E)));
+  }
+
+  InsertPointTy AfterIP = *IPOrError;
+#endif
   BranchInst::Create(AfterBB, AfterIP.getBlock());
   DEBUG_ENABLE(dbgs() << "=== Single Fn\n" << *Fn << "=== End of Single Fn\n");
 }
@@ -2111,8 +2145,20 @@ void CGIntrinsicsOpenMP::emitOMPCritical(Function *Fn, BasicBlock *BBEntry,
   OpenMPIRBuilder::LocationDescription Loc(
       InsertPointTy(BBEntry, BBEntry->end()), DL);
 
+#if LLVM_VERSION_MAJOR <= 16
   InsertPointTy AfterIP = OMPBuilder.createCritical(Loc, BodyGenCB, FiniCB, "",
                                                     /*HintInst*/ nullptr);
+#else
+
+  auto IPOrError = OMPBuilder.createCritical(Loc, BodyGenCB, FiniCB, "",
+                                             /*HintInst*/ nullptr);
+  if (auto E = IPOrError.takeError()) {
+    FATAL_ERROR("Error creating OpenMP critical region: " +
+                toString(std::move(E)));
+  }
+
+  InsertPointTy AfterIP = *IPOrError;
+#endif
   BranchInst::Create(AfterBB, AfterIP.getBlock());
   DEBUG_ENABLE(dbgs() << "=== Critical Fn\n"
                       << *Fn << "=== End of Critical Fn\n");
@@ -2496,7 +2542,19 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
   bool IsSPMD = (TargetInfo.ExecMode == omp::OMP_TGT_EXEC_MODE_SPMD);
   if (isOpenMPDeviceRuntime()) {
     OpenMPIRBuilder::LocationDescription Loc(Builder);
-    auto IP = OMPBuilder.createTargetInit(Loc, /* IsSPMD */ IsSPMD);
+#if LLVM_VERSION_MAJOR <= 15
+    auto IP = OMPBuilder.createTargetInit(Loc, IsSPMD, true);
+#else
+    // TODO: Use TargetInfo launch configuration for max/min threads and
+    // threads.
+    OpenMPIRBuilder::TargetKernelDefaultAttrs Attrs{
+        (IsSPMD ? OMP_TGT_EXEC_MODE_SPMD : OMP_TGT_EXEC_MODE_GENERIC),
+        {-1, -1, -1},
+        1,
+        {-1, -1, -1},
+        1};
+    auto IP = OMPBuilder.createTargetInit(Loc, Attrs);
+#endif
     Builder.restoreIP(IP);
   }
 
@@ -2505,7 +2563,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
 
   if (isOpenMPDeviceRuntime()) {
     OpenMPIRBuilder::LocationDescription Loc(Builder);
-    OMPBuilder.createTargetDeinit(Loc, /* IsSPMD */ IsSPMD);
+    OMPBuilder.createTargetDeinit(Loc, /* IsSPMD */ IsSPMD, true);
   }
 
   Builder.CreateRetVoid();
@@ -2913,9 +2971,13 @@ void CGIntrinsicsOpenMP::emitOMPDistributeParallelFor(
   BasicBlock *ParAfterBB = ForExitAfter;
   DEBUG_ENABLE(dbgs() << "ParAfterBB " << ParAfterBB->getName() << "\n");
 
-  emitOMPParallel(
-      DSAValueMap, nullptr, DL, Fn, ParEntryBB, ParStartBB, ParEndBB,
-      ParAfterBB, [](auto) {}, ParRegionInfo);
+#if LLVM_VERSION_MAJOR <= 16
+  auto FiniCB = [](auto) {};
+#else
+  auto FiniCB = [](InsertPointTy) { return Error::success(); };
+#endif
+  emitOMPParallel(DSAValueMap, nullptr, DL, Fn, ParEntryBB, ParStartBB,
+                  ParEndBB, ParAfterBB, FiniCB, ParRegionInfo);
 
   // By default, to maximize performance on GPUs, we do static chunked with a
   // chunk size equal to the block size when targeting the device runtime.

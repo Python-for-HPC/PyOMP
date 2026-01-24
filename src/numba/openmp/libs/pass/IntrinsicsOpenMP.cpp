@@ -12,7 +12,6 @@
 //
 //===-------------------------------------------------------------------------===//
 
-#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -28,7 +27,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+// #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <cstddef>
@@ -502,10 +501,16 @@ struct IntrinsicsOpenMP {
                       dyn_cast<ConstantDataArray>(TagInputs[1]);
                   assert(CopyFnNameArray && "Expected constant string for the "
                                             "copy-constructor function");
+                  assert(
+                      isa<AllocaInst>(V) &&
+                      "Expected alloca for firstprivate/lastprivate with copy "
+                      "constructor");
+
+                  Type *PointeeType = cast<AllocaInst>(V)->getAllocatedType();
                   StringRef CopyFnName = CopyFnNameArray->getAsString();
                   FunctionCallee CopyConstructor = M.getOrInsertFunction(
-                      CopyFnName, V->getType()->getPointerElementType(),
-                      V->getType()->getPointerElementType());
+                      CopyFnName, PointeeType, PointeeType);
+
                   DSAValueMap[TagInputs[0]] =
                       DSATypeInfo(It->second, CopyConstructor);
                 } else {
@@ -568,10 +573,17 @@ struct IntrinsicsOpenMP {
           CGStartBB->getTerminator()->setSuccessor(0, StartBB);
           assert(EndBB != nullptr && "EndBB should not be null");
           EndBB->getTerminator()->setSuccessor(0, CGEndBB);
+#if LLVM_VERSION_MAJOR > 16
+          return Error::success();
+#endif
         };
 
-        // Define the default FiniCB lambda.
+// Define the default FiniCB lambda.
+#if LLVM_VERSION_MAJOR <= 16
         auto FiniCB = [&](InsertPointTy CodeGenIP) {};
+#else
+        auto FiniCB = [&](InsertPointTy) { return Error::success(); };
+#endif
 
         // Remove intrinsics of OpenMP tags, first CBExit to also remove use
         // of CBEntry, then CBEntry.
@@ -791,8 +803,8 @@ extern "C" int runIntrinsicsOpenMPPass(const char *BitcodePtr,
 
   llvm::LLVMContext Ctx;
   auto ModOrErr = llvm::parseBitcodeFile(BufferRef, Ctx);
-  if (!ModOrErr) {
-    errs() << "Bitcode parse failed\n";
+  if (auto Err = ModOrErr.takeError()) {
+    errs() << "Bitcode parse failed: " << toString(std::move(Err)) << "\n";
     return 2;
   }
   std::unique_ptr<llvm::Module> M = std::move(*ModOrErr);

@@ -273,8 +273,12 @@ struct CGReduction {
     unsigned int Bitwidth = VTy->getScalarSizeInBits();
     auto *IntTy =
         (Bitwidth == 64 ? Type::getInt64Ty(Ctx) : Type::getInt32Ty(Ctx));
+#if LLVM_VERSION_MAJOR <= 15
     auto *IntPtrTy =
         (Bitwidth == 64 ? Type::getInt64PtrTy(Ctx) : Type::getInt32PtrTy(Ctx));
+#else
+    auto *IntPtrTy = PointerType::getUnqual(IntTy);
+#endif
 
     auto SaveIP = IRB.saveIP();
     // TODO: move alloca to function entry point, may be outlined later, e.g.,
@@ -405,10 +409,19 @@ struct CGReduction {
     } else
       FATAL_ERROR("Unsupported type to init with identity reduction value");
 
+#if LLVM_VERSION_MAJOR <= 16
     ReductionInfos.push_back(
         {ReductionTy, Orig, Priv,
          CGReduction::reductionNonAtomic<ReductionOperator>,
          CGReduction::reductionAtomic<ReductionOperator>});
+#else
+    // TODO: Support more evaluation kinds besides scalar.
+    ReductionInfos.push_back(
+        {ReductionTy, Orig, Priv, OpenMPIRBuilder::EvalKind::Scalar,
+         CGReduction::reductionNonAtomic<ReductionOperator>,
+         /* ReductionGenClang */ nullptr,
+         CGReduction::reductionAtomic<ReductionOperator>});
+#endif
 
     return Priv;
   }
