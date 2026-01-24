@@ -3,6 +3,7 @@
 docs/build*
 *.egg-info
 .vscode
+.cache
 __pycache__
 *.a
 *.so
