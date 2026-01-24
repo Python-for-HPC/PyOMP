@@ -1,4 +1,5 @@
-from numba.core import ir, types, cgutils, compiler
+from numba.core import ir, types, cgutils
+from numba import njit
 from numba.core.ir_utils import replace_vars_inner
 import llvmlite.ir as lir
 import numpy as np
@@ -27,9 +28,20 @@ class NameSlice:
 
 
 def create_native_np_copy(arg_typ):
-    # The cfunc wrapper of this function is what we need.
-    copy_cres = compiler.compile_isolated(copy_np_array, (arg_typ,), arg_typ)
-    copy_name = getattr(copy_cres.fndesc, "llvm_cfunc_wrapper_name")
+    # Use the high-level dispatcher API (`njit`) instead of the
+    # removed/legacy `compile_isolated` helper.
+    dispatcher = njit(copy_np_array)
+    dispatcher.get_function_type()
+    atypes = (arg_typ,)
+    # copy_cres = dispatcher.get_compile_result(sig)
+    dispatcher.compile(atypes)
+    copy_cres = dispatcher.overloads[atypes]
+    assert copy_cres is not None
+    fndesc = getattr(copy_cres, "fndesc", None)
+    assert fndesc is not None
+    copy_name = getattr(fndesc, "llvm_cfunc_wrapper_name", None)
+    assert copy_name is not None
+
     return (copy_name, copy_cres)
 
 
