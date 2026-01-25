@@ -118,6 +118,7 @@ class openmp_tag(object):
             assert var_table is not None
 
         typemap = lowerer.fndesc.typemap
+        xtyp = None
 
         if isinstance(x, NameSlice):
             if DEBUG_OPENMP >= 2:
@@ -169,13 +170,17 @@ class openmp_tag(object):
                         decl = get_decl(arg_str)
                     if len(xsplit) > 1:
                         cur_typ = xtyp
-                        field_indices = []
+                        field_info = []
                         for field in xsplit[1:]:
                             dm = lowerer.context.data_model_manager.lookup(cur_typ)
                             findex = dm._fields.index(field)
-                            field_indices.append("i32 " + str(findex))
                             cur_typ = dm._members[findex]
-                        fi_str = ",".join(field_indices)
+                            llvm_type = lowerer.context.get_value_type(cur_typ)
+                            if isinstance(cur_typ, types.CPointer):
+                                llvm_type = llvm_type.pointee
+                            field_info.append(f"{llvm_type} poison")
+                            field_info.append("i32 " + str(findex))
+                        fi_str = ", ".join(field_info)
                         decl += f", {fi_str}"
                         # decl = f"SCOPE({decl}, {fi_str})"
             else:
@@ -256,6 +261,12 @@ class openmp_tag(object):
             decl = "i32 " + str(x)
         else:
             print("unknown arg type:", x, type(x))
+
+        # Add type information using a poison value operand for non-alloca pointers.
+        if xtyp is not None:
+            if not isinstance(lowerer.getvar(x), lir.instructions.AllocaInstr):
+                llvm_type = lowerer.context.get_value_type(xtyp)
+                decl += f", {llvm_type} poison"
 
         if self.omp_slice is not None:
 
