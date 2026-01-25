@@ -167,10 +167,10 @@ def _prepare_source_openmp(sha256=None):
     if sha256:
         import hashlib
 
-        sha256 = hashlib.sha256()
+        hasher = hashlib.sha256()
         with tmp.open("rb") as f:
-            sha256.update(f.read())
-        if sha256.hexdigest() != sha256:
+            hasher.update(f.read())
+        if hasher.hexdigest() != sha256:
             raise ValueError(f"SHA256 mismatch for {url}")
 
     with tarfile.open(tmp) as tf:
