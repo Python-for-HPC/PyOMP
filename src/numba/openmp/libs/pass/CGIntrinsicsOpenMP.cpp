@@ -69,7 +69,7 @@ CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
 }
 
 // Since LLVM moved to opaque pointers, we need to track the pointee type.
-// We retrieve the type from use the DSAValueMap to store the pointee type for
+// We retrieve the type from the DSAValueMap to store the pointee type for
 // opaque pointer values.
 Type *getPointeeType(DSAValueMapTy &DSAValueMap, Value *V) {
 #if LLVM_VERSION_MAJOR <= 15
