@@ -142,7 +142,7 @@ def _prepare_source_openmp(sha256=None):
 
     # Download the source tarball if it does not exist.
     if not tmp.exists():
-        print(f"download open version {LLVM_VERSION} url:", url)
+        print(f"download openmp version {LLVM_VERSION} url:", url)
         with urllib.request.urlopen(url) as r:
             with tmp.open("wb") as f:
                 f.write(r.read())
