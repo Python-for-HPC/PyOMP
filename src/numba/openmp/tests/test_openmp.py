@@ -3172,7 +3172,7 @@ class TestOpenmpTarget(TestOpenmpBase):
                 a += 1
             return a
 
-        a = test_impl()
+        test_impl()
 
     def target_nest_parallel_default_threadlimit(self, device):
         target_pragma = f"target device({device}) map(from: teams, threads)"
