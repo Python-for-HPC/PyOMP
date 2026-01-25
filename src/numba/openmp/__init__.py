@@ -1,8 +1,5 @@
-import warnings
-
 import llvmlite.binding as ll
 import sys
-import numba
 from ._version import version as __version__  # noqa: F401
 
 from .config import (
@@ -58,37 +55,11 @@ from .exceptions import (  # noqa: F401
 )
 from .overloads import omp_shared_array  # noqa: F401
 from .omp_context import _OpenmpContextType
-
-
-### Decorators.
-def jit(*args, **kws):
-    """
-    Equivalent to jit(nopython=True, nogil=True)
-    """
-    if "nopython" in kws:
-        warnings.warn("nopython is set for njit and is ignored", RuntimeWarning)
-    if "forceobj" in kws:
-        warnings.warn("forceobj is set for njit and is ignored", RuntimeWarning)
-        del kws["forceobj"]
-    kws.update({"nopython": True, "nogil": True})
-    dispatcher = numba.jit(*args, **kws)
-    dispatcher._compiler.__class__ = CustomFunctionCompiler
-    dispatcher._compiler.pipeline_class = CustomCompiler
-    return dispatcher
-
-
-def njit(*args, **kws):
-    return jit(*args, **kws)
+from .decorators import jit, njit  # noqa: F401
 
 
 def _init():
     sys_platform = sys.platform
-
-    llvm_major, llvm_minor, llvm_patch = ll.llvm_version_info
-    if llvm_major != 14:
-        raise RuntimeError(
-            f"Incompatible LLVM version {llvm_major}.{llvm_minor}.{llvm_patch}, PyOMP expects LLVM 14.x"
-        )
 
     omplib = (
         libpath
