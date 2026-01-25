@@ -1,0 +1,30 @@
+diff --git a/libomptarget/plugins/common/elf_common/CMakeLists.txt b/libomptarget/plugins/common/elf_common/CMakeLists.txt
+index 9ea2926..b3fb758 100644
+--- a/libomptarget/plugins/common/elf_common/CMakeLists.txt
++++ b/libomptarget/plugins/common/elf_common/CMakeLists.txt
+@@ -16,9 +16,7 @@ add_library(elf_common OBJECT elf_common.cpp)
+ set_property(TARGET elf_common PROPERTY POSITION_INDEPENDENT_CODE ON)
+ llvm_update_compile_flags(elf_common)
+ set(LINK_LLVM_LIBS LLVMBinaryFormat LLVMObject LLVMSupport)
+-if (LLVM_LINK_LLVM_DYLIB)
+-  set(LINK_LLVM_LIBS LLVM)
+-endif()
++# Link LLVM static libraries to avoid dependency on shared LLVM libraries.
+ target_link_libraries(elf_common INTERFACE ${LINK_LLVM_LIBS})
+ add_dependencies(elf_common ${LINK_LLVM_LIBS})
+ 
+diff --git a/libomptarget/src/CMakeLists.txt b/libomptarget/src/CMakeLists.txt
+index 071ec61..98b48ac 100644
+--- a/libomptarget/src/CMakeLists.txt
++++ b/libomptarget/src/CMakeLists.txt
+@@ -12,8 +12,9 @@
+ 
+ libomptarget_say("Building offloading runtime library libomptarget.")
+ 
++# Link LLVM statically to avoid dependency on dynamic libLLVM.
+ add_llvm_library(omptarget
+-  SHARED
++  SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+ 
+   api.cpp
+   device.cpp
