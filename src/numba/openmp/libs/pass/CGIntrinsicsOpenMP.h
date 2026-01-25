@@ -196,6 +196,7 @@ struct OffloadingMappingArgsTy {
 };
 
 struct FieldMappingInfo {
+  Type *PointeeType;
   Value *Index;
   Value *Offset;
   Value *NumElements;

@@ -471,13 +471,14 @@ struct IntrinsicsOpenMP {
                   It->second == DSA_MAP_TO_STRUCT ||
                   It->second == DSA_MAP_FROM_STRUCT ||
                   It->second == DSA_MAP_TOFROM_STRUCT) {
-                assert((TagInputs.size() - 1) == 3 &&
-                       "Expected input triple for struct mapping");
-                Value *Index = TagInputs[1];
-                Value *Offset = TagInputs[2];
-                Value *NumElements = TagInputs[3];
-
+                assert((TagInputs.size() - 1) == 4 &&
+                       "Expected input tuple of 4 (base ptr, type, index, "
+                       "offset) for struct mapping");
                 Value *V = TagInputs[0];
+                Type *PointeeType = TagInputs[1]->getType();
+                Value *Index = TagInputs[2];
+                Value *Offset = TagInputs[3];
+                Value *NumElements = TagInputs[4];
 
                 // The struct base value must have been already registered in
                 // the DSAValueMap.
@@ -485,10 +486,8 @@ struct IntrinsicsOpenMP {
                 assert(ItDSA != DSAValueMap.end() &&
                        "Expected struct value in DSAValueMap");
 
-                Type *PointeeType = ItDSA->second.PointeeType;
-
                 StructMappingInfoMap[V].push_back(
-                    {Index, Offset, NumElements, It->second});
+                    {PointeeType, Index, Offset, NumElements, It->second});
 
                 ItDSA->second.Type = DSA_MAP_STRUCT;
               } else {

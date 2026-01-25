@@ -1983,8 +1983,8 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
           FieldMapType |= OMP_TGT_MAPTYPE_PTR_AND_OBJ;
           BasePtr = FieldGEP;
           auto *Load = OMPBuilder.Builder.CreateLoad(FieldTy, BasePtr);
-          Ptr = OMPBuilder.Builder.CreateInBoundsGEP(
-              OMPBuilder.Builder.getPtrTy(), Load, FieldInfo.Offset);
+          Ptr = OMPBuilder.Builder.CreateInBoundsGEP(FieldInfo.PointeeType,
+                                                     Load, FieldInfo.Offset);
         } else {
           BasePtr = V;
           Ptr = OMPBuilder.Builder.CreateInBoundsGEP(FieldTy, FieldGEP,
