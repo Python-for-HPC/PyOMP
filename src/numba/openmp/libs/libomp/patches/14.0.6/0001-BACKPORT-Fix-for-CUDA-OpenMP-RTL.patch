@@ -1,17 +1,7 @@
-From 4e2d04de758d0ae37a1fd663c3c139293bfb3dc4 Mon Sep 17 00:00:00 2001
-From: Giorgis Georgakoudis <georgakoudis1@llnl.gov>
-Date: Tue, 28 Nov 2023 01:16:15 -0800
-Subject: [PATCH] [BACKPORT] Fix for CUDA OpenMP RTL
-# Based on LLVM commit 545fcc3d842c0912db61591520bd4f760686c5a3
-
----
- openmp-14.0.6.src/libomptarget/plugins/cuda/src/rtl.cpp | 6 +++++-
- 1 file changed, 5 insertions(+), 1 deletion(-)
-
-diff --git a/openmp-14.0.6.src/libomptarget/plugins/cuda/src/rtl.cpp b/openmp-14.0.6.src/libomptarget/plugins/cuda/src/rtl.cpp
+diff --git a/libomptarget/plugins/cuda/src/rtl.cpp b/libomptarget/plugins/cuda/src/rtl.cpp
 index 0ca05f0ec3a0..16da3f434bba 100644
---- a/openmp-14.0.6.src/libomptarget/plugins/cuda/src/rtl.cpp
-+++ b/openmp-14.0.6.src/libomptarget/plugins/cuda/src/rtl.cpp
+--- a/libomptarget/plugins/cuda/src/rtl.cpp
++++ b/libomptarget/plugins/cuda/src/rtl.cpp
 @@ -234,6 +234,7 @@ template <typename T> class ResourcePoolTy {
    std::mutex Mutex;
    /// Pool of resources.
@@ -45,6 +35,5 @@ index 0ca05f0ec3a0..16da3f434bba 100644
      Resources.clear();
    }
  };
--- 
+--
 2.29.1
-
