@@ -19,7 +19,7 @@ import sys
 import os
 
 from .config import DEBUG_OPENMP
-from .parser import openmp_parser, var_collector_parser
+from .parser import openmp_parser
 from .analysis import (
     remove_ssa,
     user_defined_var,
@@ -140,10 +140,6 @@ class OpenmpVisitor(Transformer):
         )
 
     def find_io_vars(self, selected_blocks):
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-        scope = sblk.scope
-
         cfg = compute_cfg_from_blocks(self.blocks)
         usedefs = compute_use_defs(self.blocks)
         if DEBUG_OPENMP >= 1:
@@ -530,7 +526,6 @@ class OpenmpVisitor(Transformer):
                 loop_exit = list(loop.exits)[0]
                 loop_header = loop.header
                 loop_entry_block = self.blocks[loop_entry]
-                loop_exit_block = self.blocks[loop_exit]
                 loop_header_block, _ = self.fix_empty_header(
                     self.blocks[loop_header], loop_header
                 )
@@ -632,7 +627,6 @@ class OpenmpVisitor(Transformer):
             last_loop_exit = list(last_loop.exits)[0]
             last_loop_header = last_loop.header
             last_loop_entry_block = self.blocks[last_loop_entry]
-            last_loop_exit_block = self.blocks[last_loop_exit]
             last_loop_header_block, _ = self.fix_empty_header(
                 self.blocks[last_loop_header], loop_header
             )
@@ -793,7 +787,6 @@ class OpenmpVisitor(Transformer):
                 f"Extra code near line {self.loc} is not allowed before or after the loop in an OpenMP parallel for region."
             )
 
-        live_end = live_map[self.blk_end]
         for non_loop_block in non_loop_blocks:
             nlb = self.blocks[non_loop_block]
             if isinstance(nlb.body[0], ir.Jump):
@@ -860,8 +853,6 @@ class OpenmpVisitor(Transformer):
         if DEBUG_OPENMP >= 1:
             print("post_header:", post_header)
 
-        normalized = True
-
         for inst_num, inst in enumerate(entry_block.body):
             if (
                 isinstance(inst, ir.Assign)
@@ -871,7 +862,7 @@ class OpenmpVisitor(Transformer):
                 loop_kind = _get_loop_kind(inst.value.func.name, call_table)
                 if DEBUG_OPENMP >= 1:
                     print("loop_kind:", loop_kind)
-                if loop_kind != False and loop_kind == range:
+                if loop_kind and loop_kind is range:
                     range_inst = inst
                     range_args = inst.value.args
                     if DEBUG_OPENMP >= 1:
@@ -1282,7 +1273,6 @@ class OpenmpVisitor(Transformer):
 
     def barrier_directive(self, args):
         sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
 
         if DEBUG_OPENMP >= 1:
             print("visit barrier_directive", args, type(args))
@@ -1295,7 +1285,6 @@ class OpenmpVisitor(Transformer):
 
     def taskwait_directive(self, args):
         sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
 
         if DEBUG_OPENMP >= 1:
             print("visit taskwait_directive", args, type(args))
@@ -1331,11 +1320,6 @@ class OpenmpVisitor(Transformer):
 
     def for_simd_directive(self, args):
         raise NotImplementedError("For simd currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit for_simd_directive", args, type(args))
 
     def for_simd_clause(self, args):
         if DEBUG_OPENMP >= 1:
@@ -1356,11 +1340,6 @@ class OpenmpVisitor(Transformer):
 
     def parallel_for_simd_directive(self, args):
         raise NotImplementedError("Parallel for simd currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit parallel_for_simd_directive", args, type(args))
 
     def parallel_for_simd_clause(self, args):
         if DEBUG_OPENMP >= 1:
@@ -1526,11 +1505,6 @@ class OpenmpVisitor(Transformer):
 
     def parallel_sections_directive(self, args):
         raise NotImplementedError("Parallel sections currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit parallel_sections_directive", args, type(args))
 
     def parallel_sections_clause(self, args):
         if DEBUG_OPENMP >= 1:
@@ -1541,11 +1515,6 @@ class OpenmpVisitor(Transformer):
 
     def sections_directive(self, args):
         raise NotImplementedError("Sections directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit sections_directive", args, type(args))
 
     # Don't need a rule for SECTIONS.
 
@@ -1558,22 +1527,12 @@ class OpenmpVisitor(Transformer):
 
     def section_directive(self, args):
         raise NotImplementedError("Section directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit section_directive", args, type(args))
 
     # Don't need a rule for SECTION.
     # Don't need a rule for atomic_construct.
 
     def atomic_directive(self, args):
         raise NotImplementedError("Atomic currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit atomic_directive", args, type(args))
 
     # Don't need a rule for ATOMIC.
 
@@ -1752,7 +1711,7 @@ class OpenmpVisitor(Transformer):
         ret = list(filter(lambda x: any([y in x.name for y in names]), clauses))
         if remove_from_orig:
             clauses[:] = list(
-                filter(lambda x: any([not y in x.name for y in names]), clauses)
+                filter(lambda x: any([y not in x.name for y in names]), clauses)
             )
         return ret
 
@@ -1770,7 +1729,6 @@ class OpenmpVisitor(Transformer):
 
     def target_enter_data_directive(self, args):
         sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
 
         if DEBUG_OPENMP >= 1:
             print("visit target_enter_data_directive", args, type(args))
@@ -1786,7 +1744,6 @@ class OpenmpVisitor(Transformer):
 
     def target_exit_data_directive(self, args):
         sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
 
         if DEBUG_OPENMP >= 1:
             print("visit target_exit_data_directive", args, type(args))
@@ -2405,7 +2362,6 @@ class OpenmpVisitor(Transformer):
 
     def target_update_directive(self, args):
         sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
 
         if DEBUG_OPENMP >= 1:
             print("visit target_update_directive", args, type(args))
@@ -2493,21 +2449,11 @@ class OpenmpVisitor(Transformer):
 
     def master_directive(self, args):
         raise NotImplementedError("Master directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit master_directive", args, type(args))
 
     # Don't need a rule for simd_construct.
 
     def simd_directive(self, args):
         raise NotImplementedError("Simd directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit simd_directive", args, type(args))
 
     # Don't need a rule for SIMD.
 
@@ -2530,11 +2476,6 @@ class OpenmpVisitor(Transformer):
 
     def declare_simd_directive(self, args):
         raise NotImplementedError("Declare simd directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit declare_simd_directive", args, type(args))
 
     def declare_simd_clause(self, args):
         raise NotImplementedError("Declare simd clauses currently unsupported.")
@@ -2754,14 +2695,6 @@ class OpenmpVisitor(Transformer):
         start_tags = [openmp_tag("DIR.OMP.PARALLEL")]
         end_tags = [openmp_tag("DIR.OMP.END.PARALLEL")]
         clauses = self.some_data_clause_directive(args, start_tags, end_tags, 1)
-
-        # sblk = self.blocks[self.blk_start]
-        # eblk = self.blocks[self.blk_end]
-        # scope = sblk.scope
-
-        # before_start = []
-        # after_start = []
-        # clauses, default_shared = self.flatten(args[1:], sblk)
 
         if len(list(filter(lambda x: x.name == "QUAL.OMP.NUM_THREADS", clauses))) > 1:
             raise MultipleNumThreadsClauses(
@@ -3043,20 +2976,10 @@ class OpenmpVisitor(Transformer):
 
     def threadprivate_directive(self, args):
         raise NotImplementedError("Threadprivate currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit threadprivate_directive", args, type(args))
 
     def cancellation_point_directive(self, args):
         raise NotImplementedError("""Explicit cancellation points
                                  currently unsupported.""")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit cancellation_point_directive", args, type(args))
 
     def construct_type_clause(self, args):
         if DEBUG_OPENMP >= 1:
@@ -3065,26 +2988,14 @@ class OpenmpVisitor(Transformer):
 
     def cancel_directive(self, args):
         raise NotImplementedError("Cancel directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit cancel_directive", args, type(args))
 
     # Don't need a rule for ORDERED.
 
     def flush_directive(self, args):
         raise NotImplementedError("Flush directive currently unsupported.")
-        sblk = self.blocks[self.blk_start]
-        eblk = self.blocks[self.blk_end]
-
-        if DEBUG_OPENMP >= 1:
-            print("visit flush_directive", args, type(args))
 
     def region_phrase(self, args):
         raise NotImplementedError("No implementation for region phrase.")
-        if DEBUG_OPENMP >= 1:
-            print("visit region_phrase", args, type(args))
 
     def PYTHON_NAME(self, args):
         if DEBUG_OPENMP >= 1:
@@ -3152,9 +3063,9 @@ def replace_ssa_vars(blocks, vardict):
     """replace variables (ir.Var to ir.Var) from dictionary (name -> ir.Var)"""
     # remove identity values to avoid infinite loop
     new_vardict = {}
-    for l, r in vardict.items():
-        if l != r.name:
-            new_vardict[l] = r
+    for n, r in vardict.items():
+        if n != r.name:
+            new_vardict[n] = r
     visit_vars(blocks, replace_ssa_var_callback, new_vardict)
 
 
@@ -3166,8 +3077,6 @@ def remove_ssa_callback(var, unused):
 
 def remove_ssa_from_func_ir(func_ir):
     typed_passes.PreLowerStripPhis()._strip_phi_nodes(func_ir)
-    #    new_func_ir = typed_passes.PreLowerStripPhis()._strip_phi_nodes(func_ir)
-    #    func_ir.blocks = new_func_ir.blocks
     visit_vars(func_ir.blocks, remove_ssa_callback, None)
     func_ir._definitions = build_definitions(func_ir.blocks)
 
@@ -3205,25 +3114,11 @@ def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra
         visitor.transform(parse_res)
     except VisitError as e:
         raise e.__context__
-        if isinstance(e.__context__, UnspecifiedVarInDefaultNone):
-            print(str(e.__context__))
-            raise e.__context__
-        else:
-            print(
-                "Internal error for OpenMp pragma '{}'".format(arg.value),
-                e.__context__,
-                type(e.__context__),
-            )
-        sys.exit(-1)
-    except Exception as f:
+    except Exception:
         print("generic transform exception")
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
         print(exc_type, fname, exc_tb.tb_lineno)
         print("Internal error for OpenMp pragma '{}'".format(arg.value))
         sys.exit(-2)
-    except:
-        print("fallthrough exception")
-        print("Internal error for OpenMP pragma '{}'".format(arg.value))
-        sys.exit(-3)
     assert blocks is visitor.blocks

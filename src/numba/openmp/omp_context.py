@@ -78,17 +78,12 @@ def extract_args_from_openmp(func_ir):
                     try:
                         visit_res = visitor.transform(parse_res)
                         inst.value.args.extend([var_table[x] for x in visit_res])
-                    except Exception as f:
-                        print("generic transform exception")
+                    except Exception as e:
+                        print(f"generic transform exception: {e}")
                         exc_type, exc_obj, exc_tb = sys.exc_info()
                         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
                         print(exc_type, fname, exc_tb.tb_lineno)
-                        # print("Internal error for OpenMp pragma '{}'".format(arg.value))
                         sys.exit(-2)
-                    except BaseException as e:
-                        print("fallthrough exception")
-                        # print("Internal error for OpenMp pragma '{}'".format(arg.value))
-                        sys.exit(-3)
 
 
 def remove_empty_blocks(blocks):
@@ -188,7 +183,7 @@ class _OpenmpContextType(WithContext):
         dispatcher_factory,
         extra,
     ):
-        if _OpenmpContextType.first_time == True:
+        if _OpenmpContextType.first_time:
             _OpenmpContextType.first_time = False
             self.do_numba_fixups()
 

@@ -1,7 +1,7 @@
 from numba.core import ir, types, typing
 from numba.core.analysis import _fix_loop_exit, compute_cfg_from_blocks
 from numba.core.ir_utils import visit_vars
-from numba.extending import overload, intrinsic
+from numba.extending import intrinsic
 
 
 def remove_ssa(var_name, scope, loc):
@@ -115,11 +115,10 @@ def get_var_from_enclosing(enclosing_regions, var):
 
 
 def remove_indirections(clause):
-    try:
-        while len(clause) == 1 and isinstance(clause[0], list):
-            clause = clause[0]
-    except:
-        pass
+    if not isinstance(clause, list):
+        return clause
+    while len(clause) == 1 and isinstance(clause[0], list):
+        clause = clause[0]
     return clause
 
 

@@ -34,7 +34,7 @@ def omp_shared_array(size, dtype):
 
 
 @overload(omp_shared_array, target="cpu", inline="always", prefer_literal=True)
-def omp_shared_array_overload(size, dtype):
+def omp_shared_array_overload_cpu(size, dtype):
     assert isinstance(size, types.IntegerLiteral)
 
     def impl(size, dtype):
@@ -44,7 +44,7 @@ def omp_shared_array_overload(size, dtype):
 
 
 @overload(omp_shared_array, target="cuda", inline="always", prefer_literal=True)
-def omp_shared_array_overload(size, dtype):
+def omp_shared_array_overload_cuda(size, dtype):
     assert isinstance(size, types.IntegerLiteral)
 
     def impl(size, dtype):
