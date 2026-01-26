@@ -52,10 +52,10 @@ variables:
   parallel:
     matrix:
       - PYOMP_CI_PYTHON_VERSION:
-        - "3.9"
         - "3.10"
         - "3.11"
         - "3.12"
+        - "3.13"
 
 build-and-test-tioga:
   extends: [.base-job, .python-variants]

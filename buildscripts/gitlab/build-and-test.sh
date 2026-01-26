@@ -7,15 +7,18 @@ TMPDIR=/tmp/pyomp/${CI_JOB_ID}
 mkdir -p ${TMPDIR}
 pushd ${TMPDIR}
 
+# Set the LLVM_VERSION to use.
+export LLVM_VERSION="15.0.7"
+
 # Set the envs directory under the temporary directory.
 export CONDA_ENVS_DIRS="${TMPDIR}/_stage/miniconda3/envs"
 
-# Install miniconda and llvmdev, clang14 environments.
+# Install miniconda and llvmdev environment.
 source ${CI_PROJECT_DIR}/buildscripts/cibuildwheel/setup-miniconda3.sh
 
 # Export environment variables for building and testing.
-export LLVM_DIR="${CONDA_ENVS_DIRS}/llvmdev"
-export CLANG_TOOL="${CONDA_ENVS_DIRS}/clang14/bin/clang"
+export LLVM_DIR="${CONDA_ENVS_DIRS}/llvmdev-${LLVM_VERSION}"
+export PATH="${CONDA_ENVS_DIRS}/llvmdev-${LLVM_VERSION}/bin:${PATH}"
 export USE_CXX11_ABI="1"
 export PIP_NO_INPUT="1"
 
