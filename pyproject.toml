@@ -66,7 +66,7 @@ before-all = [
 ]
 
 [tool.cibuildwheel.environment]
-LLVM_DIR = "_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}"
-CLANG_TOOL = "_stage/miniconda3/envs/clang-${LLVM_VERSION}/bin/clang"
+LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}"
+PATH = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin:${PATH}"
 USE_CXX11_ABI = "1"
 PIP_NO_INPUT = "1"

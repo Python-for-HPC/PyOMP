@@ -23,10 +23,6 @@ echo "Miniconda installed"
 source "_stage/miniconda3/bin/activate" base
 export CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
-# Create llvmdev environment and install llvmdev ${LLVM_VERSION}.
+# Create clangdev ${LLVM_VERSION}
 echo "Installing manylinux llvmdev ${LLVM_VERSION}..."
-conda create -n llvmdev-${LLVM_VERSION} -c conda-forge -y llvmdev=${LLVM_VERSION}
-
-# Create clang environment and install clang ${LLVM_VERSION}.
-echo "Installing clang ${LLVM_VERSION}..."
-conda create -n clang-${LLVM_VERSION} -c conda-forge -y clang=${LLVM_VERSION}
+conda create -n llvmdev-${LLVM_VERSION} -c conda-forge -q -y clangdev=${LLVM_VERSION} llvmdev=${LLVM_VERSION}
