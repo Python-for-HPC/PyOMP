@@ -13,14 +13,17 @@ compiler based on LLVM, which is competitive with equivalent C/C++ implementatio
 
 PyOMP is developed and distributed as an *extension* to Numba, so it uses
 Numba as a dependency.
-It is currently tested with Numba versions 0.57.x, 0.58.x, 0.59.x, 0.60.x on the
-following architecture and operating system combinations: linux-64 (x86_64),
-osx-arm64 (mac), linux-arm64, and linux-ppc64le.
+It is currently tested with several Numba versions on the following
+architecture and operating system combinations: linux-64 (x86_64), osx-arm64
+(mac), and linux-arm64.
+The [compatibility matrix](#compatibility-matrix) with Numba versions records
+the possible combinations.
+
 Installation is possible through `pip` or `conda`, detailed in the next section.
 
 As PyOMP builds on top of the LLVM OpenMP infrastructure, it also inherits its
 limitations: GPU support is only available on Linux.
-Also, PyOMP currently supports only NVIDIA GPUs with AMD GPU support planned for.
+Also, PyOMP currently supports only NVIDIA GPUs with AMD GPU support in development.
 
 ## Installation
 
@@ -37,6 +40,13 @@ PyOMP is also distributed through Conda, installable using the following command
 ```bash
 conda install -c python-for-hpc -c conda-forge pyomp
 ```
+
+### Compatibility matrix
+
+| PyOMP | Numba           |
+| ----- | --------------- |
+| 0.4.x | 0.61.x          |
+| 0.3.x | 0.57.x - 0.60.x |
 
 Besides a standard installation, we also provide the following options to
 quickly try out PyOMP online or through a container.

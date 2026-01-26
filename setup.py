@@ -14,9 +14,6 @@ try:
 except ImportError:
     _bdist_wheel = None
 
-OPENMP_URL = "https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.6/openmp-14.0.6.src.tar.xz"
-OPENMP_SHA256 = "4f731ff202add030d9d68d4c6daabd91d3aeed9812e6a5b4968815cfdff0eb1f"
-
 
 class CleanCommand(Command):
     """Custom clean command to tidy up the project root."""
@@ -65,48 +62,9 @@ class BuildCMakeExt(build_ext):
     def run(self):
         for ext in self.extensions:
             if isinstance(ext, CMakeExtension):
-                self._prepare_source(ext)
                 self._build_cmake(ext)
             else:
                 super().run()
-
-    def _prepare_source(self, ext):
-        if ext.sourcedir:
-            return
-
-        tmp = Path("_downloads") / f"{ext.name}" / "src.tar.gz"
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-
-        # Download the source tarball if it does not exist.
-        if not tmp.exists():
-            with urllib.request.urlopen(ext.url) as r:
-                with tmp.open("wb") as f:
-                    f.write(r.read())
-
-        if ext.sha256:
-            import hashlib
-
-            sha256 = hashlib.sha256()
-            with tmp.open("rb") as f:
-                sha256.update(f.read())
-            if sha256.hexdigest() != ext.sha256:
-                raise ValueError(f"SHA256 mismatch for {ext.url}")
-
-        with tarfile.open(tmp) as tf:
-            # We assume the tarball contains a single directory with the source files.
-            ext.sourcedir = tmp.parent / tf.getnames()[0]
-            tf.extractall(tmp.parent)
-
-        for patch in (
-            Path(f"src/numba/openmp/libs/{ext.name}/patches").absolute().glob("*.patch")
-        ):
-            print("applying patch", patch)
-            subprocess.run(
-                ["patch", "-p1", "-i", str(patch)],
-                cwd=tmp.parent,
-                check=True,
-                stdin=subprocess.DEVNULL,
-            )
 
     def _build_cmake(self, ext: CMakeExtension):
         # Delete build directory if it exists to avoid errors with stale
@@ -160,13 +118,6 @@ class BuildCMakeExt(build_ext):
             include_dir = install_dir / "lib/cmake"
             if include_dir.exists():
                 shutil.rmtree(include_dir)
-        # Remove symlinks in the install directory to avoid issues with creating
-        # the wheel.
-        for file in install_dir.rglob("*"):
-            if file.is_symlink():
-                file.unlink()
-            elif file.is_dir():
-                pass
 
     def _env_toolchain_args(self, ext):
         args = []
@@ -181,14 +132,79 @@ class BuildCMakeExt(build_ext):
         return args
 
 
+def _prepare_source_openmp(sha256=None):
+    LLVM_VERSION = os.environ.get("LLVM_VERSION", None)
+    assert LLVM_VERSION is not None, "LLVM_VERSION environment variable must be set."
+    url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/openmp-{LLVM_VERSION}.src.tar.xz"
+
+    tmp = Path("_downloads/libomp") / f"openmp-{LLVM_VERSION}.tar.gz"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+
+    # Download the source tarball if it does not exist.
+    if not tmp.exists():
+        print(f"download openmp version {LLVM_VERSION} url:", url)
+        with urllib.request.urlopen(url) as r:
+            with tmp.open("wb") as f:
+                f.write(r.read())
+
+    # Extract only the major version.
+    llvm_major_version = tuple(map(int, LLVM_VERSION.split(".")))[0]
+    # For LLVM versions > 14, we also need to download CMake files.
+    if llvm_major_version > 14:
+        cmake_url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/cmake-{LLVM_VERSION}.src.tar.xz"
+        cmake_file = Path("_downloads/libomp") / f"cmake-{LLVM_VERSION}.tar.gz"
+        if not cmake_file.exists():
+            with urllib.request.urlopen(cmake_url) as r:
+                with cmake_file.open("wb") as f:
+                    f.write(r.read())
+        with tarfile.open(cmake_file) as tf:
+            tf.extractall(cmake_file.parent)
+            src = cmake_file.parent / tf.getnames()[0]
+            dst = cmake_file.parent / "cmake"
+            if not dst.exists():
+                src.rename(dst)
+
+    if sha256:
+        import hashlib
+
+        hasher = hashlib.sha256()
+        with tmp.open("rb") as f:
+            hasher.update(f.read())
+        if hasher.hexdigest() != sha256:
+            raise ValueError(f"SHA256 mismatch for {url}")
+
+    with tarfile.open(tmp) as tf:
+        # We assume the tarball contains a single directory with the source files.
+        sourcedir = tmp.parent / tf.getnames()[0]
+        tf.extractall(tmp.parent)
+
+    for patch in (
+        Path(f"src/numba/openmp/libs/libomp/patches/{LLVM_VERSION}")
+        .absolute()
+        .glob("*.patch")
+    ):
+        print("applying patch", patch)
+        subprocess.run(
+            ["patch", "-p1", "-i", str(patch)],
+            cwd=sourcedir,
+            check=True,
+            stdin=subprocess.DEVNULL,
+        )
+
+    return sourcedir
+
+
 setup(
     ext_modules=[
         CMakeExtension("pass", sourcedir="src/numba/openmp/libs/pass"),
         CMakeExtension(
             "libomp",
-            url=OPENMP_URL,
-            sha256=OPENMP_SHA256,
-            cmake_args=["-DLIBOMP_OMPD_SUPPORT=OFF", "-DLIBOMP_OMPT_SUPPORT=OFF"],
+            sourcedir=_prepare_source_openmp(),
+            cmake_args=[
+                "-DLIBOMP_OMPD_SUPPORT=OFF",
+                "-DLIBOMP_OMPT_SUPPORT=OFF",
+                "-DCMAKE_INSTALL_LIBDIR=lib",
+            ],
         ),
     ],
     cmdclass={

@@ -1,0 +1,14 @@
+diff --git a/libomptarget/include/Debug.h b/libomptarget/include/Debug.h
+index 8ff4695..d789551 100644
+--- a/libomptarget/include/Debug.h
++++ b/libomptarget/include/Debug.h
+@@ -38,7 +38,9 @@
+ #define _OMPTARGET_DEBUG_H
+ 
+ #include <atomic>
++#include <cstdlib>
+ #include <mutex>
++#include <string>
+ 
+ /// 32-Bit field data attributes controlling information presented to the user.
+ enum OpenMPInfoType : uint32_t {

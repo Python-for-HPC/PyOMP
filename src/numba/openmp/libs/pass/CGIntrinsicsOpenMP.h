@@ -1,29 +1,30 @@
 #ifndef LLVM_TRANSFORMS_INTRINSICS_OPENMP_CODEGEN_H
 #define LLVM_TRANSFORMS_INTRINSICS_OPENMP_CODEGEN_H
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/Frontend/OpenMP/OMP.h.inc"
-#include "llvm/Frontend/OpenMP/OMPConstants.h"
-#include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
-#include "llvm/IR/Value.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include "DebugOpenMP.h"
+
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/Frontend/OpenMP/OMP.h.inc>
+#include <llvm/Frontend/OpenMP/OMPConstants.h>
+#include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Value.h>
 #include <llvm/Support/AtomicOrdering.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
-
-#include "DebugOpenMP.h"
+#include <llvm/Transforms/Utils/ValueMapper.h>
 
 using namespace llvm;
 using namespace omp;
+
+namespace iomp {
 
 using InsertPointTy = OpenMPIRBuilder::InsertPointTy;
 using BodyGenCallbackTy = OpenMPIRBuilder::BodyGenCallbackTy;
 using FinalizeCallbackTy = OpenMPIRBuilder::FinalizeCallbackTy;
 
-namespace iomp {
 // TODO: expose clauses through namespace omp?
 enum DSAType {
   DSA_NONE,
@@ -46,23 +47,22 @@ enum DSAType {
 };
 
 struct DSATypeInfo {
-  DSAType Type;
-  FunctionCallee CopyConstructor;
+  DSAType Type = DSA_NONE;
+  FunctionCallee CopyConstructor = nullptr;
+  llvm::Type *PointeeType = nullptr;
 
-  DSATypeInfo() : Type(DSA_NONE), CopyConstructor(nullptr) {}
-  DSATypeInfo(DSAType InType) : Type(InType), CopyConstructor(nullptr) {}
-  DSATypeInfo(DSAType InType, FunctionCallee InCopyConstructor)
-      : Type(InType), CopyConstructor(InCopyConstructor) {}
-  DSATypeInfo(const DSATypeInfo &DTI) {
-    Type = DTI.Type;
-    CopyConstructor = DTI.CopyConstructor;
-  }
+  DSATypeInfo() = default;
+  DSATypeInfo(DSAType Type) : Type(Type) {}
+  DSATypeInfo(DSAType Type, llvm::Type *PointeeType)
+      : Type(Type), PointeeType(PointeeType) {}
+  DSATypeInfo(DSAType Type, FunctionCallee InCopyConstructor)
+      : Type(Type), CopyConstructor(InCopyConstructor) {}
+
+  DSATypeInfo(const DSATypeInfo &DTI) = default;
+
   DSATypeInfo &operator=(const DSATypeInfo &DTI) = default;
 };
-
 using DSAValueMapTy = MapVector<Value *, DSATypeInfo>;
-
-// using DSAValueMapTy = MapVector<Value *, DSAType>;
 
 static const DenseMap<StringRef, Directive> StringToDir = {
     {"DIR.OMP.PARALLEL", OMPD_parallel},
@@ -106,6 +106,10 @@ static const DenseMap<StringRef, DSAType> StringToDSA = {
     {"QUAL.OMP.MAP.TO.STRUCT", DSA_MAP_TO_STRUCT},
     {"QUAL.OMP.MAP.FROM.STRUCT", DSA_MAP_FROM_STRUCT},
     {"QUAL.OMP.MAP.TOFROM.STRUCT", DSA_MAP_TOFROM_STRUCT}};
+
+namespace helpers {
+Type *getPointeeType(DSAValueMapTy &DSAValueMap, Value *V);
+}
 
 inline std::string toString(DSAType DSA) {
   switch (DSA) {
@@ -192,6 +196,7 @@ struct OffloadingMappingArgsTy {
 };
 
 struct FieldMappingInfo {
+  Type *PointeeType;
   Value *Index;
   Value *Offset;
   Value *NumElements;
@@ -269,8 +274,12 @@ struct CGReduction {
     unsigned int Bitwidth = VTy->getScalarSizeInBits();
     auto *IntTy =
         (Bitwidth == 64 ? Type::getInt64Ty(Ctx) : Type::getInt32Ty(Ctx));
+#if LLVM_VERSION_MAJOR <= 15
     auto *IntPtrTy =
         (Bitwidth == 64 ? Type::getInt64PtrTy(Ctx) : Type::getInt32PtrTy(Ctx));
+#else
+    auto *IntPtrTy = PointerType::getUnqual(IntTy);
+#endif
 
     auto SaveIP = IRB.saveIP();
     // TODO: move alloca to function entry point, may be outlined later, e.g.,
@@ -289,9 +298,9 @@ struct CGReduction {
     Value *CastFAdd =
         IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
 
-    auto *CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadAtomic, CastFAdd, None,
-                                            AtomicOrdering::Monotonic,
-                                            AtomicOrdering::Monotonic);
+    auto *CmpXchg = IRB.CreateAtomicCmpXchg(
+        CastLHS, LoadAtomic, CastFAdd, MaybeAlign(), AtomicOrdering::Monotonic,
+        AtomicOrdering::Monotonic);
 
     auto *Returned = IRB.CreateExtractValue(CmpXchg, 0);
     auto *StoreTemp = IRB.CreateStore(Returned, AllocaTemp);
@@ -312,8 +321,8 @@ struct CGReduction {
     // FAdd = IRB.CreateFAdd(CastLoad, Partial, "retry.add");
     RedOp = emitOperation<ReductionOperator>(IRB, CastLoad, Partial);
     CastFAdd = IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
-    CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadReturned, CastFAdd, None,
-                                      AtomicOrdering::Monotonic,
+    CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadReturned, CastFAdd,
+                                      MaybeAlign(), AtomicOrdering::Monotonic,
                                       AtomicOrdering::Monotonic);
     Returned = IRB.CreateExtractValue(CmpXchg, 0);
     StoreTemp = IRB.CreateStore(Returned, AllocaTemp);
@@ -360,6 +369,7 @@ struct CGReduction {
   template <DSAType ReductionOperator>
   static Value *emitInitAndAppendInfo(
       IRBuilderBase &IRB, InsertPointTy AllocaIP, Value *Orig,
+      Type *ReductionTy,
       SmallVectorImpl<OpenMPIRBuilder::ReductionInfo> &ReductionInfos,
       bool IsGPUTeamsReduction) {
     auto GetIdentityValue = []() {
@@ -374,7 +384,6 @@ struct CGReduction {
       }
     };
 
-    Type *VTy = Orig->getType()->getPointerElementType();
     auto SaveIP = IRB.saveIP();
     IRB.restoreIP(AllocaIP);
     Value *Priv = nullptr;
@@ -382,28 +391,38 @@ struct CGReduction {
     if (IsGPUTeamsReduction) {
       Module *M = IRB.GetInsertBlock()->getModule();
       GlobalVariable *ShmemGV = new GlobalVariable(
-          *M, VTy, false, GlobalValue::InternalLinkage, UndefValue::get(VTy),
-          Orig->getName() + ".red.priv.shmem", nullptr,
-          llvm::GlobalValue::NotThreadLocal, 3, false);
+          *M, ReductionTy, false, GlobalValue::InternalLinkage,
+          UndefValue::get(ReductionTy), Orig->getName() + ".red.priv.shmem",
+          nullptr, llvm::GlobalValue::NotThreadLocal, 3, false);
       Value *AddrCast = IRB.CreateAddrSpaceCast(ShmemGV, Orig->getType());
       Priv = AddrCast;
     } else {
-      Priv = IRB.CreateAlloca(VTy, /* ArraySize */ nullptr,
+      Priv = IRB.CreateAlloca(ReductionTy, /* ArraySize */ nullptr,
                               Orig->getName() + ".red.priv");
     }
     IRB.restoreIP(SaveIP);
 
     // Store identity value based on operation and type.
-    if (VTy->isIntegerTy()) {
-      IRB.CreateStore(ConstantInt::get(VTy, GetIdentityValue()), Priv);
-    } else if (VTy->isFloatTy() || VTy->isDoubleTy()) {
-      IRB.CreateStore(ConstantFP::get(VTy, GetIdentityValue()), Priv);
+    if (ReductionTy->isIntegerTy()) {
+      IRB.CreateStore(ConstantInt::get(ReductionTy, GetIdentityValue()), Priv);
+    } else if (ReductionTy->isFloatTy() || ReductionTy->isDoubleTy()) {
+      IRB.CreateStore(ConstantFP::get(ReductionTy, GetIdentityValue()), Priv);
     } else
       FATAL_ERROR("Unsupported type to init with identity reduction value");
 
+#if LLVM_VERSION_MAJOR <= 16
     ReductionInfos.push_back(
-        {VTy, Orig, Priv, CGReduction::reductionNonAtomic<ReductionOperator>,
+        {ReductionTy, Orig, Priv,
+         CGReduction::reductionNonAtomic<ReductionOperator>,
          CGReduction::reductionAtomic<ReductionOperator>});
+#else
+    // TODO: Support more evaluation kinds besides scalar.
+    ReductionInfos.push_back(
+        {ReductionTy, Orig, Priv, OpenMPIRBuilder::EvalKind::Scalar,
+         CGReduction::reductionNonAtomic<ReductionOperator>,
+         /* ReductionGenClang */ nullptr,
+         CGReduction::reductionAtomic<ReductionOperator>});
+#endif
 
     return Priv;
   }

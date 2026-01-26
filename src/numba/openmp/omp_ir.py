@@ -108,6 +108,170 @@ def get_dotted_type(x, typemap, lowerer):
     return cur_typ
 
 
+class OpenMPCUDACodegen:
+    def __init__(self):
+        import numba.cuda.api as cudaapi
+        import numba.cuda.cudadrv.libs as cudalibs
+        from numba.cuda.codegen import CUDA_TRIPLE
+
+        self.cc = cudaapi.get_current_device().compute_capability
+        self.sm = "sm_" + str(self.cc[0]) + str(self.cc[1])
+        self.libdevice_path = cudalibs.get_libdevice()
+        with open(self.libdevice_path, "rb") as f:
+            self.libs_mod = ll.parse_bitcode(f.read())
+        self.libomptarget_arch = (
+            libpath / "libomp" / "lib" / f"libomptarget-nvptx-{self.sm}.bc"
+        )
+        with open(self.libomptarget_arch, "rb") as f:
+            libomptarget_mod = ll.parse_bitcode(f.read())
+        ## Link in device, openmp libraries.
+        self.libs_mod.link_in(libomptarget_mod)
+        # Initialize asm printers to codegen ptx.
+        ll.initialize_all_targets()
+        ll.initialize_all_asmprinters()
+        target = ll.Target.from_triple(CUDA_TRIPLE)
+        self.tm = target.create_target_machine(cpu=self.sm, opt=3)
+
+    def _get_target_image(self, mod, filename_prefix, ompx_attrs, use_toolchain=False):
+        from numba.cuda.cudadrv import driver
+        from numba.core.llvm_bindings import create_pass_builder
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + ".ll", "w") as f:
+                f.write(str(mod))
+
+        # Lower openmp intrinsics.
+        mod = run_intrinsics_openmp_pass(mod)
+        with ll.create_new_module_pass_manager() as pm:
+            pm.add_simplify_cfg_pass()
+            pb = create_pass_builder(self.tm, opt=0)
+            pm.run(mod, pb)
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + "-intrinsics_omp.ll", "w") as f:
+                f.write(str(mod))
+
+        mod.link_in(self.libs_mod, preserve=True)
+        # Internalize non-kernel function definitions.
+        for func in mod.functions:
+            if func.is_declaration:
+                continue
+            if func.linkage != ll.Linkage.external:
+                continue
+            if "__omp_offload_numba" in func.name:
+                continue
+            func.linkage = "internal"
+
+        with ll.create_new_module_pass_manager() as pm:
+            # TODO: ask Stuart, add_analysis_passes does not apply to new pass manager? error:
+            # ctypes.ArgumentError: argument 2: TypeError: expected LP_LLVMPassManager instance instead of LP_LLVMModulePassManager
+            # self.tm.add_analysis_passes(pm)
+            pm.add_global_dead_code_eliminate_pass()
+            pb = create_pass_builder(self.tm, opt=0)
+            pm.run(mod, pb)
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + "-intrinsics_omp-linked.ll", "w") as f:
+                f.write(str(mod))
+
+        # Run passes for optimization, including target-specific passes.
+        # Run function passes.
+        with ll.create_new_function_pass_manager() as pm:
+            # self.tm.add_analysis_passes(pm)
+            pb = create_pass_builder(
+                self.tm, 3, slp_vectorize=True, loop_vectorize=True
+            )
+            for func in mod.functions:
+                pm.run(func, pb)
+
+        # Run module passes.
+        with ll.create_new_module_pass_manager() as pm:
+            # self.tm.add_analysis_passes(pm)
+            pb = create_pass_builder(
+                self.tm, opt=3, slp_vectorize=True, loop_vectorize=True
+            )
+            pm.run(mod, pb)
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            mod.verify()
+            with open(filename_prefix + "-intrinsics_omp-linked-opt.ll", "w") as f:
+                f.write(str(mod))
+
+        # Generate ptx assemlby.
+        ptx = self.tm.emit_assembly(mod)
+        if use_toolchain:
+            # ptxas does file I/O, so output the assembly and ingest the generated cubin.
+            with open(filename_prefix + "-intrinsics_omp-linked-opt.s", "w") as f:
+                f.write(ptx)
+
+            subprocess.run(
+                [
+                    "ptxas",
+                    "-m64",
+                    "--gpu-name",
+                    self.sm,
+                    filename_prefix + "-intrinsics_omp-linked-opt.s",
+                    "-o",
+                    filename_prefix + "-intrinsics_omp-linked-opt.o",
+                ],
+                check=True,
+            )
+
+            with open(filename_prefix + "-intrinsics_omp-linked-opt.o", "rb") as f:
+                cubin = f.read()
+        else:
+            if DEBUG_OPENMP_LLVM_PASS >= 1:
+                with open(
+                    filename_prefix + "-intrinsics_omp-linked-opt.s",
+                    "w",
+                ) as f:
+                    f.write(ptx)
+
+            linker_kwargs = {}
+            for x in ompx_attrs:
+                linker_kwargs[x.arg[0]] = (
+                    tuple(x.arg[1]) if len(x.arg[1]) > 1 else x.arg[1][0]
+                )
+            # NOTE: DO NOT set cc, since the linker will always
+            # compile for the existing GPU context and it is
+            # incompatible with the launch_bounds ompx_attribute.
+            linker = driver.Linker.new(**linker_kwargs)
+            linker.add_ptx(ptx.encode())
+            cubin = linker.complete()
+
+            if DEBUG_OPENMP_LLVM_PASS >= 1:
+                with open(filename_prefix + "-intrinsics_omp-linked-opt.o", "wb") as f:
+                    f.write(cubin)
+
+        return cubin
+
+    def get_target_image(self, cres, ompx_attrs):
+        filename_prefix = cres.library.name
+        allmods = cres.library.modules
+        linked_mod = ll.parse_assembly(str(allmods[0]))
+        for mod in allmods[1:]:
+            linked_mod.link_in(ll.parse_assembly(str(mod)))
+        if OPENMP_DEVICE_TOOLCHAIN >= 1:
+            return self._get_target_image(
+                linked_mod, filename_prefix, ompx_attrs, use_toolchain=True
+            )
+        else:
+            return self._get_target_image(linked_mod, filename_prefix, ompx_attrs)
+
+
+_omp_cuda_codegen = None
+
+
+# Accessor for the singleton OpenMPCUDACodegen instance. Initializes the
+# instance on first use to ensure a single CUDA context and codegen setup
+# per process.
+def get_omp_cuda_codegen():
+    global _omp_cuda_codegen
+    if _omp_cuda_codegen is None:
+        _omp_cuda_codegen = OpenMPCUDACodegen()
+    return _omp_cuda_codegen
+
+
 def copy_one(x, calltypes):
     if DEBUG_OPENMP >= 2:
         print("copy_one:", x, type(x))
@@ -348,7 +512,9 @@ def replace_np_empty_with_cuda_shared(
                     new_block_body.append(
                         ir.Assign(
                             ir.Global("np", np, stmt.loc),
-                            ir.Var(stmt.target.scope, mk_unique_var(".np_global"), stmt.loc),
+                            ir.Var(
+                                stmt.target.scope, mk_unique_var(".np_global"), stmt.loc
+                            ),
                             stmt.loc,
                         )
                     )
@@ -358,7 +524,9 @@ def replace_np_empty_with_cuda_shared(
                             ir.Expr.getattr(
                                 new_block_body[-1].target, str(dtype_to_use), stmt.loc
                             ),
-                            ir.Var(stmt.target.scope, mk_unique_var(".np_dtype"), stmt.loc),
+                            ir.Var(
+                                stmt.target.scope, mk_unique_var(".np_dtype"), stmt.loc
+                            ),
                             stmt.loc,
                         )
                     )
@@ -797,10 +965,7 @@ class openmp_region_start(ir.Stmt):
         pyapi = context.get_python_api(builder)
         ptyp = type(pyapi)
 
-        if (
-            not hasattr(ptyp, "pyomp_patch_installed")
-            or not ptyp.pyomp_patch_installed
-        ):
+        if not hasattr(ptyp, "pyomp_patch_installed") or not ptyp.pyomp_patch_installed:
             ptyp.pyomp_patch_installed = True
             # print("update_context", "id(ptyp.emit_environment_sentry)", id(ptyp.emit_environment_sentry), "id(context)", id(context))
             setattr(ptyp, "orig_emit_environment_sentry", ptyp.emit_environment_sentry)
@@ -1307,7 +1472,6 @@ class openmp_region_start(ir.Stmt):
                     # target_arg_index = target_args.index(tag.arg)
                     atyp = get_dotted_type(tag.arg, typemap, lowerer)
                     if is_pointer_target_arg(tag.name, atyp):
-                        # outline_arg_typs[target_arg_index] = types.CPointer(atyp)
                         outline_arg_typs.append(types.CPointer(atyp))
                         if DEBUG_OPENMP >= 1:
                             print(1, "found cpointer target_arg", tag, atyp, id(atyp))
@@ -1325,7 +1489,13 @@ class openmp_region_start(ir.Stmt):
                 for eb in extras_before:
                     print(eb)
 
-            assert len(target_args) == len(target_args_unordered)
+            # NOTE: workaround for python 3.10 lowering in numba that may
+            # include a branch converging variable $cp. Remove it to avoid the
+            # assert since the openmp region must be single-entry, single-exit.
+            if sys.version_info >= (3, 10) and sys.version_info < (3, 11):
+                assert len(target_args) == len([x for x in target_args_unordered if x != "$cp"])
+            else:
+                assert len(target_args) == len(target_args_unordered)
             assert len(target_args) == len(outline_arg_typs)
 
             # Create the outlined IR from the blocks in the region, making the
@@ -1485,7 +1655,6 @@ class openmp_region_start(ir.Stmt):
             # fp-contractions on by default for GPU code.
             # flags.fastmath = True#state_copy.flags.fastmath
             flags.release_gil = True
-            flags.nogil = True
             flags.inline = "always"
             # Create a pipeline that only lowers the outlined target code.  No need to
             # compile because it has already gone through those passes.
@@ -1614,180 +1783,9 @@ class openmp_region_start(ir.Stmt):
                     print("target_elf:", type(target_elf), len(target_elf))
                     sys.stdout.flush()
             elif selected_device == 0:
-                import numba.cuda.api as cudaapi
-                import numba.cuda.cudadrv.libs as cudalibs
-                from numba.cuda.cudadrv import driver
-                from numba.core.llvm_bindings import create_pass_manager_builder
-                from numba.cuda.codegen import CUDA_TRIPLE
-
-                class OpenMPCUDACodegen:
-                    def __init__(self):
-                        self.cc = cudaapi.get_current_device().compute_capability
-                        self.sm = "sm_" + str(self.cc[0]) + str(self.cc[1])
-                        self.libdevice_path = cudalibs.get_libdevice()
-                        with open(self.libdevice_path, "rb") as f:
-                            self.libs_mod = ll.parse_bitcode(f.read())
-                        self.libomptarget_arch = (
-                            libpath
-                            / "libomp"
-                            / "lib"
-                            / f"libomptarget-new-nvptx-{self.sm}.bc"
-                        )
-                        with open(self.libomptarget_arch, "rb") as f:
-                            libomptarget_mod = ll.parse_bitcode(f.read())
-                        ## Link in device, openmp libraries.
-                        self.libs_mod.link_in(libomptarget_mod)
-                        # Initialize asm printers to codegen ptx.
-                        ll.initialize_all_targets()
-                        ll.initialize_all_asmprinters()
-                        target = ll.Target.from_triple(CUDA_TRIPLE)
-                        self.tm = target.create_target_machine(cpu=self.sm, opt=3)
-
-                    def _get_target_image(
-                        self, mod, filename_prefix, use_toolchain=False
-                    ):
-                        if DEBUG_OPENMP_LLVM_PASS >= 1:
-                            with open(filename_prefix + ".ll", "w") as f:
-                                f.write(str(mod))
-
-                        # Lower openmp intrinsics.
-                        mod = run_intrinsics_openmp_pass(mod)
-                        with ll.create_module_pass_manager() as pm:
-                            pm.add_cfg_simplification_pass()
-                            pm.run(mod)
-
-                        if DEBUG_OPENMP_LLVM_PASS >= 1:
-                            with open(filename_prefix + "-intrinsics_omp.ll", "w") as f:
-                                f.write(str(mod))
-
-                        mod.link_in(self.libs_mod, preserve=True)
-                        # Internalize non-kernel function definitions.
-                        for func in mod.functions:
-                            if func.is_declaration:
-                                continue
-                            if func.linkage != ll.Linkage.external:
-                                continue
-                            if "__omp_offload_numba" in func.name:
-                                continue
-                            func.linkage = "internal"
-
-                        with ll.create_module_pass_manager() as pm:
-                            self.tm.add_analysis_passes(pm)
-                            pm.add_global_dce_pass()
-                            pm.run(mod)
-
-                        if DEBUG_OPENMP_LLVM_PASS >= 1:
-                            with open(
-                                filename_prefix + "-intrinsics_omp-linked.ll", "w"
-                            ) as f:
-                                f.write(str(mod))
-
-                        # Run passes for optimization, including target-specific passes.
-                        # Run function passes.
-                        with ll.create_function_pass_manager(mod) as pm:
-                            self.tm.add_analysis_passes(pm)
-                            with create_pass_manager_builder(
-                                opt=3, slp_vectorize=True, loop_vectorize=True
-                            ) as pmb:
-                                # TODO: upstream adjust_pass_manager to llvmlite?
-                                # self.tm.adjust_pass_manager(pmb)
-                                pmb.populate(pm)
-                            for func in mod.functions:
-                                pm.initialize()
-                                pm.run(func)
-                                pm.finalize()
-
-                        # Run module passes.
-                        with ll.create_module_pass_manager() as pm:
-                            self.tm.add_analysis_passes(pm)
-                            with create_pass_manager_builder(
-                                opt=3, slp_vectorize=True, loop_vectorize=True
-                            ) as pmb:
-                                # TODO: upstream adjust_pass_manager to llvmlite?
-                                # self.tm.adjust_pass_manager(pmb)
-                                pmb.populate(pm)
-                            pm.run(mod)
-
-                        if DEBUG_OPENMP_LLVM_PASS >= 1:
-                            mod.verify()
-                            with open(
-                                filename_prefix + "-intrinsics_omp-linked-opt.ll", "w"
-                            ) as f:
-                                f.write(str(mod))
-
-                        # Generate ptx assemlby.
-                        ptx = self.tm.emit_assembly(mod)
-                        if use_toolchain:
-                            # ptxas does file I/O, so output the assembly and ingest the generated cubin.
-                            with open(
-                                filename_prefix + "-intrinsics_omp-linked-opt.s", "w"
-                            ) as f:
-                                f.write(ptx)
-
-                            subprocess.run(
-                                [
-                                    "ptxas",
-                                    "-m64",
-                                    "--gpu-name",
-                                    self.sm,
-                                    filename_prefix + "-intrinsics_omp-linked-opt.s",
-                                    "-o",
-                                    filename_prefix + "-intrinsics_omp-linked-opt.o",
-                                ],
-                                check=True,
-                            )
-
-                            with open(
-                                filename_prefix + "-intrinsics_omp-linked-opt.o", "rb"
-                            ) as f:
-                                cubin = f.read()
-                        else:
-                            if DEBUG_OPENMP_LLVM_PASS >= 1:
-                                with open(
-                                    filename_prefix + "-intrinsics_omp-linked-opt.s",
-                                    "w",
-                                ) as f:
-                                    f.write(ptx)
-
-                            linker_kwargs = {}
-                            for x in ompx_attrs:
-                                linker_kwargs[x.arg[0]] = (
-                                    tuple(x.arg[1])
-                                    if len(x.arg[1]) > 1
-                                    else x.arg[1][0]
-                                )
-                            # NOTE: DO NOT set cc, since the linker will always
-                            # compile for the existing GPU context and it is
-                            # incompatible with the launch_bounds ompx_attribute.
-                            linker = driver.Linker.new(**linker_kwargs)
-                            linker.add_ptx(ptx.encode())
-                            cubin = linker.complete()
-
-                            if DEBUG_OPENMP_LLVM_PASS >= 1:
-                                with open(
-                                    filename_prefix + "-intrinsics_omp-linked-opt.o",
-                                    "wb",
-                                ) as f:
-                                    f.write(cubin)
-
-                        return cubin
-
-                    def get_target_image(self, cres):
-                        filename_prefix = cres_library.name
-                        allmods = cres_library.modules
-                        linked_mod = ll.parse_assembly(str(allmods[0]))
-                        for mod in allmods[1:]:
-                            linked_mod.link_in(ll.parse_assembly(str(mod)))
-                        if OPENMP_DEVICE_TOOLCHAIN >= 1:
-                            return self._get_target_image(
-                                linked_mod, filename_prefix, use_toolchain=True
-                            )
-                        else:
-                            return self._get_target_image(linked_mod, filename_prefix)
-
                 target_extension._active_context.target = orig_target
-                omp_cuda_cg = OpenMPCUDACodegen()
-                target_elf = omp_cuda_cg.get_target_image(cres)
+                omp_cuda_cg = get_omp_cuda_codegen()
+                target_elf = omp_cuda_cg.get_target_image(cres, ompx_attrs)
             else:
                 raise NotImplementedError("Unsupported OpenMP device number")
 

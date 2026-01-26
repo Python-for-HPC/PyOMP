@@ -54,8 +54,13 @@ TEST_DEVICES=0 RUN_TARGET=0 $SEGVCATCH python -m numba.runtests -v -- numba.open
 echo "=> Run OpenMP offloading tests on CPU (device 1)"
 echo "=> Running: TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
 OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
-if nvidia-smi --list-gpus; then
-  echo "=> Found NVIDIA GPU, Run OpenMP offloading tests on GPU (device 0)"
-  echo "=> Running: TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
-  OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
+# Check if NVIDIA GPU is present.
+if command -v nvidia-smi >/dev/null 2>&1; then
+  # `nvidia-smi --list-gpus` exits non-zero when no GPUs are present; run
+  # it in a conditional so `set -e` does not cause the script to exit.
+  if nvidia-smi --list-gpus >/dev/null 2>&1; then
+    echo "=> Found NVIDIA GPU, Run OpenMP offloading tests on GPU (device 0)"
+    echo "=> Running: TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget"
+    OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=0 RUN_TARGET=1 $SEGVCATCH python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget 2>&1
+  fi
 fi

@@ -1,0 +1,101 @@
+diff --git a/libomptarget/plugins/CMakeLists.txt b/libomptarget/plugins/CMakeLists.txt
+index 64c2539..6abc109 100644
+--- a/libomptarget/plugins/CMakeLists.txt
++++ b/libomptarget/plugins/CMakeLists.txt
+@@ -31,7 +31,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "${tmachine}$")
+       add_definitions("-DTARGET_ELF_ID=${elf_machine_id}")
+ 
+       add_llvm_library("omptarget.rtl.${tmachine_libname}"
+-        SHARED
++        SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+ 
+         ${CMAKE_CURRENT_SOURCE_DIR}/../generic-elf-64bit/src/rtl.cpp
+ 
+@@ -97,4 +97,3 @@ add_subdirectory(remote)
+ # Make sure the parent scope can see the plugins that will be created.
+ set(LIBOMPTARGET_SYSTEM_TARGETS "${LIBOMPTARGET_SYSTEM_TARGETS}" PARENT_SCOPE)
+ set(LIBOMPTARGET_TESTED_PLUGINS "${LIBOMPTARGET_TESTED_PLUGINS}" PARENT_SCOPE)
+-
+diff --git a/libomptarget/plugins/amdgpu/CMakeLists.txt b/libomptarget/plugins/amdgpu/CMakeLists.txt
+index 66bf680..47935e5 100644
+--- a/libomptarget/plugins/amdgpu/CMakeLists.txt
++++ b/libomptarget/plugins/amdgpu/CMakeLists.txt
+@@ -66,7 +66,7 @@ else()
+   set(LDFLAGS_UNDEFINED "-Wl,-z,defs")
+ endif()
+ 
+-add_llvm_library(omptarget.rtl.amdgpu SHARED
++add_llvm_library(omptarget.rtl.amdgpu SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+   impl/impl.cpp
+   impl/interop_hsa.cpp
+   impl/data.cpp
+@@ -126,4 +126,3 @@ else()
+   list(APPEND LIBOMPTARGET_TESTED_PLUGINS "omptarget.rtl.amdgpu")
+   set(LIBOMPTARGET_TESTED_PLUGINS "${LIBOMPTARGET_TESTED_PLUGINS}" PARENT_SCOPE)
+ endif()
+-
+diff --git a/libomptarget/plugins/common/elf_common/CMakeLists.txt b/libomptarget/plugins/common/elf_common/CMakeLists.txt
+index 9ea2926..b3fb758 100644
+--- a/libomptarget/plugins/common/elf_common/CMakeLists.txt
++++ b/libomptarget/plugins/common/elf_common/CMakeLists.txt
+@@ -16,9 +16,7 @@ add_library(elf_common OBJECT elf_common.cpp)
+ set_property(TARGET elf_common PROPERTY POSITION_INDEPENDENT_CODE ON)
+ llvm_update_compile_flags(elf_common)
+ set(LINK_LLVM_LIBS LLVMBinaryFormat LLVMObject LLVMSupport)
+-if (LLVM_LINK_LLVM_DYLIB)
+-  set(LINK_LLVM_LIBS LLVM)
+-endif()
++# Link LLVM static libraries to avoid dependency on shared LLVM libraries.
+ target_link_libraries(elf_common INTERFACE ${LINK_LLVM_LIBS})
+ add_dependencies(elf_common ${LINK_LLVM_LIBS})
+ 
+diff --git a/libomptarget/plugins/cuda/CMakeLists.txt b/libomptarget/plugins/cuda/CMakeLists.txt
+index 46e04c3..825e273 100644
+--- a/libomptarget/plugins/cuda/CMakeLists.txt
++++ b/libomptarget/plugins/cuda/CMakeLists.txt
+@@ -40,7 +40,7 @@ endif()
+ if (LIBOMPTARGET_CAN_LINK_LIBCUDA AND NOT LIBOMPTARGET_FORCE_DLOPEN_LIBCUDA)
+   libomptarget_say("Building CUDA plugin linked against libcuda")
+   include_directories(${LIBOMPTARGET_DEP_CUDA_INCLUDE_DIRS})
+-  add_llvm_library(omptarget.rtl.cuda SHARED
++  add_llvm_library(omptarget.rtl.cuda SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+ 
+     src/rtl.cpp
+ 
+@@ -64,7 +64,7 @@ else()
+   libomptarget_say("Building CUDA plugin for dlopened libcuda")
+   include_directories(dynamic_cuda)
+   add_llvm_library(omptarget.rtl.cuda 
+-    SHARED
++    SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+ 
+     src/rtl.cpp
+     dynamic_cuda/cuda.cpp
+diff --git a/libomptarget/plugins/ve/CMakeLists.txt b/libomptarget/plugins/ve/CMakeLists.txt
+index 5aded32..4a81583 100644
+--- a/libomptarget/plugins/ve/CMakeLists.txt
++++ b/libomptarget/plugins/ve/CMakeLists.txt
+@@ -24,7 +24,7 @@ if(${LIBOMPTARGET_DEP_VEO_FOUND})
+   add_definitions("-DTARGET_ELF_ID=${elf_machine_id}")
+ 
+   add_llvm_library("omptarget.rtl.${tmachine_libname}" 
+-    SHARED
++    SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/rtl.cpp
+ 
+     ADDITIONAL_HEADER_DIRS
+diff --git a/libomptarget/src/CMakeLists.txt b/libomptarget/src/CMakeLists.txt
+index 071ec61..98b48ac 100644
+--- a/libomptarget/src/CMakeLists.txt
++++ b/libomptarget/src/CMakeLists.txt
+@@ -12,8 +12,9 @@
+ 
+ libomptarget_say("Building offloading runtime library libomptarget.")
+ 
++# Link LLVM statically to avoid dependency on dynamic libLLVM.
+ add_llvm_library(omptarget
+-  SHARED
++  SHARED DISABLE_LLVM_LINK_LLVM_DYLIB
+ 
+   api.cpp
+   device.cpp

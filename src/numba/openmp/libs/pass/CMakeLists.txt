@@ -1,11 +1,19 @@
 cmake_minimum_required(VERSION 3.20)
 project(pyomp-pass)
 
-find_package(LLVM REQUIRED CONFIG)
-
-if(NOT LLVM_VERSION_MAJOR EQUAL 14)
-  message(FATAL_ERROR "Found LLVM ${LLVM_VERSION_MAJOR}, but need LLVM 14.x")
+if(NOT DEFINED LLVM_DIR OR LLVM_DIR STREQUAL "")
+  message(FATAL_ERROR
+    "LLVM_DIR is required but not defined. "
+    "Please specify it with: cmake -DLLVM_DIR=/path/to/llvm/install ...")
 endif()
+
+message(STATUS "LLVM_DIR ${LLVM_DIR}")
+
+find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH PATHS
+  ${LLVM_DIR}
+)
+
+message(STATUS "LLVM_VERSION ${LLVM_VERSION}")
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 

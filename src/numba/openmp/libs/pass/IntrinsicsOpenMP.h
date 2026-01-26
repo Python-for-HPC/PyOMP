@@ -1,11 +1,10 @@
 #ifndef LLVM_TRANSFORMS_INTRINSICS_OPENMP_H
 #define LLVM_TRANSFORMS_INTRINSICS_OPENMP_H
 
-#include "llvm/IR/PassManager.h"
-#include "llvm/Pass.h"
+#include <llvm/IR/PassManager.h>
+#include <llvm/Pass.h>
 
 namespace llvm {
-
 
 ModulePass *createIntrinsicsOpenMPPass();
 

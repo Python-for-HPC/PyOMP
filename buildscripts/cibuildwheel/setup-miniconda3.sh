@@ -2,6 +2,12 @@
 
 set -euxo pipefail
 
+# Read LLVM_VERSION from environment and error if not set
+if [ -z "${LLVM_VERSION:-}" ]; then
+    echo "Error: LLVM_VERSION environment variable is not set." >&2
+    exit 1
+fi
+
 if [ "$(uname)" = "Darwin" ]; then
     OS_NAME="MacOSX"
 else
@@ -17,10 +23,6 @@ echo "Miniconda installed"
 source "_stage/miniconda3/bin/activate" base
 export CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
-# Create llvmdev environment and install llvmdev 14.0.6.
-echo "Installing manylinux llvmdev 14.0.6..."
-conda create -n llvmdev -c conda-forge -y llvmdev=14.0.6
-
-# Create clang14 environment and install clang 14.0.6.
-echo "Installing clang 14.0.6..."
-conda create -n clang14 -c conda-forge -y clang=14.0.6
+# Create clangdev ${LLVM_VERSION}
+echo "Installing manylinux llvmdev ${LLVM_VERSION}..."
+conda create -n llvmdev-${LLVM_VERSION} -c conda-forge -q -y clang=${LLVM_VERSION} clang-tools=${LLVM_VERSION} llvmdev=${LLVM_VERSION}

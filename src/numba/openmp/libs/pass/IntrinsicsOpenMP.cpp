@@ -12,36 +12,35 @@
 //
 //===-------------------------------------------------------------------------===//
 
-#include "llvm/ADT/Optional.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/PostDominators.h"
-#include "llvm/Frontend/OpenMP/OMP.h.inc"
-#include "llvm/Frontend/OpenMP/OMPConstants.h"
-#include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/PassManager.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/Pass.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/ModuleUtils.h"
-#include <cstddef>
-#include <llvm/Bitcode/BitcodeReader.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/Passes/PassPlugin.h>
-
+#include "IntrinsicsOpenMP.h"
 #include "CGIntrinsicsOpenMP.h"
 #include "DebugOpenMP.h"
-#include "IntrinsicsOpenMP.h"
 #include "IntrinsicsOpenMP_CAPI.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/Statistic.h>
+#include <llvm/Analysis/PostDominators.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Frontend/OpenMP/OMP.h.inc>
+#include <llvm/Frontend/OpenMP/OMPConstants.h>
+#include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
+#include <llvm/IR/Dominators.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/PassManager.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Pass.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Passes/PassPlugin.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Transforms/Utils/BasicBlockUtils.h>
+#include <llvm/Transforms/Utils/ModuleUtils.h>
+
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 
 using namespace llvm;
@@ -379,9 +378,9 @@ struct IntrinsicsOpenMP {
 
               if (Tag == "QUAL.OMP.SCHEDULE.STATIC") {
                 if (TagInputs[0] == Zero)
-                  OMPLoopInfo.Sched = OMPScheduleType::Static;
+                  OMPLoopInfo.Sched = OMPScheduleType::UnorderedStatic;
                 else {
-                  OMPLoopInfo.Sched = OMPScheduleType::StaticChunked;
+                  OMPLoopInfo.Sched = OMPScheduleType::UnorderedStaticChunked;
                   OMPLoopInfo.Chunk = TagInputs[0];
                 }
               } else
@@ -469,15 +468,25 @@ struct IntrinsicsOpenMP {
                   It->second == DSA_MAP_TO_STRUCT ||
                   It->second == DSA_MAP_FROM_STRUCT ||
                   It->second == DSA_MAP_TOFROM_STRUCT) {
-                assert((TagInputs.size() - 1) == 3 &&
-                       "Expected input triple for struct mapping");
-                Value *Index = TagInputs[1];
-                Value *Offset = TagInputs[2];
-                Value *NumElements = TagInputs[3];
-                StructMappingInfoMap[TagInputs[0]].push_back(
-                    {Index, Offset, NumElements, It->second});
+                assert((TagInputs.size() - 1) == 4 &&
+                       "Expected input tuple of 4 (base ptr, type, index, "
+                       "offset) for struct mapping");
+                Value *V = TagInputs[0];
+                Type *PointeeType = TagInputs[1]->getType();
+                Value *Index = TagInputs[2];
+                Value *Offset = TagInputs[3];
+                Value *NumElements = TagInputs[4];
 
-                DSAValueMap[TagInputs[0]] = DSATypeInfo(DSA_MAP_STRUCT);
+                // The struct base value must have been already registered in
+                // the DSAValueMap.
+                auto ItDSA = DSAValueMap.find(V);
+                assert(ItDSA != DSAValueMap.end() &&
+                       "Expected struct value in DSAValueMap");
+
+                StructMappingInfoMap[V].push_back(
+                    {PointeeType, Index, Offset, NumElements, It->second});
+
+                ItDSA->second.Type = DSA_MAP_STRUCT;
               } else {
                 // This firstprivate includes a copy-constructor operand.
                 if ((It->second == DSA_FIRSTPRIVATE ||
@@ -488,16 +497,36 @@ struct IntrinsicsOpenMP {
                       dyn_cast<ConstantDataArray>(TagInputs[1]);
                   assert(CopyFnNameArray && "Expected constant string for the "
                                             "copy-constructor function");
+                  assert(
+                      isa<AllocaInst>(V) &&
+                      "Expected alloca for firstprivate/lastprivate with copy "
+                      "constructor");
+
+                  Type *PointeeType = cast<AllocaInst>(V)->getAllocatedType();
                   StringRef CopyFnName = CopyFnNameArray->getAsString();
                   FunctionCallee CopyConstructor = M.getOrInsertFunction(
-                      CopyFnName, V->getType()->getPointerElementType(),
-                      V->getType()->getPointerElementType());
+                      CopyFnName, PointeeType, PointeeType);
+
                   DSAValueMap[TagInputs[0]] =
                       DSATypeInfo(It->second, CopyConstructor);
-                } else
-                  // Sink for DSA qualifiers that do not require special
-                  // handling.
-                  DSAValueMap[TagInputs[0]] = DSATypeInfo(It->second);
+                } else {
+                  // Handle remaining DSA qualifiers. The numba frontend
+                  // communicates to us a pointer the value. Since LLVM moved to
+                  // opaque pointers, we need to track the pointee type either
+                  // by checking the alloca type or using a poison helper
+                  // emitted by the numba frontend.
+                  Value *V = TagInputs[0];
+                  if (auto *Alloca = dyn_cast<AllocaInst>(V)) {
+                    DSAValueMap[V] =
+                        DSATypeInfo(It->second, Alloca->getAllocatedType());
+                  } else {
+                    assert(TagInputs.size() == 2 &&
+                           "Expected poison helper for opaque pointer DSA");
+                    Value *PoisonHelper = TagInputs[1];
+                    DSAValueMap[V] =
+                        DSATypeInfo(It->second, PoisonHelper->getType());
+                  }
+                }
               }
             }
           } else if (Tag == "OMP.DEVICE")
@@ -533,18 +562,24 @@ struct IntrinsicsOpenMP {
         DEBUG_ENABLE(dbgs() << "AfterBB " << AfterBB->getName() << "\n");
 
         // Define the default BodyGenCB lambda.
-        auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
-                             BasicBlock &ContinuationIP) {
+        auto BodyGenCB = [&](InsertPointTy AllocaIP, InsertPointTy CodeGenIP) {
           BasicBlock *CGStartBB = CodeGenIP.getBlock();
           BasicBlock *CGEndBB = SplitBlock(CGStartBB, &*CodeGenIP.getPoint());
           assert(StartBB != nullptr && "StartBB should not be null");
           CGStartBB->getTerminator()->setSuccessor(0, StartBB);
           assert(EndBB != nullptr && "EndBB should not be null");
           EndBB->getTerminator()->setSuccessor(0, CGEndBB);
+#if LLVM_VERSION_MAJOR > 16
+          return Error::success();
+#endif
         };
 
-        // Define the default FiniCB lambda.
+// Define the default FiniCB lambda.
+#if LLVM_VERSION_MAJOR <= 16
         auto FiniCB = [&](InsertPointTy CodeGenIP) {};
+#else
+        auto FiniCB = [&](InsertPointTy) { return Error::success(); };
+#endif
 
         // Remove intrinsics of OpenMP tags, first CBExit to also remove use
         // of CBEntry, then CBEntry.
@@ -764,8 +799,8 @@ extern "C" int runIntrinsicsOpenMPPass(const char *BitcodePtr,
 
   llvm::LLVMContext Ctx;
   auto ModOrErr = llvm::parseBitcodeFile(BufferRef, Ctx);
-  if (!ModOrErr) {
-    errs() << "Bitcode parse failed\n";
+  if (auto Err = ModOrErr.takeError()) {
+    errs() << "Bitcode parse failed: " << toString(std::move(Err)) << "\n";
     return 2;
   }
   std::unique_ptr<llvm::Module> M = std::move(*ModOrErr);
