@@ -7,9 +7,13 @@ if(NOT DEFINED LLVM_DIR OR LLVM_DIR STREQUAL "")
     "Please specify it with: cmake -DLLVM_DIR=/path/to/llvm/install ...")
 endif()
 
+message(STATUS "LLVM_DIR ${LLVM_DIR}")
+
 find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH PATHS
   ${LLVM_DIR}
 )
+
+message(STATUS "LLVM_VERSION ${LLVM_VERSION}")
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 
