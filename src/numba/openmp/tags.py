@@ -108,14 +108,9 @@ class openmp_tag(object):
             print("unknown arg type:", x, type(x))
             assert False
 
-    def arg_to_str(
-        self, x, lowerer, struct_lower=False, var_table=None, gen_copy=False
-    ):
+    def arg_to_str(self, x, lowerer, gen_copy=False):
         if DEBUG_OPENMP >= 1:
             print("arg_to_str:", x, type(x), self.load, type(self.load))
-        if struct_lower:
-            assert isinstance(x, str)
-            assert var_table is not None
 
         typemap = lowerer.fndesc.typemap
         xtyp = None
@@ -207,66 +202,22 @@ class openmp_tag(object):
                             f"Don't know how to get decl string for variable {arg_str} of type {type(arg_str)}"
                         )
 
-                if struct_lower and isinstance(xtyp, types.npytypes.Array):
-                    dm = lowerer.context.data_model_manager.lookup(xtyp)
-                    cur_tag_ndim = xtyp.ndim
-                    stride_typ = lowerer.context.get_value_type(
-                        types.intp
-                    )  # lir.Type.int(64)
-                    stride_abi_size = lowerer.context.get_abi_sizeof(stride_typ)
-                    array_var = var_table[self.arg]
-                    if DEBUG_OPENMP >= 1:
-                        print(
-                            "Found array mapped:",
-                            self.name,
-                            self.arg,
-                            xtyp,
-                            type(xtyp),
-                            stride_typ,
-                            type(stride_typ),
-                            stride_abi_size,
-                            array_var,
-                            type(array_var),
-                        )
-                    size_var = ir.Var(None, self.arg + "_size_var", array_var.loc)
-                    # size_var = array_var.scope.redefine("size_var", array_var.loc)
-                    size_getattr = ir.Expr.getattr(array_var, "size", array_var.loc)
-                    size_assign = ir.Assign(size_getattr, size_var, array_var.loc)
-                    typemap[size_var.name] = types.int64
-                    lowerer._alloca_var(size_var.name, typemap[size_var.name])
-                    lowerer.lower_inst(size_assign)
-                    data_field = dm._fields.index("data")
-                    shape_field = dm._fields.index("shape")
-                    strides_field = dm._fields.index("strides")
-                    size_lowered = get_decl(lowerer.getvar(size_var.name))
-                    fixed_size = cur_tag_ndim
-                    # fixed_size = stride_abi_size * cur_tag_ndim
-                    decl += f", i32 {data_field}, i64 0, {size_lowered}"
-                    decl += f", i32 {shape_field}, i64 0, i64 {fixed_size}"
-                    decl += f", i32 {strides_field}, i64 0, i64 {fixed_size}"
-
-                    # see core/datamodel/models.py
-                    # struct_tags.append(openmp_tag(cur_tag.name, cur_tag.arg + "*data", non_arg=True, omp_slice=(0,lowerer.loadvar(size_var.name))))
-                    # struct_tags.append(openmp_tag(cur_tag.name, cur_tag.arg + "*shape", non_arg=True, omp_slice=(0,stride_abi_size * cur_tag_ndim)))
-                    # struct_tags.append(openmp_tag(cur_tag.name, cur_tag.arg + "*strides", non_arg=True, omp_slice=(0,stride_abi_size * cur_tag_ndim)))
-
                 if gen_copy and isinstance(xtyp, types.npytypes.Array):
                     native_np_copy, copy_cres = create_native_np_copy(xtyp)
                     lowerer.library.add_llvm_module(copy_cres.library._final_module)
                     nnclen = len(native_np_copy)
                     decl += f', [{nnclen} x i8] c"{native_np_copy}"'
+
+            # Add type information using a poison value operand for non-alloca pointers.
+            if not isinstance(lowerer.getvar(x), lir.instructions.AllocaInstr):
+                llvm_type = lowerer.context.get_value_type(xtyp)
+                decl += f", {llvm_type} poison"
         elif isinstance(x, StringLiteral):
             decl = str(cgutils.make_bytearray(x.x))
         elif isinstance(x, int):
             decl = "i32 " + str(x)
         else:
             print("unknown arg type:", x, type(x))
-
-        # Add type information using a poison value operand for non-alloca pointers.
-        if xtyp is not None:
-            if not isinstance(lowerer.getvar(x), lir.instructions.AllocaInstr):
-                llvm_type = lowerer.context.get_value_type(xtyp)
-                decl += f", {llvm_type} poison"
 
         if self.omp_slice is not None:
 
@@ -453,21 +404,12 @@ class openmp_tag(object):
             ]
             and is_array
         ):
-            # name_to_use += ".STRUCT"
-            # var_table = get_name_var_table(lowerer.func_ir.blocks)
-            # decl = ",".join([self.arg_to_str(x, lowerer, struct_lower=True, var_table=var_table) for x in arg_list])
             decl = ",".join(
-                [
-                    self.arg_to_str(x, lowerer, struct_lower=False, gen_copy=gen_copy)
-                    for x in arg_list
-                ]
+                [self.arg_to_str(x, lowerer, gen_copy=gen_copy) for x in arg_list]
             )
         else:
             decl = ",".join(
-                [
-                    self.arg_to_str(x, lowerer, struct_lower=False, gen_copy=gen_copy)
-                    for x in arg_list
-                ]
+                [self.arg_to_str(x, lowerer, gen_copy=gen_copy) for x in arg_list]
             )
 
         return '"' + name_to_use + '"(' + decl + ")"
