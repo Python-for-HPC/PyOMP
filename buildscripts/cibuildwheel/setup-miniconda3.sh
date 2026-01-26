@@ -25,8 +25,8 @@ export CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
 # Create llvmdev environment and install llvmdev ${LLVM_VERSION}.
 echo "Installing manylinux llvmdev ${LLVM_VERSION}..."
-conda create -n llvmdev -c conda-forge -y llvmdev=${LLVM_VERSION}
+conda create -n llvmdev-${LLVM_VERSION} -c conda-forge -y llvmdev=${LLVM_VERSION}
 
 # Create clang environment and install clang ${LLVM_VERSION}.
 echo "Installing clang ${LLVM_VERSION}..."
-conda create -n clang${LLVM_VERSION} -c conda-forge -y clang=${LLVM_VERSION}
+conda create -n clang-${LLVM_VERSION} -c conda-forge -y clang=${LLVM_VERSION}
