@@ -45,7 +45,8 @@ conda install -c python-for-hpc -c conda-forge pyomp
 
 | PyOMP | Numba           |
 | ----- | --------------- |
-| 0.3.x | 0.57.x - 0.61.x |
+| 0.4.x | 0.61.x          |
+| 0.3.x | 0.57.x - 0.60.x |
 
 Besides a standard installation, we also provide the following options to
 quickly try out PyOMP online or through a container.
