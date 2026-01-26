@@ -46,6 +46,8 @@ local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
 archs = ["native"]
+# Pass LLVM_VERSION from the host environment to cibuildwheel.
+environment-pass = ["LLVM_VERSION"]
 # We use miniconda3 to get the clang/llvm toolchain on Linux.
 before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = ["rm -rf build dist src/*.egg-info"]
