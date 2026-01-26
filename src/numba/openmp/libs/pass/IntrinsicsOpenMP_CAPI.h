@@ -1,8 +1,8 @@
 #ifndef LLVM_C_TRANSFORMS_INTRINSICS_OPENMP_H
 #define LLVM_C_TRANSFORMS_INTRINSICS_OPENMP_H
 
-#include "llvm-c/ExternC.h"
-#include "llvm-c/Types.h"
+#include <llvm-c/ExternC.h>
+#include <llvm-c/Types.h>
 
 LLVM_C_EXTERN_C_BEGIN
 

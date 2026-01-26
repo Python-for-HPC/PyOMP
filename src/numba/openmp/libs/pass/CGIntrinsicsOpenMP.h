@@ -1,20 +1,20 @@
 #ifndef LLVM_TRANSFORMS_INTRINSICS_OPENMP_CODEGEN_H
 #define LLVM_TRANSFORMS_INTRINSICS_OPENMP_CODEGEN_H
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/Frontend/OpenMP/OMP.h.inc"
-#include "llvm/Frontend/OpenMP/OMPConstants.h"
-#include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
-#include "llvm/IR/Value.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include "DebugOpenMP.h"
+
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/Frontend/OpenMP/OMP.h.inc>
+#include <llvm/Frontend/OpenMP/OMPConstants.h>
+#include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Value.h>
 #include <llvm/Support/AtomicOrdering.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
-
-#include "DebugOpenMP.h"
+#include <llvm/Transforms/Utils/ValueMapper.h>
 
 using namespace llvm;
 using namespace omp;
