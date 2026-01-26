@@ -1489,7 +1489,13 @@ class openmp_region_start(ir.Stmt):
                 for eb in extras_before:
                     print(eb)
 
-            assert len(target_args) == len(target_args_unordered)
+            # NOTE: workaround for python 3.10 lowering in numba that may
+            # include a branch converging variable $cp. Remove it to avoid the
+            # assert since the openmp region must be single-entry, single-exit.
+            if sys.version_info >= (3, 10) and sys.version_info < (3, 11):
+                assert len(target_args) == len([x for x in target_args_unordered if x != "$cp"])
+            else:
+                assert len(target_args) == len(target_args_unordered)
             assert len(target_args) == len(outline_arg_typs)
 
             # Create the outlined IR from the blocks in the region, making the
