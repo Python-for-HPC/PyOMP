@@ -1,3 +1,4 @@
+# --- Compilers ---
 c_compiler_version:
   - 9                       # [linux]
   - 14                      # [osx]
@@ -14,3 +15,20 @@ cxx_compiler:        # [osx]
 
 c_compiler:          # [osx]
   - clang_bootstrap  # [osx]
+
+# Sysroots for compatibility on Linux builds.
+sysroot_linux-64:
+  - 2.17             # [linux64]
+
+sysroot_linux-aarch64:
+  - 2.17             # [aarch64]
+
+# --- MACOS DEPLOYMENT TARGET ---
+# Sets minimum OS version to Big Sur (11.0) for Mac builds.
+MACOSX_DEPLOYMENT_TARGET:
+  - 11.0             # [osx]
+
+# --- MACOS SDK ---
+# We use a newer SDK (e.g. 11.3) to build, even if targeting 11.0
+MACOSX_SDK_VERSION:
+  - 11.3             # [osx]
