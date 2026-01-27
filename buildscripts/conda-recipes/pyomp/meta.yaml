@@ -31,6 +31,8 @@ requirements:
   host:
     - python
     - pip
+    - sysroot_linux-64       # [linux64]
+    - sysroot_linux-aarch64  # [aarch64]
     - setuptools
     - setuptools_scm
     - numba >=0.61, <0.62
