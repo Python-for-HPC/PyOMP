@@ -1992,8 +1992,15 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
         assert(BasePtr && "Expected non-null base pointer");
         assert(Ptr && "Expected non-null pointer");
 
+        Type *ElementType = nullptr;
+        if (FieldTy->isPointerTy())
+          ElementType = FieldInfo.PointeeType;
+        else
+          ElementType = FieldTy;
+        assert(ElementType && "Expected non-null element type");
+
         auto ElementSize = ConstantInt::get(
-            OMPBuilder.SizeTy, M.getDataLayout().getTypeAllocSize(FieldTy));
+            OMPBuilder.SizeTy, M.getDataLayout().getTypeAllocSize(ElementType));
         Value *NumElements = nullptr;
 
         // Load the value of NumElements if it is a pointer.
