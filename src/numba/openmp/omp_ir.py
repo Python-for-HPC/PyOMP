@@ -122,8 +122,15 @@ class OpenMPCUDACodegen:
         self.libomptarget_arch = (
             libpath / "libomp" / "lib" / f"libomptarget-nvptx-{self.sm}.bc"
         )
-        with open(self.libomptarget_arch, "rb") as f:
-            libomptarget_mod = ll.parse_bitcode(f.read())
+
+        try:
+            with open(self.libomptarget_arch, "rb") as f:
+                libomptarget_mod = ll.parse_bitcode(f.read())
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"Device RTL for architecture {self.sm} not found. Check compute capability with LLVM version {'.'.join(map(str, ll.llvm_version_info))}."
+            )
+
         ## Link in device, openmp libraries.
         self.libs_mod.link_in(libomptarget_mod)
         # Initialize asm printers to codegen ptx.
@@ -1493,7 +1500,9 @@ class openmp_region_start(ir.Stmt):
             # include a branch converging variable $cp. Remove it to avoid the
             # assert since the openmp region must be single-entry, single-exit.
             if sys.version_info >= (3, 10) and sys.version_info < (3, 11):
-                assert len(target_args) == len([x for x in target_args_unordered if x != "$cp"])
+                assert len(target_args) == len(
+                    [x for x in target_args_unordered if x != "$cp"]
+                )
             else:
                 assert len(target_args) == len(target_args_unordered)
             assert len(target_args) == len(outline_arg_typs)

@@ -13,7 +13,7 @@ find_package(LLVM REQUIRED CONFIG NO_DEFAULT_PATH PATHS
   ${LLVM_DIR}
 )
 
-message(STATUS "LLVM_VERSION ${LLVM_VERSION}")
+message(STATUS "Found LLVM version ${LLVM_VERSION}")
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 
