@@ -121,14 +121,9 @@ class BuildCMakeExt(build_ext):
 
     def _env_toolchain_args(self, ext):
         args = []
-        # Forward LLVM_DIR and CLANG_TOOL if provided.
+        # Forward LLVM_DIR if provided.
         if os.environ.get("LLVM_DIR"):
             args.append(f"-DLLVM_DIR={os.environ['LLVM_DIR']}")
-        if ext.name == "libomp":
-            # CLANG_TOOL is used by libomp to find clang for generating the OpenMP
-            # device runtime bitcodes.
-            if os.environ.get("CLANG_TOOL"):
-                args.append(f"-DCLANG_TOOL={os.environ['CLANG_TOOL']}")
         return args
 
 

@@ -1,0 +1,12 @@
+diff --git a/libomptarget/DeviceRTL/CMakeLists.txt b/libomptarget/DeviceRTL/CMakeLists.txt
+index ce66214..04c9dd5 100644
+--- a/libomptarget/DeviceRTL/CMakeLists.txt
++++ b/libomptarget/DeviceRTL/CMakeLists.txt
+@@ -127,6 +127,7 @@ set(bc_flags -c -emit-llvm -std=c++17 -fvisibility=hidden
+              -fopenmp -fopenmp-cuda-mode
+              -I${include_directory}
+              -I${devicertl_base_directory}/../include
++             -Xclang -no-opaque-pointers
+              ${LIBOMPTARGET_LLVM_INCLUDE_DIRS_DEVICERTL}
+ )
+ 
