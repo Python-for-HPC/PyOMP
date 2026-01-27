@@ -17,10 +17,10 @@ c_compiler:          # [osx]
   - clang_bootstrap  # [osx]
 
 # Sysroots for compatibility on Linux builds.
-sysroot_linux-64:
+sysroot_linux_64:
   - 2.17             # [linux64]
 
-sysroot_linux-aarch64:
+sysroot_linux_aarch64:
   - 2.17             # [aarch64]
 
 # --- MACOS DEPLOYMENT TARGET ---
