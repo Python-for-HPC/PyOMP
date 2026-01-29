@@ -350,26 +350,16 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     // globalized pointer.
     if (DeviceGlobalizedValues.contains(V))
       DeviceGlobalizedValues.insert(AI);
-
-    OutlinedFn->addParamAttr(arg_no, Attribute::NonNull);
-    OutlinedFn->addParamAttr(
-        arg_no, Attribute::get(M.getContext(), Attribute::Dereferenceable, 8));
     ++AI;
     ++arg_no;
   }
   for (auto *V : CapturedFirstprivate) {
     AI->setName(V->getName() + ".firstprivate");
-    OutlinedFn->addParamAttr(arg_no, Attribute::NonNull);
-    OutlinedFn->addParamAttr(
-        arg_no, Attribute::get(M.getContext(), Attribute::Dereferenceable, 8));
     ++AI;
     ++arg_no;
   }
   for (auto *V : Reductions) {
     AI->setName(V->getName() + ".red");
-    OutlinedFn->addParamAttr(arg_no, Attribute::NonNull);
-    OutlinedFn->addParamAttr(
-        arg_no, Attribute::get(M.getContext(), Attribute::Dereferenceable, 8));
     ++AI;
     ++arg_no;
   }
