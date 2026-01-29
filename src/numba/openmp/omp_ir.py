@@ -116,32 +116,35 @@ class OpenMPCUDACodegen:
 
         self.cc = cudaapi.get_current_device().compute_capability
         self.sm = "sm_" + str(self.cc[0]) + str(self.cc[1])
+
+        # Read the libdevice bitcode for the architecture to link with the module.
         self.libdevice_path = cudalibs.get_libdevice()
         with open(self.libdevice_path, "rb") as f:
-            self.libs_mod = ll.parse_bitcode(f.read())
+            self.libdevice_mod = ll.parse_bitcode(f.read())
+
+        # Read the OpenMP device RTL for the architecture to link with the module.
         self.libomptarget_arch = (
             libpath / "libomp" / "lib" / f"libomptarget-nvptx-{self.sm}.bc"
         )
-
         try:
             with open(self.libomptarget_arch, "rb") as f:
-                libomptarget_mod = ll.parse_bitcode(f.read())
+                self.libomptarget_mod = ll.parse_bitcode(f.read())
         except FileNotFoundError:
             raise RuntimeError(
                 f"Device RTL for architecture {self.sm} not found. Check compute capability with LLVM version {'.'.join(map(str, ll.llvm_version_info))}."
             )
 
         ## Link in device, openmp libraries.
-        self.libs_mod.link_in(libomptarget_mod)
         # Initialize asm printers to codegen ptx.
         ll.initialize_all_targets()
         ll.initialize_all_asmprinters()
         target = ll.Target.from_triple(CUDA_TRIPLE)
-        self.tm = target.create_target_machine(cpu=self.sm, opt=3)
+        # We pick opt=2 as a reasonable optimization level for codegen.
+        self.tm = target.create_target_machine(cpu=self.sm, opt=2)
 
     def _get_target_image(self, mod, filename_prefix, ompx_attrs, use_toolchain=False):
         from numba.cuda.cudadrv import driver
-        from numba.core.llvm_bindings import create_pass_builder
+        from numba.core.llvm_bindings import create_pass_manager_builder
 
         if DEBUG_OPENMP_LLVM_PASS >= 1:
             with open(filename_prefix + ".ll", "w") as f:
@@ -149,66 +152,77 @@ class OpenMPCUDACodegen:
 
         # Lower openmp intrinsics.
         mod = run_intrinsics_openmp_pass(mod)
-        with ll.create_new_module_pass_manager() as pm:
-            pm.add_simplify_cfg_pass()
-            pb = create_pass_builder(self.tm, opt=0)
-            pm.run(mod, pb)
-
         if DEBUG_OPENMP_LLVM_PASS >= 1:
-            with open(filename_prefix + "-intrinsics_omp.ll", "w") as f:
+            with open(filename_prefix + "-intr.ll", "w") as f:
                 f.write(str(mod))
 
-        mod.link_in(self.libs_mod, preserve=True)
+        def _internalize():
+            # Internalize non-kernel function definitions.
+            for func in mod.functions:
+                if func.is_declaration:
+                    continue
+                if func.linkage != ll.Linkage.external:
+                    continue
+                if "__omp_offload_numba" in func.name:
+                    continue
+                func.linkage = "internal"
+
+        # Link first libdevice and optimize aggressively with opt=2 as a
+        # reasonable optimization default.
+        mod.link_in(self.libdevice_mod, preserve=True)
         # Internalize non-kernel function definitions.
-        for func in mod.functions:
-            if func.is_declaration:
-                continue
-            if func.linkage != ll.Linkage.external:
-                continue
-            if "__omp_offload_numba" in func.name:
-                continue
-            func.linkage = "internal"
-
-        with ll.create_new_module_pass_manager() as pm:
-            # TODO: ask Stuart, add_analysis_passes does not apply to new pass manager? error:
-            # ctypes.ArgumentError: argument 2: TypeError: expected LP_LLVMPassManager instance instead of LP_LLVMModulePassManager
-            # self.tm.add_analysis_passes(pm)
-            pm.add_global_dead_code_eliminate_pass()
-            pb = create_pass_builder(self.tm, opt=0)
-            pm.run(mod, pb)
-
-        if DEBUG_OPENMP_LLVM_PASS >= 1:
-            with open(filename_prefix + "-intrinsics_omp-linked.ll", "w") as f:
-                f.write(str(mod))
-
+        _internalize()
         # Run passes for optimization, including target-specific passes.
         # Run function passes.
-        with ll.create_new_function_pass_manager() as pm:
-            # self.tm.add_analysis_passes(pm)
-            pb = create_pass_builder(
-                self.tm, 3, slp_vectorize=True, loop_vectorize=True
-            )
+        with ll.create_function_pass_manager(mod) as pm:
+            self.tm.add_analysis_passes(pm)
+            with create_pass_manager_builder(
+                opt=2, slp_vectorize=True, loop_vectorize=True
+            ) as pmb:
+                pmb.populate(pm)
             for func in mod.functions:
-                pm.run(func, pb)
-
+                pm.initialize()
+                pm.run(func)
+                pm.finalize()
         # Run module passes.
-        with ll.create_new_module_pass_manager() as pm:
-            # self.tm.add_analysis_passes(pm)
-            pb = create_pass_builder(
-                self.tm, opt=3, slp_vectorize=True, loop_vectorize=True
-            )
-            pm.run(mod, pb)
+        with ll.create_module_pass_manager() as pm:
+            self.tm.add_analysis_passes(pm)
+            with create_pass_manager_builder(
+                opt=2, slp_vectorize=True, loop_vectorize=True
+            ) as pmb:
+                pmb.populate(pm)
+            pm.run(mod)
 
         if DEBUG_OPENMP_LLVM_PASS >= 1:
             mod.verify()
-            with open(filename_prefix + "-intrinsics_omp-linked-opt.ll", "w") as f:
+            with open(filename_prefix + "-intr-dev.ll", "w") as f:
+                f.write(str(mod))
+
+        # Link in OpenMP device RTL and optimize lightly, with opt=1 to avoid
+        # aggressive optimization can break openmp execution synchronization for
+        # target regions.
+        mod.link_in(self.libomptarget_mod, preserve=True)
+        # Internalize non-kernel function definitions.
+        _internalize()
+        # Run module passes.
+        with ll.create_module_pass_manager() as pm:
+            self.tm.add_analysis_passes(pm)
+            with create_pass_manager_builder(
+                opt=1, slp_vectorize=True, loop_vectorize=True
+            ) as pmb:
+                pmb.populate(pm)
+            pm.run(mod)
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            mod.verify()
+            with open(filename_prefix + "-intr-dev-rtl.ll", "w") as f:
                 f.write(str(mod))
 
         # Generate ptx assemlby.
         ptx = self.tm.emit_assembly(mod)
         if use_toolchain:
             # ptxas does file I/O, so output the assembly and ingest the generated cubin.
-            with open(filename_prefix + "-intrinsics_omp-linked-opt.s", "w") as f:
+            with open(filename_prefix + "-intr-dev-rtl.s", "w") as f:
                 f.write(ptx)
 
             subprocess.run(
@@ -217,19 +231,19 @@ class OpenMPCUDACodegen:
                     "-m64",
                     "--gpu-name",
                     self.sm,
-                    filename_prefix + "-intrinsics_omp-linked-opt.s",
+                    filename_prefix + "-intr-dev-rtl.s",
                     "-o",
-                    filename_prefix + "-intrinsics_omp-linked-opt.o",
+                    filename_prefix + "-intr-dev-rtl.o",
                 ],
                 check=True,
             )
 
-            with open(filename_prefix + "-intrinsics_omp-linked-opt.o", "rb") as f:
+            with open(filename_prefix + "-intr-dev-rtl.o", "rb") as f:
                 cubin = f.read()
         else:
             if DEBUG_OPENMP_LLVM_PASS >= 1:
                 with open(
-                    filename_prefix + "-intrinsics_omp-linked-opt.s",
+                    filename_prefix + "-intr-dev-rtl.s",
                     "w",
                 ) as f:
                     f.write(ptx)
@@ -247,7 +261,10 @@ class OpenMPCUDACodegen:
             cubin = linker.complete()
 
             if DEBUG_OPENMP_LLVM_PASS >= 1:
-                with open(filename_prefix + "-intrinsics_omp-linked-opt.o", "wb") as f:
+                with open(
+                    filename_prefix + "-intr-dev-rtl.o",
+                    "wb",
+                ) as f:
                     f.write(cubin)
 
         return cubin
