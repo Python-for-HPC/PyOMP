@@ -179,10 +179,11 @@ class OpenMPCUDACodegen:
                 opt=2, slp_vectorize=True, loop_vectorize=True
             ) as pmb:
                 pmb.populate(pm)
+            pm.initialize()
             for func in mod.functions:
-                pm.initialize()
                 pm.run(func)
-                pm.finalize()
+            pm.finalize()
+
         # Run module passes.
         with ll.create_module_pass_manager() as pm:
             self.tm.add_analysis_passes(pm)
