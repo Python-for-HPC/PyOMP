@@ -900,9 +900,6 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
 
   OMPBuilder.Builder.CreateBr(AfterBB);
 
-  // OutlinedFn->addFnAttr(Attribute::Convergent);
-  // OutlinedWrapperFn->addFnAttr(Attribute::Convergent);
-
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
                       << *Fn << "=== End of Dump OuterFn\n");
 
@@ -2401,8 +2398,6 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
                         /* isVarArg */ false);
   Function *NumbaWrapperFunc = Function::Create(
       NumbaWrapperFnTy, GlobalValue::ExternalLinkage, DevWrapperFuncName, M);
-  // Fn->addFnAttr(Attribute::Convergent);
-  // NumbaWrapperFunc->addFnAttr(Attribute::Convergent);
 
   // Name the wrapper arguments for readability.
   for (size_t I = 0; I < NumbaWrapperFunc->arg_size(); ++I)
