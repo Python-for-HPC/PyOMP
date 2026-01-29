@@ -134,7 +134,6 @@ class OpenMPCUDACodegen:
                 f"Device RTL for architecture {self.sm} not found. Check compute capability with LLVM version {'.'.join(map(str, ll.llvm_version_info))}."
             )
 
-        ## Link in device, openmp libraries.
         # Initialize asm printers to codegen ptx.
         ll.initialize_all_targets()
         ll.initialize_all_asmprinters()
