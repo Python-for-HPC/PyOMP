@@ -327,17 +327,8 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
   Params.push_back(OMPBuilder.Int32Ptr);
   for (auto *V : CapturedShared)
     Params.push_back(V->getType());
-  for (auto *V : CapturedFirstprivate) {
-    Type *VPtrElemTy = getPointeeType(DSAValueMap, V);
-    if (VPtrElemTy->isSingleValueType())
-      // TODO: The OpenMP runtime expects and propagates arguments
-      // typed as Int64, thus we cast byval firstprivates to Int64. Using an
-      // aggregate to store arguments would avoid this peculiarity.
-      // Params.push_back(VPtrElemTy);
-      Params.push_back(OMPBuilder.Int64);
-    else
-      Params.push_back(V->getType());
-  }
+  for (auto *V : CapturedFirstprivate)
+    Params.push_back(V->getType());
   for (auto *V : Reductions)
     Params.push_back(V->getType());
 
@@ -359,32 +350,16 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     // globalized pointer.
     if (DeviceGlobalizedValues.contains(V))
       DeviceGlobalizedValues.insert(AI);
-
-    OutlinedFn->addParamAttr(arg_no, Attribute::NonNull);
-    OutlinedFn->addParamAttr(
-        arg_no, Attribute::get(M.getContext(), Attribute::Dereferenceable, 8));
     ++AI;
     ++arg_no;
   }
   for (auto *V : CapturedFirstprivate) {
-    Type *VPtrElemTy = getPointeeType(DSAValueMap, V);
-    if (VPtrElemTy->isSingleValueType()) {
-      AI->setName(V->getName() + ".firstprivate.byval");
-    } else {
-      AI->setName(V->getName() + ".firstprivate");
-      OutlinedFn->addParamAttr(arg_no, Attribute::NonNull);
-      OutlinedFn->addParamAttr(
-          arg_no,
-          Attribute::get(M.getContext(), Attribute::Dereferenceable, 8));
-    }
+    AI->setName(V->getName() + ".firstprivate");
     ++AI;
     ++arg_no;
   }
   for (auto *V : Reductions) {
     AI->setName(V->getName() + ".red");
-    OutlinedFn->addParamAttr(arg_no, Attribute::NonNull);
-    OutlinedFn->addParamAttr(
-        arg_no, Attribute::get(M.getContext(), Attribute::Dereferenceable, 8));
     ++AI;
     ++arg_no;
   }
@@ -463,27 +438,14 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     Type *VPtrElemTy = getPointeeType(DSAValueMap, V);
     Value *ReplacementValue =
         CreateAllocaAtEntry(VPtrElemTy, nullptr, V->getName() + ".copy");
-    if (VPtrElemTy->isSingleValueType()) {
-      // TODO: The OpenMP runtime expects and propagates arguments
-      // typed as Int64, thus we cast byval firstprivates to Int64. Using an
-      // aggregate to store arguments would avoid this peculiarity.
-      // OMPBuilder.Builder.CreateStore(AI, ReplacementValue);
-      Value *Alloca = CreateAllocaAtEntry(OMPBuilder.Int64);
-
-      OMPBuilder.Builder.CreateStore(AI, Alloca);
-      Value *BitCast = OMPBuilder.Builder.CreateBitCast(Alloca, V->getType());
-      Value *Load = OMPBuilder.Builder.CreateLoad(VPtrElemTy, BitCast);
+    Value *Load =
+        OMPBuilder.Builder.CreateLoad(VPtrElemTy, AI, V->getName() + ".reload");
+    FunctionCallee CopyConstructor = DSAValueMap[V].CopyConstructor;
+    if (CopyConstructor) {
+      Value *Copy = OMPBuilder.Builder.CreateCall(CopyConstructor, {Load});
+      OMPBuilder.Builder.CreateStore(Copy, ReplacementValue);
+    } else
       OMPBuilder.Builder.CreateStore(Load, ReplacementValue);
-    } else {
-      Value *Load = OMPBuilder.Builder.CreateLoad(VPtrElemTy, AI,
-                                                  V->getName() + ".reload");
-      FunctionCallee CopyConstructor = DSAValueMap[V].CopyConstructor;
-      if (CopyConstructor) {
-        Value *Copy = OMPBuilder.Builder.CreateCall(CopyConstructor, {Load});
-        OMPBuilder.Builder.CreateStore(Copy, ReplacementValue);
-      } else
-        OMPBuilder.Builder.CreateStore(Load, ReplacementValue);
-    }
 
     if (VMap)
       (*VMap)[V] = ReplacementValue;
@@ -643,25 +605,8 @@ void CGIntrinsicsOpenMP::emitOMPParallelHostRuntime(
     ForkArgs.append({Ident, OMPBuilder.Builder.getInt32(CapturedVars.size()),
                      OutlinedFnCast});
 
-    for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx) {
-      Type *VPtrElemTy = getPointeeType(DSAValueMap, CapturedVars[Idx]);
-      // Pass firstprivate scalar by value.
-      if (DSAValueMap[CapturedVars[Idx]].Type == DSA_FIRSTPRIVATE &&
-          VPtrElemTy->isSingleValueType()) {
-        // TODO: check type conversions.
-        Value *Alloca = OMPBuilder.Builder.CreateAlloca(OMPBuilder.Int64);
-        Value *LoadV =
-            OMPBuilder.Builder.CreateLoad(VPtrElemTy, CapturedVars[Idx]);
-        Value *BitCast = OMPBuilder.Builder.CreateBitCast(
-            Alloca, CapturedVars[Idx]->getType());
-        OMPBuilder.Builder.CreateStore(LoadV, BitCast);
-        Value *Load = OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, Alloca);
-        ForkArgs.push_back(Load);
-        continue;
-      }
-
+    for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx)
       ForkArgs.push_back(CapturedVars[Idx]);
-    }
 
     OMPBuilder.Builder.CreateCall(ForkCall, ForkArgs);
   };
@@ -681,20 +626,8 @@ void CGIntrinsicsOpenMP::emitOMPParallelHostRuntime(
                                    ZeroAddr);
     // Zero for thread id, bound tid.
     SmallVector<Value *, 16> OutlinedArgs = {ZeroAddr, ZeroAddr};
-    for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx) {
-      Type *VPtrElemTy = getPointeeType(DSAValueMap, CapturedVars[Idx]);
-      // Pass firstprivate scalar by value.
-      if (DSAValueMap[CapturedVars[Idx]].Type == DSA_FIRSTPRIVATE &&
-          VPtrElemTy->isSingleValueType()) {
-        // TODO: check type conversions.
-        Value *Load =
-            OMPBuilder.Builder.CreateLoad(VPtrElemTy, CapturedVars[Idx]);
-        OutlinedArgs.push_back(Load);
-        continue;
-      }
-
+    for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx)
       OutlinedArgs.push_back(CapturedVars[Idx]);
-    }
 
     OMPBuilder.Builder.CreateCall(OutlinedFn, OutlinedArgs);
 
@@ -809,29 +742,6 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
     Value *GEP = OMPBuilder.Builder.CreateConstInBoundsGEP1_64(
         OMPBuilder.Int8Ptr, LoadGlobalArgs, Idx);
 
-    // Pass firstprivate scalar by value.
-    if (DSAValueMap[CapturedVars[Idx]].Type == DSA_FIRSTPRIVATE) {
-      Type *VPtrElemTy = getPointeeType(DSAValueMap, CapturedVars[Idx]);
-      if (VPtrElemTy->isSingleValueType()) {
-        Value *Bitcast =
-            OMPBuilder.Builder.CreateBitCast(GEP, CapturedVars[Idx]->getType());
-        Value *Load = OMPBuilder.Builder.CreateLoad(VPtrElemTy, Bitcast);
-        // TODO: Runtime expects values in Int64 type, fix with arguments in
-        // struct.
-        AllocaInst *TmpInt64 = OMPBuilder.Builder.CreateAlloca(
-            OMPBuilder.Int64, nullptr,
-            CapturedVars[Idx]->getName() + "fpriv.byval");
-        Value *Cast = OMPBuilder.Builder.CreateBitCast(
-            TmpInt64, CapturedVars[Idx]->getType());
-        OMPBuilder.Builder.CreateStore(Load, Cast);
-        Value *ConvLoad =
-            OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, TmpInt64);
-        OutlinedFnArgs.push_back(ConvLoad);
-
-        continue;
-      }
-    }
-
     Value *Bitcast = OMPBuilder.Builder.CreateBitCast(
         GEP, CapturedVars[Idx]->getType()->getPointerTo());
     Value *Load =
@@ -891,21 +801,6 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
                         << "\n");
     Value *GEP = OMPBuilder.Builder.CreateConstInBoundsGEP2_64(
         CapturedVarsAddrsTy, CapturedVarsAddrs, 0, Idx);
-
-    // Pass firstprivate scalar by value.
-    if (DSAValueMap[CapturedVars[Idx]].Type == DSA_FIRSTPRIVATE) {
-      if (getPointeeType(DSAValueMap, CapturedVars[Idx])->isSingleValueType()) {
-        // TODO: check type conversions.
-        Value *BitCast = OMPBuilder.Builder.CreateBitCast(CapturedVars[Idx],
-                                                          OMPBuilder.Int64Ptr);
-        Value *Load = OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, BitCast);
-        Value *IntToPtr =
-            OMPBuilder.Builder.CreateIntToPtr(Load, OMPBuilder.Int8Ptr);
-        OMPBuilder.Builder.CreateStore(IntToPtr, GEP);
-
-        continue;
-      }
-    }
 
     // Allocate from global memory if the pointer is not globalized (not in the
     // global address space).
@@ -2660,30 +2555,8 @@ void CGIntrinsicsOpenMP::emitOMPTeamsDeviceRuntime(
   SmallVector<Value *, 8> Args;
   Args.append({ThreadIDAddr, ZeroAddr});
 
-  for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx) {
-    // Pass firstprivate scalar by value.
-    if (DSAValueMap[CapturedVars[Idx]].Type == DSA_FIRSTPRIVATE) {
-      Type *VPtrElemTy = getPointeeType(DSAValueMap, CapturedVars[Idx]);
-      if (VPtrElemTy->isSingleValueType()) {
-        Value *Load =
-            OMPBuilder.Builder.CreateLoad(VPtrElemTy, CapturedVars[Idx]);
-        // TODO: Runtime expects values in Int64 type, fix with arguments in
-        // struct.
-        AllocaInst *TmpInt64 = OMPBuilder.Builder.CreateAlloca(
-            OMPBuilder.Int64, nullptr,
-            CapturedVars[Idx]->getName() + "fpriv.byval");
-        Value *Cast = OMPBuilder.Builder.CreateBitCast(
-            TmpInt64, CapturedVars[Idx]->getType());
-        OMPBuilder.Builder.CreateStore(Load, Cast);
-        Value *ConvLoad =
-            OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, TmpInt64);
-        Args.push_back(ConvLoad);
-
-        continue;
-      }
-    }
+  for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx)
     Args.push_back(CapturedVars[Idx]);
-  }
 
   auto *CI = checkCreateCall(OMPBuilder.Builder, TeamsOutlinedFn, Args);
   assert(CI && "Expected valid call");
@@ -2766,30 +2639,8 @@ void CGIntrinsicsOpenMP::emitOMPTeamsHostRuntime(
                OMPBuilder.Builder.CreateBitCast(OutlinedFn,
                                                 OMPBuilder.ParallelTaskPtr)});
 
-  for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx) {
-    // Pass firstprivate scalar by value.
-    if (DSAValueMap[CapturedVars[Idx]].Type == DSA_FIRSTPRIVATE) {
-      Type *VPtrElemTy = getPointeeType(DSAValueMap, CapturedVars[Idx]);
-      if (VPtrElemTy->isSingleValueType()) {
-        Value *Load =
-            OMPBuilder.Builder.CreateLoad(VPtrElemTy, CapturedVars[Idx]);
-        // TODO: Runtime expects values in Int64 type, fix with arguments in
-        // struct.
-        AllocaInst *TmpInt64 = OMPBuilder.Builder.CreateAlloca(
-            OMPBuilder.Int64, nullptr,
-            CapturedVars[Idx]->getName() + ".fpriv.byval");
-        Value *Cast = OMPBuilder.Builder.CreateBitCast(
-            TmpInt64, CapturedVars[Idx]->getType());
-        OMPBuilder.Builder.CreateStore(Load, Cast);
-        Value *ConvLoad =
-            OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, TmpInt64);
-        Args.push_back(ConvLoad);
-
-        continue;
-      }
-    }
+  for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx)
     Args.push_back(CapturedVars[Idx]);
-  }
 
   auto *CI = checkCreateCall(OMPBuilder.Builder, ForkTeams, Args);
   assert(CI && "Expected valid call");
