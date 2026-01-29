@@ -36,14 +36,14 @@ jobs:
             echo "CONDA_LABEL=main" >> $GITHUB_ENV
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         # Checkout the repo with history to get the commit hash for the build
         # string.
         with:
           fetch-depth: 0
 
       - name: Create and activate conda env
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167
         with:
           python-version: "3.12"
           auto-update-conda: false
