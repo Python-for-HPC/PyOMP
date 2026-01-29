@@ -24,6 +24,9 @@ requirements:
   build:
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
+    # Add sysroot to ensure compatibility on linux builds.
+    - sysroot_linux-64       # [linux64]
+    - sysroot_linux-aarch64  # [aarch64]
     - cmake
     - setuptools_scm
     - elfutils # [linux]
@@ -31,6 +34,7 @@ requirements:
   host:
     - python
     - pip
+    # Add sysroot to ensure compatibility on linux builds.
     - sysroot_linux-64       # [linux64]
     - sysroot_linux-aarch64  # [aarch64]
     - setuptools
