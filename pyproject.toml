@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75.3", "wheel", "setuptools-scm>=8", "cmake>=3.20"]
+requires = ["setuptools>=75.3", "setuptools-scm>=8", "cmake>=3.20", "ninja"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Compilers",
 ]
-dependencies = ["numba>=0.61, <0.62", "lark", "cffi", "setuptools"]
+dependencies = ["numba>=0.62, <0.64", "lark", "cffi", "setuptools"]
 maintainers = [
     { name = "Giorgis Georgakoudis", email = "georgakoudis1@llnl.gov" },
 ]
@@ -66,7 +66,8 @@ before-all = [
 ]
 
 [tool.cibuildwheel.environment]
-LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}"
-PATH = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin:${PATH}"
+LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
+CC = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
+CXX = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/clang++"
 USE_CXX11_ABI = "1"
 PIP_NO_INPUT = "1"
