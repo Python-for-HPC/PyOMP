@@ -8,7 +8,7 @@ mkdir -p ${TMPDIR}
 pushd ${TMPDIR}
 
 # Set the LLVM_VERSION to use.
-export LLVM_VERSION="15.0.7"
+export LLVM_VERSION="20.1.8"
 
 # Set the envs directory under the temporary directory.
 export CONDA_ENVS_DIRS="${TMPDIR}/_stage/miniconda3/envs"
