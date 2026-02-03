@@ -49,7 +49,6 @@ archs = ["native"]
 # Pass LLVM_VERSION from the host environment to cibuildwheel.
 environment-pass = ["LLVM_VERSION"]
 # We use miniconda3 to get the clang/llvm toolchain on Linux.
-before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = ["rm -rf build dist src/*.egg-info"]
 skip = ["*-musllinux_*", "cp38-*"]
 test-command = [
@@ -59,15 +58,24 @@ test-command = [
     "OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget",
 ]
 
-[tool.cibuildwheel.linux]
-before-all = [
-    "yum install -y elfutils-libelf-devel libffi-devel",
-    "bash buildscripts/cibuildwheel/setup-miniconda3.sh",
-]
-
 [tool.cibuildwheel.environment]
-LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
-CC = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
-CXX = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/clang++"
 USE_CXX11_ABI = "1"
 PIP_NO_INPUT = "1"
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum install -y elfutils-libelf-devel libffi-devel clang-devel-20.1.8 llvm-devel-20.1.8",
+]
+
+[tool.cibuildwheel.linux.environment]
+LLVM_DIR = "/usr/lib64/cmake/llvm"
+CC = "/usr/bin/clang"
+CXX = "/usr/bin/clang++"
+
+[tool.cibuildwheel.macos]
+before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
+
+[tool.cibuildwheel.macos.environment]
+LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
+CC = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
+CXX = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang++"
