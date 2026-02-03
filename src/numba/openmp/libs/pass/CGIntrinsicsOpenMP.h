@@ -111,7 +111,7 @@ namespace helpers {
 Type *getPointeeType(DSAValueMapTy &DSAValueMap, Value *V);
 }
 
-inline std::string toString(DSAType DSA) {
+inline std::string toString(const DSAType &DSA) {
   switch (DSA) {
   case DSA_NONE:
     return "DSA_NONE";
