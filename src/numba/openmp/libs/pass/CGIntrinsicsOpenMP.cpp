@@ -743,11 +743,8 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
         OMPBuilder.Builder.CreateLoad(OMPBuilder.Int8PtrPtr, GlobalArgs);
     Value *GEP = OMPBuilder.Builder.CreateConstInBoundsGEP1_64(
         OMPBuilder.Int8Ptr, LoadGlobalArgs, Idx);
-
-    Value *Bitcast = OMPBuilder.Builder.CreateBitCast(
-        GEP, CapturedVars[Idx]->getType()->getPointerTo());
     Value *Load =
-        OMPBuilder.Builder.CreateLoad(CapturedVars[Idx]->getType(), Bitcast);
+        OMPBuilder.Builder.CreateLoad(CapturedVars[Idx]->getType(), GEP);
     OutlinedFnArgs.push_back(Load);
   }
 
@@ -1379,11 +1376,13 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
     }
 
     OMPBuilder.Builder.SetInsertPoint(ExitBB->getTerminator());
-    OMPBuilder.createBarrier(OpenMPIRBuilder::LocationDescription(
-                                 OMPBuilder.Builder.saveIP(), Loc.DL),
-                             omp::Directive::OMPD_for,
-                             /* ForceSimpleCall */ false,
-                             /* CheckCancelFlag */ false);
+    auto IP = OMPBuilder.createBarrier(OpenMPIRBuilder::LocationDescription(
+                                           OMPBuilder.Builder.saveIP(), Loc.DL),
+                                       omp::Directive::OMPD_for,
+                                       /* ForceSimpleCall */ false,
+                                       /* CheckCancelFlag */ false);
+    if (auto E = IP.takeError())
+      FATAL_ERROR("Failed to create barrier: " + toString(std::move(E)));
   }
 
   if (verifyFunction(*PreHeader->getParent(), &errs()))
@@ -1427,7 +1426,7 @@ void CGIntrinsicsOpenMP::emitOMPTask(DSAValueMapTy &DSAValueMap, Function *Fn,
       StructType::create({OMPBuilder.VoidPtr, OMPBuilder.TaskRoutineEntryPtr,
                           OMPBuilder.Int32, KmpCmplrdataTy, KmpCmplrdataTy},
                          "struct.kmp_task_t");
-  Type *KmpTaskTPtrTy = KmpTaskTTy->getPointerTo();
+  Type *KmpTaskTPtrTy = PointerType::getUnqual(M.getContext());
 
   FunctionCallee KmpcOmpTaskAlloc =
       OMPBuilder.getOrCreateRuntimeFunction(M, OMPRTL___kmpc_omp_task_alloc);
@@ -1454,13 +1453,13 @@ void CGIntrinsicsOpenMP::emitOMPTask(DSAValueMapTy &DSAValueMap, Function *Fn,
   else
     KmpSharedsTTy = StructType::create(SharedsTy, "struct.kmp_shareds");
   assert(KmpSharedsTTy && "Expected non-null KmpSharedsTTy");
-  Type *KmpSharedsTPtrTy = KmpSharedsTTy->getPointerTo();
+  Type *KmpSharedsTPtrTy = PointerType::getUnqual(M.getContext());
   StructType *KmpPrivatesTTy =
       StructType::create(PrivatesTy, "struct.kmp_privates");
-  Type *KmpPrivatesTPtrTy = KmpPrivatesTTy->getPointerTo();
+  Type *KmpPrivatesTPtrTy = PointerType::getUnqual(M.getContext());
   StructType *KmpTaskTWithPrivatesTy = StructType::create(
       {KmpTaskTTy, KmpPrivatesTTy}, "struct.kmp_task_t_with_privates");
-  Type *KmpTaskTWithPrivatesPtrTy = KmpTaskTWithPrivatesTy->getPointerTo();
+  Type *KmpTaskTWithPrivatesPtrTy = PointerType::getUnqual(M.getContext());
 
   // Declare the task entry function.
   Function *TaskEntryFn = Function::Create(
@@ -1967,25 +1966,19 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     auto *GEP = OMPBuilder.Builder.CreateInBoundsGEP(
         BasePtrsAlloca->getAllocatedType(), BasePtrsAlloca,
         {OMPBuilder.Builder.getInt32(0), OMPBuilder.Builder.getInt32(Idx)});
-    auto *Bitcast = OMPBuilder.Builder.CreateBitCast(
-        GEP, MI.BasePtr->getType()->getPointerTo());
-    OMPBuilder.Builder.CreateStore(MI.BasePtr, Bitcast);
+    OMPBuilder.Builder.CreateStore(MI.BasePtr, GEP);
 
     // Store in the pointers alloca.
     GEP = OMPBuilder.Builder.CreateInBoundsGEP(
         PtrsAlloca->getAllocatedType(), PtrsAlloca,
         {OMPBuilder.Builder.getInt32(0), OMPBuilder.Builder.getInt32(Idx)});
-    Bitcast = OMPBuilder.Builder.CreateBitCast(
-        GEP, MI.Ptr->getType()->getPointerTo());
-    OMPBuilder.Builder.CreateStore(MI.Ptr, Bitcast);
+    OMPBuilder.Builder.CreateStore(MI.Ptr, GEP);
 
     // Store in the sizes alloca.
     GEP = OMPBuilder.Builder.CreateInBoundsGEP(
         SizesAlloca->getAllocatedType(), SizesAlloca,
         {OMPBuilder.Builder.getInt32(0), OMPBuilder.Builder.getInt32(Idx)});
-    Bitcast = OMPBuilder.Builder.CreateBitCast(
-        GEP, MI.Size->getType()->getPointerTo());
-    OMPBuilder.Builder.CreateStore(MI.Size, Bitcast);
+    OMPBuilder.Builder.CreateStore(MI.Size, GEP);
 
     Idx++;
   }
@@ -1993,12 +1986,9 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
   OffloadingMappingArgs.Size = MapperInfos.size();
   // These operations could be also implemented with GEPs on the allocas, not
   // sure what's best, revisit.
-  OffloadingMappingArgs.BasePtrs =
-      OMPBuilder.Builder.CreateBitCast(BasePtrsAlloca, OMPBuilder.VoidPtrPtr);
-  OffloadingMappingArgs.Ptrs =
-      OMPBuilder.Builder.CreateBitCast(PtrsAlloca, OMPBuilder.VoidPtrPtr);
-  OffloadingMappingArgs.Sizes = OMPBuilder.Builder.CreateBitCast(
-      SizesAlloca, OMPBuilder.SizeTy->getPointerTo());
+  OffloadingMappingArgs.BasePtrs = BasePtrsAlloca;
+  OffloadingMappingArgs.Ptrs = PtrsAlloca;
+  OffloadingMappingArgs.Sizes = SizesAlloca;
 }
 
 void CGIntrinsicsOpenMP::emitOMPSingle(Function *Fn, BasicBlock *BBEntry,
@@ -2070,9 +2060,12 @@ void CGIntrinsicsOpenMP::emitOMPBarrier(Function *Fn, BasicBlock *BBEntry,
       InsertPointTy(BBEntry, BBEntry->getTerminator()->getIterator()), DL);
 
   // TODO: check ForceSimpleCall usage.
-  OMPBuilder.createBarrier(Loc, DK,
-                           /*ForceSimpleCall*/ false,
-                           /*CheckCancelFlag*/ true);
+  auto IP = OMPBuilder.createBarrier(Loc, DK,
+                                     /*ForceSimpleCall*/ false,
+                                     /*CheckCancelFlag*/ true);
+  if (auto E = IP.takeError()) {
+    FATAL_ERROR("Error creating OpenMP barrier: " + toString(std::move(E)));
+  }
   DEBUG_ENABLE(dbgs() << "=== Barrier Fn\n"
                       << *Fn << "=== End of Barrier Fn\n");
 }
@@ -2123,14 +2116,16 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
                                   ".omp_offloading.device_image");
     GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
 
+    auto &Ctx = M.getContext();
+
     StructType *TgtDeviceImageTy = StructType::create(
-        {OMPBuilder.Int8Ptr, OMPBuilder.Int8Ptr,
-         TgtOffloadEntryTy->getPointerTo(), TgtOffloadEntryTy->getPointerTo()},
+        {OMPBuilder.Int8Ptr, OMPBuilder.Int8Ptr, PointerType::getUnqual(Ctx),
+         PointerType::getUnqual(Ctx)},
         "struct.__tgt_device_image");
 
     StructType *TgtBinDescTy = StructType::create(
-        {OMPBuilder.Int32, TgtDeviceImageTy->getPointerTo(),
-         TgtOffloadEntryTy->getPointerTo(), TgtOffloadEntryTy->getPointerTo()},
+        {OMPBuilder.Int32, PointerType::getUnqual(Ctx),
+         PointerType::getUnqual(Ctx), PointerType::getUnqual(Ctx)},
         "struct.__tgt_bin_desc");
 
     auto *ArrayTy = ArrayType::get(TgtDeviceImageTy, 1);
@@ -2179,7 +2174,7 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
 
       // Get __tgt_unregister_lib function declaration.
       auto *UnRegFuncTy =
-          FunctionType::get(OMPBuilder.Void, TgtBinDescTy->getPointerTo(),
+          FunctionType::get(OMPBuilder.Void, PointerType::getUnqual(Ctx),
                             /*isVarArg*/ false);
       FunctionCallee UnRegFuncC =
           M.getOrInsertFunction("__tgt_unregister_lib", UnRegFuncTy);
@@ -2200,15 +2195,15 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
 
     // Get __tgt_register_lib function declaration.
     auto *RegFuncTy =
-        FunctionType::get(OMPBuilder.Void, TgtBinDescTy->getPointerTo(),
+        FunctionType::get(OMPBuilder.Void, PointerType::getUnqual(Ctx),
                           /*isVarArg*/ false);
     FunctionCallee RegFuncC =
         M.getOrInsertFunction("__tgt_register_lib", RegFuncTy);
 
     // Get atexit function declaration.
-    auto *AtExitTy = FunctionType::get(OMPBuilder.Int32,
-                                       PointerType::getUnqual(M.getContext()),
-                                       /*isVarArg=*/false);
+    auto *AtExitTy =
+        FunctionType::get(OMPBuilder.Int32, PointerType::getUnqual(Ctx),
+                          /*isVarArg=*/false);
     FunctionCallee AtExit = M.getOrInsertFunction("atexit", AtExitTy);
 
     // Construct function body.
@@ -2423,7 +2418,8 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
       AllocaInst *TmpInt64 = Builder.CreateAlloca(OMPBuilder.Int64, nullptr,
                                                   Arg.getName() + ".casted");
       Builder.CreateStore(&Arg, TmpInt64);
-      Value *Cast = Builder.CreateBitCast(TmpInt64, ParamType->getPointerTo());
+      Value *Cast = Builder.CreateBitCast(
+          TmpInt64, PointerType::getUnqual(M.getContext()));
       Value *ConvLoad = Builder.CreateLoad(ParamType, Cast);
       DevFuncArgs.push_back(ConvLoad);
     } else
