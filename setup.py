@@ -122,6 +122,11 @@ class BuildCMakeExt(build_ext):
         # Forward LLVM_DIR if provided.
         if os.environ.get("LLVM_DIR"):
             args.append(f"-DLLVM_DIR={os.environ['LLVM_DIR']}")
+        # Forward CC, CXX if provided.
+        if os.environ.get("CC"):
+            args.append(f"-DCMAKE_C_COMPILER={os.environ['CC']}")
+        if os.environ.get("CXX"):
+            args.append(f"-DCMAKE_CXX_COMPILER={os.environ['CXX']}")
         return args
 
 
@@ -200,12 +205,10 @@ setup(
             cmake_args=[
                 "-DOPENMP_STANDALONE_BUILD=ON",
                 "-DLLVM_ENABLE_RUNTIMES=openmp;offload",
-                "-DCMAKE_C_COMPILER=clang",
-                "-DCMAKE_CXX_COMPILER=clang++",
-                "-DCMAKE_INSTALL_RPATH=$ORIGIN",
-                "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF",
-                "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
-                "-DCMAKE_SKIP_RPATH=OFF",
+                "-DOPENMP_ENABLE_OMPT_TOOLS=OFF",
+                # Avoid conflicts in manylinux builds with packaged clang/llvm
+                # under /usr/include and its gcc-toolset provided header files.
+                "-DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON",
             ],
         ),
     ],
