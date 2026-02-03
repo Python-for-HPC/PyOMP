@@ -123,9 +123,7 @@ class OpenMPCUDACodegen:
             self.libdevice_mod = ll.parse_bitcode(f.read())
 
         # Read the OpenMP device RTL for the architecture to link with the module.
-        self.libomptarget_arch = (
-            libpath / "libomp" / "lib" / f"libomptarget-nvptx-{self.sm}.bc"
-        )
+        self.libomptarget_arch = libpath / "libomp" / "lib" / "libomptarget-nvptx.bc"
         try:
             with open(self.libomptarget_arch, "rb") as f:
                 self.libomptarget_mod = ll.parse_bitcode(f.read())
@@ -143,7 +141,7 @@ class OpenMPCUDACodegen:
 
     def _get_target_image(self, mod, filename_prefix, ompx_attrs, use_toolchain=False):
         from numba.cuda.cudadrv import driver
-        from numba.core.llvm_bindings import create_pass_manager_builder
+        from numba.core.llvm_bindings import create_pass_builder
 
         if DEBUG_OPENMP_LLVM_PASS >= 1:
             with open(filename_prefix + ".ll", "w") as f:
@@ -173,25 +171,19 @@ class OpenMPCUDACodegen:
         _internalize()
         # Run passes for optimization, including target-specific passes.
         # Run function passes.
-        with ll.create_function_pass_manager(mod) as pm:
-            self.tm.add_analysis_passes(pm)
-            with create_pass_manager_builder(
-                opt=2, slp_vectorize=True, loop_vectorize=True
-            ) as pmb:
-                pmb.populate(pm)
-            pm.initialize()
+        with create_pass_builder(
+            self.tm, opt=2, slp_vectorize=True, loop_vectorize=True
+        ) as pb:
+            pm = pb.getFunctionPassManager()
             for func in mod.functions:
-                pm.run(func)
-            pm.finalize()
+                pm.run(func, pb)
 
         # Run module passes.
-        with ll.create_module_pass_manager() as pm:
-            self.tm.add_analysis_passes(pm)
-            with create_pass_manager_builder(
-                opt=2, slp_vectorize=True, loop_vectorize=True
-            ) as pmb:
-                pmb.populate(pm)
-            pm.run(mod)
+        with create_pass_builder(
+            self.tm, opt=2, slp_vectorize=True, loop_vectorize=True
+        ) as pb:
+            pm = pb.getModulePassManager()
+            pm.run(mod, pb)
 
         if DEBUG_OPENMP_LLVM_PASS >= 1:
             mod.verify()
@@ -205,13 +197,11 @@ class OpenMPCUDACodegen:
         # Internalize non-kernel function definitions.
         _internalize()
         # Run module passes.
-        with ll.create_module_pass_manager() as pm:
-            self.tm.add_analysis_passes(pm)
-            with create_pass_manager_builder(
-                opt=1, slp_vectorize=True, loop_vectorize=True
-            ) as pmb:
-                pmb.populate(pm)
-            pm.run(mod)
+        with create_pass_builder(
+            self.tm, opt=1, slp_vectorize=True, loop_vectorize=True
+        ) as pb:
+            pm = pb.getModulePassManager()
+            pm.run(mod, pb)
 
         if DEBUG_OPENMP_LLVM_PASS >= 1:
             mod.verify()
@@ -221,25 +211,47 @@ class OpenMPCUDACodegen:
         # Generate ptx assemlby.
         ptx = self.tm.emit_assembly(mod)
         if use_toolchain:
-            # ptxas does file I/O, so output the assembly and ingest the generated cubin.
-            with open(filename_prefix + "-intr-dev-rtl.s", "w") as f:
-                f.write(ptx)
+            # ptxas normally does file I/O; prefer piping PTX to stdin to avoid
+            # writing the .s file unless debug is enabled.
+            if DEBUG_OPENMP_LLVM_PASS >= 1:
+                with open(filename_prefix + "-intr-dev-rtl.s", "w") as f:
+                    f.write(ptx)
 
-            subprocess.run(
-                [
-                    "ptxas",
-                    "-m64",
-                    "--gpu-name",
-                    self.sm,
-                    filename_prefix + "-intr-dev-rtl.s",
-                    "-o",
-                    filename_prefix + "-intr-dev-rtl.o",
-                ],
-                check=True,
-            )
+            # Invoke ptxas reading PTX from stdin ('-') and writing output to
+            # a temporary file so we can capture the object in-memory without
+            # leaving it in the working directory.
+            with tempfile.NamedTemporaryFile(suffix=".o", delete=False) as tmpf:
+                outname = tmpf.name
+            try:
+                subprocess.run(
+                    [
+                        "ptxas",
+                        "-m64",
+                        "--gpu-name",
+                        self.sm,
+                        "-",
+                        "-o",
+                        outname,
+                    ],
+                    input=ptx.encode(),
+                    check=True,
+                )
 
-            with open(filename_prefix + "-intr-dev-rtl.o", "rb") as f:
-                cubin = f.read()
+                with open(outname, "rb") as f:
+                    cubin = f.read()
+
+                # If debug is enabled, also write a named copy for inspection.
+                if DEBUG_OPENMP_LLVM_PASS >= 1:
+                    with open(
+                        filename_prefix + "-intr-dev-rtl.o",
+                        "wb",
+                    ) as f:
+                        f.write(cubin)
+            finally:
+                try:
+                    os.remove(outname)
+                except OSError:
+                    pass
         else:
             if DEBUG_OPENMP_LLVM_PASS >= 1:
                 with open(
