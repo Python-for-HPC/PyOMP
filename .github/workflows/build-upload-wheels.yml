@@ -41,7 +41,7 @@ jobs:
         # Set LLVM_VERSION for the host to forward to the cibuildwheel
         # environment.
         env:
-          LLVM_VERSION: "15.0.7"
+          LLVM_VERSION: "20.1.8"
         run: python -m cibuildwheel --output-dir wheelhouse
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -58,7 +58,7 @@ jobs:
 
       - name: Build sdist
         env:
-          LLVM_VERSION: "15.0.7"
+          LLVM_VERSION: "20.1.8"
         run: pipx run build --sdist
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -73,8 +73,14 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
-        numba-version: ['0.61.0', '0.61.2']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        numba-version: ['0.62.0', '0.62.1', '0.63.0', '0.63.1']
+        exclude:
+          - python-version: '3.14'
+            numba-version: '0.62.0'
+          - python-version: '3.14'
+            numba-version: '0.62.1'
+
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
