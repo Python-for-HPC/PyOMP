@@ -39,6 +39,10 @@ def run_intrinsics_openmp_pass(ll_module):
         raise RuntimeError(f"Running IntrinsicsOpenMPPass failed with return code {rc}")
 
     bc_out = bytes(out)
+
+    if DEBUG_OPENMP_LLVM_PASS >= 1:
+        with open(f"{ll_module.name}-intrinsics-omp.bc", "wb") as f:
+            f.write(bc_out)
     lowered_module = ll.parse_bitcode(bc_out)
     if DEBUG_OPENMP_LLVM_PASS >= 1:
         print(lowered_module)
