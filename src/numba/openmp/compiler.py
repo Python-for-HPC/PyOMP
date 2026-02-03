@@ -306,7 +306,19 @@ class CustomCPUCodeLibrary(JITCodeLibrary):
 
     def _finalize_specific(self):
         super()._finalize_specific()
-        ll.ExecutionEngine.run_static_constructors(self._codegen._engine._ee)
+        # Run target offloading descriptor registration functions, if there are any.
+        import ctypes
+
+        ee = self._codegen._engine._ee
+        for func in self.get_defined_functions():
+            if not func.name.startswith(".omp_offloading.descriptor_reg"):
+                continue
+            addr = ee.get_function_address(func.name)
+            reg = ctypes.CFUNCTYPE(None)(addr)
+            try:
+                reg()
+            except Exception:
+                raise RuntimeError("error registering OpenMP offloading descriptor")
 
 
 class CustomFunctionCompiler(_FunctionCompiler):
