@@ -1,7 +1,6 @@
 #include "CGIntrinsicsOpenMP.h"
 #include "DebugOpenMP.h"
 
-#include <llvm/ADT/Triple.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -18,6 +17,7 @@
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/TargetParser/Triple.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
 #include <llvm/Transforms/Utils/CodeExtractor.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
@@ -248,10 +248,10 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
   assert(SinkingCands.empty() && "Expected empty alloca sinking candidates");
 
   auto IsTempOrDefaultPrivate = [](Value *V) {
-    if (V->getName().startswith("."))
+    if (V->getName().starts_with("."))
       return true;
 
-    if (V->getName().startswith("excinfo"))
+    if (V->getName().starts_with("excinfo"))
       return true;
 
     if (V->getName() == "quot")
@@ -292,8 +292,8 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
 
     DSAType DSA = DSAValueMap[V].Type;
 
-    DEBUG_ENABLE(dbgs() << "V " << *V << " from DSAValueMap Type " << DSA
-                        << "\n");
+    DEBUG_ENABLE(dbgs() << "V " << *V << " from DSAValueMap Type "
+                        << toString(DSA) << "\n");
     switch (DSA) {
     case DSA_PRIVATE:
       Privates.push_back(V);
@@ -514,8 +514,10 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
   // Deterministic insertion of BBs, BlockVector needs ExitBB to move to the
   // outlined function.
   BlockVector.push_back(OI.ExitBB);
-  for (auto *BB : BlockVector)
-    BB->moveBefore(OutlinedExitBB);
+  for (auto *BB : BlockVector) {
+    BB->removeFromParent();
+    BB->insertInto(OutlinedFn, OutlinedExitBB);
+  }
 
   DEBUG_ENABLE(dbgs() << "=== Dump OutlinedFn\n"
                       << *OutlinedFn << "=== End of Dump OutlinedFn\n");
@@ -1615,11 +1617,14 @@ void CGIntrinsicsOpenMP::emitOMPTask(DSAValueMapTy &DSAValueMap, Function *Fn,
         BasicBlock::Create(M.getContext(), "entry", TaskOutlinedFn);
     BasicBlock *TaskOutlinedExitBB =
         BasicBlock::Create(M.getContext(), "exit", TaskOutlinedFn);
-    for (BasicBlock *BB : OutlinedBlockVector)
-      BB->moveBefore(TaskOutlinedExitBB);
+    for (BasicBlock *BB : OutlinedBlockVector) {
+      BB->removeFromParent();
+      BB->insertInto(TaskOutlinedFn, TaskOutlinedExitBB);
+    }
     // Explicitly move EndBB to the outlined functions, since OutlineInfo
     // does not contain it in the OutlinedBlockVector.
-    EndBB->moveBefore(TaskOutlinedExitBB);
+    EndBB->removeFromParent();
+    EndBB->insertInto(TaskOutlinedFn, TaskOutlinedExitBB);
     EndBB->getTerminator()->setSuccessor(0, TaskOutlinedExitBB);
 
     OMPBuilder.Builder.SetInsertPoint(TaskOutlinedEntryBB);
@@ -1727,20 +1732,6 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
   SmallVector<Constant *, 8> OffloadMapTypes;
   SmallVector<Constant *, 8> OffloadMapNames;
 
-  if (DSAValueMap.empty()) {
-    OffloadingMappingArgs.Size = 0;
-    OffloadingMappingArgs.BasePtrs =
-        Constant::getNullValue(OMPBuilder.VoidPtrPtr);
-    OffloadingMappingArgs.Ptrs = Constant::getNullValue(OMPBuilder.VoidPtrPtr);
-    OffloadingMappingArgs.Sizes = Constant::getNullValue(OMPBuilder.Int64Ptr);
-    OffloadingMappingArgs.MapTypes =
-        Constant::getNullValue(OMPBuilder.Int64Ptr);
-    OffloadingMappingArgs.MapNames =
-        Constant::getNullValue(OMPBuilder.VoidPtrPtr);
-
-    return;
-  }
-
   auto EmitMappingEntry = [&](Value *Size, uint64_t MapType, Value *BasePtr,
                               Value *Ptr) {
     OffloadMapTypes.push_back(ConstantInt::get(OMPBuilder.SizeTy, MapType));
@@ -1814,6 +1805,14 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
 
     return MapType;
   };
+
+  // TODO: This a dummy entry to workaround the runtime issue that it expects a
+  // kernel launch environment parameter. It will be removed once we move to the
+  // __tgt_target_kernel interface.
+  auto *DummyAlloca = OMPBuilder.Builder.CreateAlloca(
+      OMPBuilder.Int8, ConstantInt::get(OMPBuilder.Int64, 8), "dummy.alloca");
+  EmitMappingEntry(ConstantInt::get(OMPBuilder.SizeTy, 8),
+                   OMP_TGT_MAPTYPE_TARGET_PARAM, DummyAlloca, DummyAlloca);
 
   // Keep track of argument position, needed for struct mappings.
   for (auto &It : DSAValueMap) {
@@ -2019,8 +2018,7 @@ void CGIntrinsicsOpenMP::emitOMPSingle(Function *Fn, BasicBlock *BBEntry,
 #else
 
   auto IPOrError =
-      OMPBuilder.createSingle(Loc, BodyGenCB, FiniCB, /* IsNoWait*/ false,
-                              /*DidIt*/ nullptr);
+      OMPBuilder.createSingle(Loc, BodyGenCB, FiniCB, /* IsNoWait*/ false);
   if (auto E = IPOrError.takeError()) {
     FATAL_ERROR("Error creating OpenMP single region: " +
                 toString(std::move(E)));
@@ -2094,8 +2092,6 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
   GlobalVariable *OMPRegionId = nullptr;
   GlobalVariable *OMPOffloadEntries = nullptr;
 
-  // TODO: assumes 1 target region, can we call tgt_register_lib
-  // multiple times?
   OMPRegionId = new GlobalVariable(
       M, OMPBuilder.Int8, /* isConstant */ true, GlobalValue::WeakAnyLinkage,
       ConstantInt::get(OMPBuilder.Int8, 0), DevWrapperFuncName + ".region_id",
@@ -2174,67 +2170,8 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
                            /* isConstant */ true, GlobalValue::InternalLinkage,
                            DescInit, ".omp_offloading.descriptor");
 
-    // Add tgt_register_requires, tgt_register_lib,
-    // tgt_unregister_lib.
-    {
-      // tgt_register_requires.
-      auto *FuncTy = FunctionType::get(OMPBuilder.Void, /*isVarArg*/ false);
-      auto *Func = Function::Create(FuncTy, GlobalValue::InternalLinkage,
-                                    ".omp_offloading.requires_reg", &M);
-      Func->setSection(".text.startup");
-
-      // Get __tgt_register_lib function declaration.
-      auto *RegFuncTy = FunctionType::get(OMPBuilder.Void, OMPBuilder.Int64,
-                                          /*isVarArg*/ false);
-      FunctionCallee RegFuncC =
-          M.getOrInsertFunction("__tgt_register_requires", RegFuncTy);
-
-      // Construct function body
-      IRBuilder<> Builder(BasicBlock::Create(M.getContext(), "entry", Func));
-      // TODO: fix to pass the requirements enum value.
-      Builder.CreateCall(RegFuncC, ConstantInt::get(OMPBuilder.Int64, 1));
-      Builder.CreateRetVoid();
-
-      // Add this function to constructors.
-      // Set priority to 1 so that __tgt_register_lib is executed
-      // AFTER
-      // __tgt_register_requires (we want to know what requirements
-      // have been asked for before we load a libomptarget plugin so
-      // that by the time the plugin is loaded it can report how
-      // many devices there are which can satisfy these
-      // requirements).
-      appendToGlobalCtors(M, Func, /*Priority*/ 0);
-    }
-    {
-      // ctor
-      auto *FuncTy = FunctionType::get(OMPBuilder.Void, /*isVarArg*/ false);
-      auto *Func = Function::Create(FuncTy, GlobalValue::InternalLinkage,
-                                    ".omp_offloading.descriptor_reg", &M);
-      Func->setSection(".text.startup");
-
-      // Get __tgt_register_lib function declaration.
-      auto *RegFuncTy =
-          FunctionType::get(OMPBuilder.Void, TgtBinDescTy->getPointerTo(),
-                            /*isVarArg*/ false);
-      FunctionCallee RegFuncC =
-          M.getOrInsertFunction("__tgt_register_lib", RegFuncTy);
-
-      // Construct function body
-      IRBuilder<> Builder(BasicBlock::Create(M.getContext(), "entry", Func));
-      Builder.CreateCall(RegFuncC, BinDesc);
-      Builder.CreateRetVoid();
-
-      // Add this function to constructors.
-      // Set priority to 1 so that __tgt_register_lib is executed
-      // AFTER
-      // __tgt_register_requires (we want to know what requirements
-      // have been asked for before we load a libomptarget plugin so
-      // that by the time the plugin is loaded it can report how
-      // many devices there are which can satisfy these
-      // requirements).
-      appendToGlobalCtors(M, Func, /*Priority*/ 1);
-    }
-    {
+    // Add tgt_register_lib in global ctors and tgt_unregister_lib in atexit.
+    auto CreateUnregFunction = [&]() {
       auto *FuncTy = FunctionType::get(OMPBuilder.Void, /*isVarArg*/ false);
       auto *Func = Function::Create(FuncTy, GlobalValue::InternalLinkage,
                                     ".omp_offloading.descriptor_unreg", &M);
@@ -2252,10 +2189,41 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
       Builder.CreateCall(UnRegFuncC, BinDesc);
       Builder.CreateRetVoid();
 
-      // Add this function to global destructors.
-      // Match priority of __tgt_register_lib
-      appendToGlobalDtors(M, Func, /*Priority*/ 1);
-    }
+      return Func;
+    };
+
+    // Create the registration function constructor.
+    auto *FuncTy = FunctionType::get(OMPBuilder.Void, /*isVarArg*/ false);
+    auto *Func = Function::Create(FuncTy, GlobalValue::InternalLinkage,
+                                  ".omp_offloading.descriptor_reg", &M);
+    Func->setSection(".text.startup");
+
+    // Get __tgt_register_lib function declaration.
+    auto *RegFuncTy =
+        FunctionType::get(OMPBuilder.Void, TgtBinDescTy->getPointerTo(),
+                          /*isVarArg*/ false);
+    FunctionCallee RegFuncC =
+        M.getOrInsertFunction("__tgt_register_lib", RegFuncTy);
+
+    // Get atexit function declaration.
+    auto *AtExitTy = FunctionType::get(OMPBuilder.Int32,
+                                       PointerType::getUnqual(M.getContext()),
+                                       /*isVarArg=*/false);
+    FunctionCallee AtExit = M.getOrInsertFunction("atexit", AtExitTy);
+
+    // Construct function body.
+    IRBuilder<> Builder(BasicBlock::Create(M.getContext(), "entry", Func));
+    Builder.CreateCall(RegFuncC, BinDesc);
+
+    Function *UnregFunc = CreateUnregFunction();
+    Builder.CreateCall(AtExit, UnregFunc);
+
+    Builder.CreateRetVoid();
+
+    // Add this function to constructors.
+    // Set priority to 101 so that __tgt_register_lib is executed after system
+    // constructors but before user constructors.
+    appendToGlobalCtors(M, Func, /*Priority*/ 101);
   };
 
   EmitOffloadingBinaryGlobals();
@@ -2356,6 +2324,15 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
     Args.push_back(Constant::getNullValue(OMPBuilder.Int8Ptr));
   }
 
+  if (!isOpenMPDeviceRuntime()) {
+    FunctionCallee KmpcSetThreadLimit = OMPBuilder.getOrCreateRuntimeFunction(
+        M, OMPRTL___kmpc_set_thread_limit);
+    Value *ThreadID = OMPBuilder.getOrCreateThreadID(Ident);
+
+    checkCreateCall(OMPBuilder.Builder, KmpcSetThreadLimit,
+                    {Ident, ThreadID, ThreadLimit});
+  }
+
   auto *OffloadResult = checkCreateCall(OMPBuilder.Builder, TargetMapper, Args);
   assert(OffloadResult && "Expected non-null call inst from code generation");
   auto *Failed = OMPBuilder.Builder.CreateIsNotNull(OffloadResult);
@@ -2372,6 +2349,11 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
   // Emit the Numba wrapper offloading function.
   SmallVector<Type *, 8> WrapperArgsTypes;
   SmallVector<StringRef, 8> WrapperArgsNames;
+
+  // Add the pointer argument to kernel args expected by the runtime.
+  WrapperArgsTypes.push_back(OMPBuilder.VoidPtr);
+  WrapperArgsNames.push_back("dyn_ptr");
+
   for (auto &It : DSAValueMap) {
     Value *V = It.first;
     DSAType DSA = It.second.Type;
@@ -2399,8 +2381,9 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
   Function *NumbaWrapperFunc = Function::Create(
       NumbaWrapperFnTy, GlobalValue::ExternalLinkage, DevWrapperFuncName, M);
 
-  // Name the wrapper arguments for readability.
-  for (size_t I = 0; I < NumbaWrapperFunc->arg_size(); ++I)
+  // Name the wrapper arguments for readability, start from 1 to skip the
+  // first "args" pointer argument.
+  for (size_t I = 1; I < NumbaWrapperFunc->arg_size(); ++I)
     NumbaWrapperFunc->getArg(I)->setName(WrapperArgsNames[I]);
 
   IRBuilder<> Builder(
@@ -2425,10 +2408,18 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
     ArgOffset = 1;
   }
   for (auto &Arg : NumbaWrapperFunc->args()) {
+    // Skip the first "args" pointer argument.
+    if (Arg.getArgNo() == 0)
+      continue;
     // TODO: Runtime expects all scalars typed as Int64.
     if (!Arg.getType()->isPointerTy()) {
-      auto *ParamType = DevFuncCallee.getFunctionType()->getParamType(
-          ArgOffset + Arg.getArgNo());
+      // ArgOffset accounts for the extra arguments added in the device
+      // function by Numba, and -1 accounts for the first "args" pointer
+      // argument.
+      size_t DevFuncArgNo = ArgOffset + (Arg.getArgNo() - 1);
+
+      auto *ParamType =
+          DevFuncCallee.getFunctionType()->getParamType(DevFuncArgNo);
       AllocaInst *TmpInt64 = Builder.CreateAlloca(OMPBuilder.Int64, nullptr,
                                                   Arg.getName() + ".casted");
       Builder.CreateStore(&Arg, TmpInt64);
@@ -2447,15 +2438,14 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
 #elif LLVM_VERSION_MAJOR <= 16
     auto IP = OMPBuilder.createTargetInit(Loc, IsSPMD);
 #else
-    // TODO: Use TargetInfo launch configuration for max/min threads and
-    // threads.
+    // Note the default for MaxThreads is 0.
     OpenMPIRBuilder::TargetKernelDefaultAttrs Attrs{
         (IsSPMD ? OMP_TGT_EXEC_MODE_SPMD : OMP_TGT_EXEC_MODE_GENERIC),
         {-1, -1, -1},
         1,
-        {-1, -1, -1},
+        {0, -1, -1},
         1};
-    auto IP = OMPBuilder.createTargetInit(Loc, Attrs);
+    auto IP = OMPBuilder.createTargetInit(Builder, Attrs);
 #endif
     Builder.restoreIP(IP);
   }
@@ -2467,8 +2457,10 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
     OpenMPIRBuilder::LocationDescription Loc(Builder);
 #if LLVM_VERSION_MAJOR <= 15
     OMPBuilder.createTargetDeinit(Loc, /* IsSPMD */ IsSPMD, true);
-#else
+#elif LLVM_VERSION_MAJOR <= 16
     OMPBuilder.createTargetDeinit(Loc, /* IsSPMD */ IsSPMD);
+#else
+    OMPBuilder.createTargetDeinit(Loc);
 #endif
   }
 
@@ -2485,15 +2477,8 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
     appendToCompilerUsed(M, {ExecModeGV});
 
     // Get "nvvm.annotations" metadata node.
-    // TODO: may need to adjust for AMD gpus.
-    NamedMDNode *MD = M.getOrInsertNamedMetadata("nvvm.annotations");
-
-    Metadata *MDVals[] = {
-        ConstantAsMetadata::get(NumbaWrapperFunc),
-        MDString::get(M.getContext(), "kernel"),
-        ConstantAsMetadata::get(ConstantInt::get(OMPBuilder.Int32, 1))};
-    // Append metadata to nvvm.annotations.
-    MD->addOperand(MDNode::get(M.getContext(), MDVals));
+    // TODO: will need to adjust for AMD gpus.
+    NumbaWrapperFunc->setCallingConv(CallingConv::PTX_Kernel);
 
     // Add a function attribute for the kernel.
     NumbaWrapperFunc->addFnAttr(Attribute::get(M.getContext(), "kernel"));
