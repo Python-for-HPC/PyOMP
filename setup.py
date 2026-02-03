@@ -8,11 +8,7 @@ import os
 from setuptools import setup, Extension
 from setuptools import Command
 from setuptools.command.build_ext import build_ext
-
-try:
-    from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
-except ImportError:
-    _bdist_wheel = None
+from setuptools.command.bdist_wheel import bdist_wheel
 
 
 class CleanCommand(Command):
@@ -33,15 +29,11 @@ class CleanCommand(Command):
             shutil.rmtree(egg_info, ignore_errors=True)
 
 
-if _bdist_wheel:
-
-    class CustomBdistWheel(_bdist_wheel):
-        def run(self):
-            # Ensure all build steps are run before bdist_wheel
-            self.run_command("build_ext")
-            super().run()
-else:
-    CustomBdistWheel = None
+class CustomBdistWheel(bdist_wheel):
+    def run(self):
+        # Ensure all build steps are run before bdist_wheel
+        self.run_command("build_ext")
+        super().run()
 
 
 class CMakeExtension(Extension):
@@ -67,6 +59,7 @@ class BuildCMakeExt(build_ext):
                 super().run()
 
     def _build_cmake(self, ext: CMakeExtension):
+        print("Build CMake extension:", ext.name)
         # Delete build directory if it exists to avoid errors with stale
         # CMakeCache.txt leftovers.
         build_dir = Path(self.build_temp) / ext.name
@@ -93,17 +86,22 @@ class BuildCMakeExt(build_ext):
                 ext.sourcedir,
                 "-B",
                 build_dir,
+                "-G",
+                "Ninja",
                 "-DCMAKE_BUILD_TYPE=Release",
                 f"-DCMAKE_INSTALL_PREFIX={install_dir}",
             ]
             + ext.cmake_args
             + extra_cmake_args
         )
+        print("Configure cmake with args:", cfg)
         subprocess.run(cfg, check=True, stdin=subprocess.DEVNULL)
 
+        print("Build at dir ", build_dir)
         subprocess.run(
             ["cmake", "--build", build_dir, "-j"], check=True, stdin=subprocess.DEVNULL
         )
+        print("Install at dir ", install_dir)
         subprocess.run(
             ["cmake", "--install", build_dir], check=True, stdin=subprocess.DEVNULL
         )
@@ -130,34 +128,19 @@ class BuildCMakeExt(build_ext):
 def _prepare_source_openmp(sha256=None):
     LLVM_VERSION = os.environ.get("LLVM_VERSION", None)
     assert LLVM_VERSION is not None, "LLVM_VERSION environment variable must be set."
-    url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/openmp-{LLVM_VERSION}.src.tar.xz"
+    url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/llvm-project-{LLVM_VERSION}.src.tar.xz"
 
-    tmp = Path("_downloads/libomp") / f"openmp-{LLVM_VERSION}.tar.gz"
+    tmp = Path("_downloads/libomp") / f"llvm-project-{LLVM_VERSION}.tar.gz"
     tmp.parent.mkdir(parents=True, exist_ok=True)
 
     # Download the source tarball if it does not exist.
     if not tmp.exists():
-        print(f"download openmp version {LLVM_VERSION} url:", url)
+        print(f"Downloading llvm-project version {LLVM_VERSION} url:", url)
         with urllib.request.urlopen(url) as r:
             with tmp.open("wb") as f:
                 f.write(r.read())
-
-    # Extract only the major version.
-    llvm_major_version = tuple(map(int, LLVM_VERSION.split(".")))[0]
-    # For LLVM versions > 14, we also need to download CMake files.
-    if llvm_major_version > 14:
-        cmake_url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/cmake-{LLVM_VERSION}.src.tar.xz"
-        cmake_file = Path("_downloads/libomp") / f"cmake-{LLVM_VERSION}.tar.gz"
-        if not cmake_file.exists():
-            with urllib.request.urlopen(cmake_url) as r:
-                with cmake_file.open("wb") as f:
-                    f.write(r.read())
-        with tarfile.open(cmake_file) as tf:
-            tf.extractall(cmake_file.parent)
-            src = cmake_file.parent / tf.getnames()[0]
-            dst = cmake_file.parent / "cmake"
-            if not dst.exists():
-                src.rename(dst)
+    else:
+        print(f"Using downloaded llvm-project at {tmp}")
 
     if sha256:
         import hashlib
@@ -168,11 +151,30 @@ def _prepare_source_openmp(sha256=None):
         if hasher.hexdigest() != sha256:
             raise ValueError(f"SHA256 mismatch for {url}")
 
+    print("Extracting llvm-project...")
     with tarfile.open(tmp) as tf:
-        # We assume the tarball contains a single directory with the source files.
-        sourcedir = tmp.parent / tf.getnames()[0]
-        tf.extractall(tmp.parent)
+        # The root dir llvm-project-20.1.8.src
+        root_name = tf.getnames()[0]
 
+        # Extract only needed subdirectories
+        members = [
+            m
+            for m in tf.getmembers()
+            if m.name.startswith(f"{root_name}/openmp/")
+            or m.name.startswith(f"{root_name}/offload/")
+            or m.name.startswith(f"{root_name}/runtimes/")
+            or m.name.startswith(f"{root_name}/cmake/")
+            or m.name.startswith(f"{root_name}/llvm/cmake/")
+            or m.name.startswith(f"{root_name}/llvm/utils/")
+            or m.name.startswith(f"{root_name}/libc/")
+        ]
+
+        parentdir = tmp.parent
+        tf.extractall(path=parentdir, members=members, filter="data")
+        sourcedir = parentdir / root_name
+        print("Extracted llvm-project to:", sourcedir)
+
+    print("Applying patches to llvm-project...")
     for patch in (
         Path(f"src/numba/openmp/libs/libomp/patches/{LLVM_VERSION}")
         .absolute()
@@ -186,7 +188,7 @@ def _prepare_source_openmp(sha256=None):
             stdin=subprocess.DEVNULL,
         )
 
-    return sourcedir
+    return f"{sourcedir}/runtimes"
 
 
 setup(
@@ -196,9 +198,14 @@ setup(
             "libomp",
             sourcedir=_prepare_source_openmp(),
             cmake_args=[
-                "-DLIBOMP_OMPD_SUPPORT=OFF",
-                "-DLIBOMP_OMPT_SUPPORT=OFF",
-                "-DCMAKE_INSTALL_LIBDIR=lib",
+                "-DOPENMP_STANDALONE_BUILD=ON",
+                "-DLLVM_ENABLE_RUNTIMES=openmp;offload",
+                "-DCMAKE_C_COMPILER=clang",
+                "-DCMAKE_CXX_COMPILER=clang++",
+                "-DCMAKE_INSTALL_RPATH=$ORIGIN",
+                "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF",
+                "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+                "-DCMAKE_SKIP_RPATH=OFF",
             ],
         ),
     ],

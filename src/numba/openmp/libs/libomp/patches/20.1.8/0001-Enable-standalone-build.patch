@@ -1,0 +1,13 @@
+diff --git a/offload/CMakeLists.txt b/offload/CMakeLists.txt
+index f6e894d39..9096d4ed5 100644
+--- a/offload/CMakeLists.txt
++++ b/offload/CMakeLists.txt
+@@ -4,7 +4,7 @@
+ cmake_minimum_required(VERSION 3.20.0)
+ set(LLVM_SUBPROJECT_TITLE "liboffload")
+ 
+-if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
++if (OPENMP_STANDALONE_BUILD OR "${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
+   set(OPENMP_STANDALONE_BUILD TRUE)
+   project(offload C CXX ASM)
+ else()

@@ -1,0 +1,12 @@
+diff --git a/offload/CMakeLists.txt b/offload/CMakeLists.txt
+index 9096d4e..a0aff92 100644
+--- a/offload/CMakeLists.txt
++++ b/offload/CMakeLists.txt
+@@ -380,7 +380,6 @@ add_subdirectory(tools)
+ add_subdirectory(src)
+ 
+ add_subdirectory(tools/offload-tblgen)
+-add_subdirectory(liboffload)
+ 
+ # Add tests.
+ add_subdirectory(test)
