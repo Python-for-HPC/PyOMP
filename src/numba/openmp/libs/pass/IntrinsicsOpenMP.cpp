@@ -348,28 +348,28 @@ struct IntrinsicsOpenMP {
 
           // TODO: check for conflicting DSA, for example reduction variables
           // cannot be set private. Should be done in Numba.
-          if (Tag.startswith("DIR")) {
+          if (Tag.starts_with("DIR")) {
             auto It = StringToDir.find(Tag);
             assert(It != StringToDir.end() && "Directive is not supported!");
             Dir = It->second;
-          } else if (Tag.startswith("QUAL")) {
+          } else if (Tag.starts_with("QUAL")) {
             const ArrayRef<Value *> &TagInputs = O.inputs();
-            if (Tag.startswith("QUAL.OMP.NORMALIZED.IV")) {
+            if (Tag.starts_with("QUAL.OMP.NORMALIZED.IV")) {
               assert(O.input_size() == 1 && "Expected single IV value");
               OMPLoopInfo.IV = TagInputs[0];
-            } else if (Tag.startswith("QUAL.OMP.NORMALIZED.START")) {
+            } else if (Tag.starts_with("QUAL.OMP.NORMALIZED.START")) {
               assert(O.input_size() == 1 && "Expected single START value");
               OMPLoopInfo.Start = TagInputs[0];
-            } else if (Tag.startswith("QUAL.OMP.NORMALIZED.LB")) {
+            } else if (Tag.starts_with("QUAL.OMP.NORMALIZED.LB")) {
               assert(O.input_size() == 1 && "Expected single LB value");
               OMPLoopInfo.LB = TagInputs[0];
-            } else if (Tag.startswith("QUAL.OMP.NORMALIZED.UB")) {
+            } else if (Tag.starts_with("QUAL.OMP.NORMALIZED.UB")) {
               assert(O.input_size() == 1 && "Expected single UB value");
               OMPLoopInfo.UB = TagInputs[0];
-            } else if (Tag.startswith("QUAL.OMP.NUM_THREADS")) {
+            } else if (Tag.starts_with("QUAL.OMP.NUM_THREADS")) {
               assert(O.input_size() == 1 && "Expected single NumThreads value");
               ParRegionInfo.NumThreads = TagInputs[0];
-            } else if (Tag.startswith("QUAL.OMP.SCHEDULE")) {
+            } else if (Tag.starts_with("QUAL.OMP.SCHEDULE")) {
               // TODO: Add DIST_SCHEDULE for distribute loops.
               assert(O.input_size() == 1 &&
                      "Expected single chunking scheduling value");
@@ -385,11 +385,11 @@ struct IntrinsicsOpenMP {
                 }
               } else
                 FATAL_ERROR("Unsupported scheduling type");
-            } else if (Tag.startswith("QUAL.OMP.IF")) {
+            } else if (Tag.starts_with("QUAL.OMP.IF")) {
               assert(O.input_size() == 1 &&
                      "Expected single if condition value");
               ParRegionInfo.IfCondition = TagInputs[0];
-            } else if (Tag.startswith("QUAL.OMP.TARGET.DEV_FUNC")) {
+            } else if (Tag.starts_with("QUAL.OMP.TARGET.DEV_FUNC")) {
               assert(O.input_size() == 1 &&
                      "Expected a single device function name");
               ConstantDataArray *DevFuncArray =
@@ -397,16 +397,16 @@ struct IntrinsicsOpenMP {
               assert(DevFuncArray &&
                      "Expected constant string for the device function");
               TargetInfo.DevFuncName = DevFuncArray->getAsString();
-            } else if (Tag.startswith("QUAL.OMP.TARGET.ELF")) {
+            } else if (Tag.starts_with("QUAL.OMP.TARGET.ELF")) {
               assert(O.input_size() == 1 &&
                      "Expected a single elf image string");
               ConstantDataArray *ELF =
                   dyn_cast<ConstantDataArray>(TagInputs[0]);
               assert(ELF && "Expected constant string for ELF");
               TargetInfo.ELF = ELF;
-            } else if (Tag.startswith("QUAL.OMP.DEVICE")) {
+            } else if (Tag.starts_with("QUAL.OMP.DEVICE")) {
               // TODO: Handle device selection for target regions.
-            } else if (Tag.startswith("QUAL.OMP.NUM_TEAMS")) {
+            } else if (Tag.starts_with("QUAL.OMP.NUM_TEAMS")) {
               assert(O.input_size() == 1 && "Expected single NumTeams value");
               switch (Dir) {
               case OMPD_target:
@@ -429,7 +429,7 @@ struct IntrinsicsOpenMP {
               default:
                 FATAL_ERROR("Unsupported qualifier in directive");
               }
-            } else if (Tag.startswith("QUAL.OMP.THREAD_LIMIT")) {
+            } else if (Tag.starts_with("QUAL.OMP.THREAD_LIMIT")) {
               assert(O.input_size() == 1 &&
                      "Expected single ThreadLimit value");
               switch (Dir) {
@@ -450,7 +450,7 @@ struct IntrinsicsOpenMP {
               default:
                 FATAL_ERROR("Unsupported qualifier in directive");
               }
-            } else if (Tag.startswith("QUAL.OMP.NOWAIT")) {
+            } else if (Tag.starts_with("QUAL.OMP.NOWAIT")) {
               switch (Dir) {
               case OMPD_target:
               case OMPD_target_teams:
@@ -821,6 +821,12 @@ extern "C" int runIntrinsicsOpenMPPass(const char *BitcodePtr,
   ModulePassManager MPM;
   MPM.addPass(IntrinsicsOpenMPPass());
   MPM.run(*M, MAM);
+
+  // Verify the module before writing bitcode
+  if (verifyModule(*M, &errs())) {
+    errs() << "ERROR: Module verification failed after IntrinsicsOpenMPPass\n";
+    return 1;
+  }
 
   SmallVector<char, 0> Buf;
   raw_svector_ostream OS(Buf);
