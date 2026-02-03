@@ -45,6 +45,7 @@ conda install -c python-for-hpc -c conda-forge pyomp
 
 | PyOMP | Numba           |
 | ----- | --------------- |
+| 0.5.x | 0.62.x - 0.63.x |
 | 0.4.x | 0.61.x          |
 | 0.3.x | 0.57.x - 0.60.x |
 
