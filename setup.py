@@ -175,7 +175,16 @@ def _prepare_source_openmp(sha256=None):
         ]
 
         parentdir = tmp.parent
-        tf.extractall(path=parentdir, members=members, filter="data")
+        # Base arguments for extractall.
+        kwargs = {"path": parentdir, "members": members}
+
+        # Check if data filter is available.
+        if hasattr(tarfile, "data_filter"):
+            # If this exists, the 'filter' argument is guaranteed to work
+            kwargs["filter"] = "data"
+
+        tf.extractall(**kwargs)
+
         sourcedir = parentdir / root_name
         print("Extracted llvm-project to:", sourcedir)
 
