@@ -1,6 +1,7 @@
 #include "CGIntrinsicsOpenMP.h"
 #include "DebugOpenMP.h"
 
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -1739,8 +1740,8 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     OffloadMapNames.push_back(OMPBuilder.getOrCreateSrcLocStr(
         BasePtr->getName(), "", 0, 0, SrcLocStrSize));
     DEBUG_ENABLE(dbgs() << "Emit mapping entry BasePtr " << *BasePtr << " Ptr "
-                        << *Ptr << " Size " << *Size << " MapType " << MapType
-                        << "\n");
+                        << *Ptr << " Size " << *Size << " MapType 0x"
+                        << toHex(MapType) << "\n");
     MapperInfos.push_back({BasePtr, Ptr, Size});
   };
 
@@ -1804,14 +1805,6 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
 
     return MapType;
   };
-
-  // TODO: This a dummy entry to workaround the runtime issue that it expects a
-  // kernel launch environment parameter. It will be removed once we move to the
-  // __tgt_target_kernel interface.
-  auto *DummyAlloca = OMPBuilder.Builder.CreateAlloca(
-      OMPBuilder.Int8, ConstantInt::get(OMPBuilder.Int64, 8), "dummy.alloca");
-  EmitMappingEntry(ConstantInt::get(OMPBuilder.SizeTy, 8),
-                   OMP_TGT_MAPTYPE_TARGET_PARAM, DummyAlloca, DummyAlloca);
 
   // Keep track of argument position, needed for struct mappings.
   for (auto &It : DSAValueMap) {
@@ -2259,17 +2252,6 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
   Constant *SrcLocStr = OMPBuilder.getOrCreateSrcLocStr(Loc, SrcLocStrSize);
   Value *Ident = OMPBuilder.getOrCreateIdent(SrcLocStr, SrcLocStrSize);
 
-  // TODO: should we use target_mapper without teams or the more general
-  // target_teams_mapper. Does the former buy us anything (less overhead?)
-  // FunctionCallee TargetMapper =
-  //    OMPBuilder.getOrCreateRuntimeFunction(M, OMPRTL___tgt_target_mapper);
-  // TODO: For nowait we need to enclose the host code in a task for async
-  // execution.
-  FunctionCallee TargetMapper =
-      (TargetInfo.NoWait ? OMPBuilder.getOrCreateRuntimeFunction(
-                               M, OMPRTL___tgt_target_teams_nowait_mapper)
-                         : OMPBuilder.getOrCreateRuntimeFunction(
-                               M, OMPRTL___tgt_target_teams_mapper));
   OMPBuilder.Builder.SetInsertPoint(EntryBB->getTerminator());
 
   // Emit mappings.
@@ -2279,19 +2261,13 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
   emitOMPOffloadingMappings(AllocaIP, DSAValueMap, StructMappingInfoMap,
                             OffloadingMappingArgs, /* isTargetRegion */ true);
 
-  // Push the tripcount.
+  // Set the tripcount, if available.
+  Value *TripCount = nullptr;
   if (OMPLoopInfo) {
-    FunctionCallee TripcountMapper = OMPBuilder.getOrCreateRuntimeFunction(
-        M,
-        llvm::omp::RuntimeFunction::OMPRTL___kmpc_push_target_tripcount_mapper);
     Value *Load =
         OMPBuilder.Builder.CreateLoad(OMPBuilder.Int64, OMPLoopInfo->UB);
-    Value *Tripcount = OMPBuilder.Builder.CreateAdd(
+    TripCount = OMPBuilder.Builder.CreateAdd(
         Load, ConstantInt::get(OMPBuilder.Int64, 1));
-    auto *CI = checkCreateCall(
-        OMPBuilder.Builder, TripcountMapper,
-        {Ident, ConstantInt::get(OMPBuilder.Int64, -1), Tripcount});
-    assert(CI && "Expected valid call");
   }
 
   Value *NumTeams = createScalarCast(TargetInfo.NumTeams, OMPBuilder.Int32);
@@ -2300,24 +2276,6 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
 
   assert(NumTeams && "Expected non-null NumTeams");
   assert(ThreadLimit && "Expected non-null ThreadLimit");
-
-  SmallVector<Value *, 16> Args = {
-      Ident, ConstantInt::get(OMPBuilder.Int64, -1),
-      ConstantExpr::getBitCast(OMPRegionId, OMPBuilder.VoidPtr),
-      ConstantInt::get(OMPBuilder.Int32, OffloadingMappingArgs.Size),
-      OffloadingMappingArgs.BasePtrs, OffloadingMappingArgs.Ptrs,
-      OffloadingMappingArgs.Sizes, OffloadingMappingArgs.MapTypes,
-      OffloadingMappingArgs.MapNames,
-      // TODO: offload_mappers is null for now.
-      Constant::getNullValue(OMPBuilder.VoidPtrPtr), NumTeams, ThreadLimit};
-
-  if (TargetInfo.NoWait) {
-    // Add extra dependency information (unused for now).
-    Args.push_back(Constant::getNullValue(OMPBuilder.Int32));
-    Args.push_back(Constant::getNullValue(OMPBuilder.Int8Ptr));
-    Args.push_back(Constant::getNullValue(OMPBuilder.Int32));
-    Args.push_back(Constant::getNullValue(OMPBuilder.Int8Ptr));
-  }
 
   if (!isOpenMPDeviceRuntime()) {
     FunctionCallee KmpcSetThreadLimit = OMPBuilder.getOrCreateRuntimeFunction(
@@ -2328,7 +2286,43 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
                     {Ident, ThreadID, ThreadLimit});
   }
 
-  auto *OffloadResult = checkCreateCall(OMPBuilder.Builder, TargetMapper, Args);
+  SmallVector<Value *> ArgsVector;
+
+  auto UnqualPtrTy = PointerType::getUnqual(M.getContext());
+  OpenMPIRBuilder::TargetDataRTArgs RTArgs{
+      OffloadingMappingArgs.BasePtrs,
+      OffloadingMappingArgs.Ptrs,
+      OffloadingMappingArgs.Sizes,
+      OffloadingMappingArgs.MapTypes,
+      ConstantPointerNull::get(UnqualPtrTy),
+      ConstantPointerNull::get(UnqualPtrTy),
+      OffloadingMappingArgs.MapNames,
+  };
+  // Avoid initializer-list temporaries for ArrayRef fields. Use stable
+  // SmallVector storage so ArrayRef in TargetKernelArgs refers to valid
+  // memory.
+  SmallVector<Value *, 1> KernelNumTeams;
+  KernelNumTeams.push_back(NumTeams);
+  SmallVector<Value *, 1> KernelNumThreads;
+  KernelNumThreads.push_back(ThreadLimit);
+
+  // TODO: Implement nowait: we need to enclose the host code in a task for
+  // async execution. OpenMPIRBuilder may support that now.
+  OpenMPIRBuilder::TargetKernelArgs Args{
+      static_cast<unsigned int>(OffloadingMappingArgs.Size),
+      RTArgs,
+      (TripCount ? TripCount : OMPBuilder.Builder.getInt64(0)),
+      KernelNumTeams,
+      KernelNumThreads,
+      Constant::getNullValue(OMPBuilder.VoidPtr),
+      /*TargetInfo.NoWait*/ false};
+  OpenMPIRBuilder::getKernelArgsVector(Args, OMPBuilder.Builder, ArgsVector);
+
+  Value *DeviceID = ConstantInt::get(OMPBuilder.Int64, -1);
+  Value *OffloadResult = nullptr;
+  OMPBuilder.emitTargetKernel(Loc, AllocaIP, OffloadResult, Ident, DeviceID,
+                              NumTeams, ThreadLimit, OMPRegionId, ArgsVector);
+
   assert(OffloadResult && "Expected non-null call inst from code generation");
   auto *Failed = OMPBuilder.Builder.CreateIsNotNull(OffloadResult);
   OMPBuilder.Builder.CreateCondBr(Failed, StartBB, EndBB);
