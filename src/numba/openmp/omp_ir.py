@@ -113,7 +113,11 @@ class OpenMPCUDACodegen:
         import numba.cuda.api as cudaapi
         import numba.cuda.cudadrv.libs as cudalibs
         from numba.cuda.codegen import CUDA_TRIPLE
+        from numba.cuda.cudadrv import driver, enums
 
+        # The OpenMP target runtime prefers the blocking sync flag, so we set it
+        # here before creating the CUDA context.
+        driver.driver.cuDevicePrimaryCtxSetFlags(0, enums.CU_CTX_SCHED_BLOCKING_SYNC)
         self.cc = cudaapi.get_current_device().compute_capability
         self.sm = "sm_" + str(self.cc[0]) + str(self.cc[1])
 
