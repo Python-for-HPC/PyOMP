@@ -127,7 +127,7 @@ class OpenMPCUDACodegen:
             self.libdevice_mod = ll.parse_bitcode(f.read())
 
         # Read the OpenMP device RTL for the architecture to link with the module.
-        self.libomptarget_arch = libpath / "libomp" / "lib" / "libomptarget-nvptx.bc"
+        self.libomptarget_arch = libpath / "openmp" / "lib" / "libomptarget-nvptx.bc"
         try:
             with open(self.libomptarget_arch, "rb") as f:
                 self.libomptarget_mod = ll.parse_bitcode(f.read())

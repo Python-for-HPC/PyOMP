@@ -19,7 +19,7 @@ build:
     - export CXX=${PREFIX}/bin/clang++
     - export VERBOSE=1
     - export CPPFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -isystem ${PREFIX}/include -D_FORTIFY_SOURCE=2" # [osx]
-    - export DISABLE_BUNDLED_LIBOMP=1
+    - export ENABLE_BUNDLED_LIBOMPTARGET=1 # [linux]
     - rm -rf build dist src/*.egg-info
     - {{ PYTHON }} -m pip install -v .
 
@@ -50,7 +50,7 @@ requirements:
     - llvmdev {{ LLVM_VERSION }}
     - zlib
     # require llvm-openmp for the openmp cpu runtime.
-    - llvm-openmp
+    - llvm-openmp {{ LLVM_VERSION }}
     - elfutils # [linux]
     - libffi # [linux]
   run:
@@ -58,7 +58,7 @@ requirements:
     - setuptools
     - numba >=0.62, <0.64
     # require llvm-openmp for the openmp cpu runtime.
-    - llvm-openmp
+    - llvm-openmp {{ LLVM_VERSION }}
     - lark
     - cffi
 
@@ -66,9 +66,9 @@ test:
   commands:
     - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.dylib                 # [osx]
     - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.so                    # [linux]
-    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-amdgpu.bc              # [linux]
-    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-nvptx.bc               # [linux]
-    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.so                     # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-amdgpu.bc        # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-nvptx.bc         # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget.so               # [linux]
 
 about:
   home: https://github.com/Python-for-HPC/PyOMP

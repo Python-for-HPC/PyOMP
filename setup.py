@@ -37,14 +37,24 @@ class CustomBdistWheel(bdist_wheel):
 
 
 class CMakeExtension(Extension):
-    def __init__(self, name, *, sourcedir=None, url=None, sha256=None, cmake_args=[]):
+    def __init__(
+        self,
+        name,
+        *,
+        source_dir=None,
+        install_dir=None,
+        url=None,
+        sha256=None,
+        cmake_args=[],
+    ):
         # Don't invoke the original build_ext for this special extension.
         super().__init__(name, sources=[])
-        if sourcedir and url:
+        if source_dir and url:
             raise ValueError(
-                "CMakeExtension should have either a sourcedir or a url, not both."
+                "CMakeExtension should have either a source_dir or a url, not both."
             )
-        self.sourcedir = sourcedir
+        self.source_dir = source_dir
+        self.install_dir = install_dir
         self.url = url
         self.sha256 = sha256
         self.cmake_args = cmake_args
@@ -77,13 +87,17 @@ class BuildCMakeExt(build_ext):
         elif sys.platform == "darwin":
             extra_cmake_args.append(r"-DCMAKE_INSTALL_RPATH=@loader_path")
 
-        install_dir = Path(lib_dir) / ext.name
+        if ext.install_dir is None:
+            install_dir = Path(lib_dir) / ext.name
+        else:
+            install_dir = Path(lib_dir) / ext.install_dir
         install_dir.mkdir(parents=True, exist_ok=True)
+
         cfg = (
             [
                 "cmake",
                 "-S",
-                ext.sourcedir,
+                ext.source_dir,
                 "-B",
                 build_dir,
                 "-G",
@@ -107,7 +121,7 @@ class BuildCMakeExt(build_ext):
         )
 
         # Remove unnecessary files after installing libomp.
-        if ext.name == "libomp":
+        if ext.name.startswith("libomp"):
             # Remove include directory after install.
             include_dir = install_dir / "include"
             if include_dir.exists():
@@ -185,46 +199,53 @@ def _prepare_source_openmp(sha256=None):
 
         tf.extractall(**kwargs)
 
-        sourcedir = parentdir / root_name
-        print("Extracted llvm-project to:", sourcedir)
+        source_dir = parentdir / root_name
+        print("Extracted llvm-project to:", source_dir)
 
     print("Applying patches to llvm-project...")
-    for patch in (
-        Path(f"src/numba/openmp/libs/libomp/patches/{LLVM_VERSION}")
+    for patch in sorted(
+        Path(f"src/numba/openmp/libs/openmp/patches/{LLVM_VERSION}")
         .absolute()
         .glob("*.patch")
     ):
         print("applying patch", patch)
         subprocess.run(
             ["patch", "-p1", "-i", str(patch)],
-            cwd=sourcedir,
+            cwd=source_dir,
             check=True,
             stdin=subprocess.DEVNULL,
         )
 
-    return f"{sourcedir}/runtimes"
+    return f"{source_dir}/runtimes"
 
 
-# Optionally disable bundled libomp build via DISABLE_BUNDLED_LIBOMP=1.  Used on
-# conda builds to avoid duplicate OpenMP runtime conflicts (e.g., numba 0.62+
-# and libopenblas already require llvm-openmp).
-def _should_bundle_libomp():
-    """Check if we should build and bundle the libomp runtime."""
-    disable = os.environ.get("DISABLE_BUNDLED_LIBOMP", "0")
-    return disable.lower() not in ("1", "true", "yes")
+def _check_true(env_var):
+    val = os.environ.get(env_var, "0")
+    return val.lower() in ("1", "true", "yes", "on")
 
 
 # Build extensions: always include 'pass', conditionally include 'openmp'
-ext_modules = [CMakeExtension("pass", sourcedir="src/numba/openmp/libs/pass")]
+# libraries.
+ext_modules = [CMakeExtension("pass", source_dir="src/numba/openmp/libs/pass")]
 
-if _should_bundle_libomp():
+
+# Prepare source directory if either bundled libomp or libomptarget is enabled.
+if _check_true("ENABLE_BUNDLED_LIBOMP") or _check_true("ENABLE_BUNDLED_LIBOMPTARGET"):
+    openmp_source_dir = _prepare_source_openmp()
+
+# Optionally enable bundled libomp build via ENABLE_BUNDLED_LIBOMP=1.  We want
+# to avoid bundling for conda builds to avoid duplicate OpenMP runtime conflicts
+# (e.g., numba 0.62+ and libopenblas already require llvm-openmp).
+if _check_true("ENABLE_BUNDLED_LIBOMP"):
     ext_modules.append(
         CMakeExtension(
             "libomp",
-            sourcedir=_prepare_source_openmp(),
+            source_dir=openmp_source_dir,
+            install_dir="openmp",
             cmake_args=[
                 "-DOPENMP_STANDALONE_BUILD=ON",
-                "-DLLVM_ENABLE_RUNTIMES=openmp;offload",
+                "-DLLVM_ENABLE_RUNTIMES=openmp",
+                "-DLIBOMP_OMPD_SUPPORT=OFF",
                 "-DOPENMP_ENABLE_OMPT_TOOLS=OFF",
                 # Avoid conflicts in manylinux builds with packaged clang/llvm
                 # under /usr/include and its gcc-toolset provided header files.
@@ -232,6 +253,25 @@ if _should_bundle_libomp():
             ],
         )
     )
+
+# Optionally enable bundled libomptarget build via ENABLE_BUNDLED_LIBOMPTARGET=1.
+# We avoid building and bundling for unsupported platforms.
+if _check_true("ENABLE_BUNDLED_LIBOMPTARGET"):
+    ext_modules.append(
+        CMakeExtension(
+            "libomptarget",
+            source_dir=openmp_source_dir,
+            install_dir="openmp",
+            cmake_args=[
+                "-DOPENMP_STANDALONE_BUILD=ON",
+                "-DLLVM_ENABLE_RUNTIMES=offload",
+                # Avoid conflicts in manylinux builds with packaged clang/llvm
+                # under /usr/include and its gcc-toolset provided header files.
+                "-DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON",
+            ],
+        )
+    )
+
 
 setup(
     ext_modules=ext_modules,

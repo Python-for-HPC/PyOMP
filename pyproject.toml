@@ -37,7 +37,7 @@ include = ["numba.openmp*"]
 
 # Bundle the CMake-installed artifacts into the wheel.
 [tool.setuptools.package-data]
-"numba.openmp.libs" = ["pass/*", "libomp/**/*"]
+"numba.openmp.libs" = ["pass/*", "openmp/**/*"]
 
 # setuptools-scm config
 [tool.setuptools_scm]
@@ -68,6 +68,8 @@ before-all = [
 ]
 
 [tool.cibuildwheel.linux.environment]
+ENABLE_BUNDLED_LIBOMP = "1"
+ENABLE_BUNDLED_LIBOMPTARGET = "1"
 LLVM_DIR = "/usr/lib64/cmake/llvm"
 CC = "/usr/bin/clang"
 CXX = "/usr/bin/clang++"
@@ -76,6 +78,7 @@ CXX = "/usr/bin/clang++"
 before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 
 [tool.cibuildwheel.macos.environment]
+ENABLE_BUNDLED_LIBOMP = "1"
 LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
 CC = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
 CXX = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang++"

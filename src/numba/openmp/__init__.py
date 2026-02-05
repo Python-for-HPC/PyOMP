@@ -64,7 +64,7 @@ def _init():
 
     omplib = (
         libpath
-        / "libomp"
+        / "openmp"
         / "lib"
         / f"libomp{'.dylib' if sys_platform == 'darwin' else '.so'}"
     )
@@ -92,13 +92,13 @@ def _init():
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
-    omptargetlib = libpath / "libomp" / "lib" / "libomptarget.so"
+    omptargetlib = libpath / "openmp" / "lib" / "libomptarget.so"
     if omptargetlib.exists():
         if DEBUG_OPENMP >= 1:
             print("Found OpenMP target runtime library at", omptargetlib)
         ll.load_library_permanently(str(omptargetlib))
-    elif DEBUG_OPENMP >= 1:
-        print(f"OpenMP target runtime not found at {omptargetlib}")
+    else:
+        raise RuntimeError(f"OpenMP target runtime not found at {omptargetlib}")
 
 
 _init()
