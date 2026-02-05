@@ -19,6 +19,7 @@ build:
     - export CXX=${PREFIX}/bin/clang++
     - export VERBOSE=1
     - export CPPFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -isystem ${PREFIX}/include -D_FORTIFY_SOURCE=2" # [osx]
+    - export DISABLE_BUNDLED_LIBOMP=1
     - rm -rf build dist src/*.egg-info
     - {{ PYTHON }} -m pip install -v .
 
@@ -48,19 +49,23 @@ requirements:
     - clang-tools {{ LLVM_VERSION }}
     - llvmdev {{ LLVM_VERSION }}
     - zlib
+    # require llvm-openmp for the openmp cpu runtime.
+    - llvm-openmp
     - elfutils # [linux]
     - libffi # [linux]
   run:
     - python
     - setuptools
     - numba >=0.62, <0.64
+    # require llvm-openmp for the openmp cpu runtime.
+    - llvm-openmp
     - lark
     - cffi
 
 test:
   commands:
-    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomp.dylib                        # [osx]
-    - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomp.so                           # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.dylib                 # [osx]
+    - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.so                    # [linux]
     - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-amdgpu.bc              # [linux]
     - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget-nvptx.bc               # [linux]
     - test -f $SP_DIR/numba/openmp/libs/libomp/lib/libomptarget.so                     # [linux]

@@ -205,9 +205,20 @@ def _prepare_source_openmp(sha256=None):
     return f"{sourcedir}/runtimes"
 
 
-setup(
-    ext_modules=[
-        CMakeExtension("pass", sourcedir="src/numba/openmp/libs/pass"),
+# Optionally disable bundled libomp build via DISABLE_BUNDLED_LIBOMP=1.  Used on
+# conda builds to avoid duplicate OpenMP runtime conflicts (e.g., numba 0.62+
+# and libopenblas already require llvm-openmp).
+def _should_bundle_libomp():
+    """Check if we should build and bundle the libomp runtime."""
+    disable = os.environ.get("DISABLE_BUNDLED_LIBOMP", "0")
+    return disable.lower() not in ("1", "true", "yes")
+
+
+# Build extensions: always include 'pass', conditionally include 'openmp'
+ext_modules = [CMakeExtension("pass", sourcedir="src/numba/openmp/libs/pass")]
+
+if _should_bundle_libomp():
+    ext_modules.append(
         CMakeExtension(
             "libomp",
             sourcedir=_prepare_source_openmp(),
@@ -219,8 +230,11 @@ setup(
                 # under /usr/include and its gcc-toolset provided header files.
                 "-DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON",
             ],
-        ),
-    ],
+        )
+    )
+
+setup(
+    ext_modules=ext_modules,
     cmdclass={
         "clean": CleanCommand,
         "build_ext": BuildCMakeExt,

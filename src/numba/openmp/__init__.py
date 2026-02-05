@@ -60,6 +60,7 @@ from .decorators import jit, njit  # noqa: F401
 
 def _init():
     sys_platform = sys.platform
+    from ctypes.util import find_library
 
     omplib = (
         libpath
@@ -67,18 +68,37 @@ def _init():
         / "lib"
         / f"libomp{'.dylib' if sys_platform == 'darwin' else '.so'}"
     )
-    if DEBUG_OPENMP >= 1:
-        print("Found OpenMP runtime library at", omplib)
-    ll.load_library_permanently(str(omplib))
+
+    # Prefer bundled libomp if it exists.
+    if omplib.exists():
+        if DEBUG_OPENMP >= 1:
+            print("Found bundled OpenMP runtime library at", omplib)
+        ll.load_library_permanently(str(omplib))
+    else:
+        # There is no bundled libomp, try to find it in standard library paths.
+        system_omplib = find_library("omp")
+        if system_omplib:
+            if DEBUG_OPENMP >= 1:
+                print(f"Found system OpenMP runtime library: {system_omplib}")
+            ll.load_library_permanently(system_omplib)
+        else:
+            raise RuntimeError(
+                f"OpenMP runtime not found. Bundled library missing at {omplib} "
+                "and no system libomp found via ctypes.util.find_library('omp'). "
+                "Ensure libomp is available in library paths."
+            )
 
     # libomptarget is unavailable on apple, windows, so return.
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
     omptargetlib = libpath / "libomp" / "lib" / "libomptarget.so"
-    if DEBUG_OPENMP >= 1:
-        print("Found OpenMP target runtime library at", omptargetlib)
-    ll.load_library_permanently(str(omptargetlib))
+    if omptargetlib.exists():
+        if DEBUG_OPENMP >= 1:
+            print("Found OpenMP target runtime library at", omptargetlib)
+        ll.load_library_permanently(str(omptargetlib))
+    elif DEBUG_OPENMP >= 1:
+        print(f"OpenMP target runtime not found at {omptargetlib}")
 
 
 _init()
