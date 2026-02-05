@@ -3541,8 +3541,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         np.testing.assert_equal(threads2, 256)
 
     def target_nest_parallel(self, device):
-        target_pragma = f"target device({device}) map(from: a) thread_limit(32)"
-        parallel_pragma = "parallel"
+        target_pragma = f"target device({device}) map(from: a)"
+        parallel_pragma = "parallel num_threads(32)"
 
         @njit
         def test_impl():
