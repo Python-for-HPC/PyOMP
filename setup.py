@@ -68,6 +68,11 @@ class BuildCMakeExt(build_ext):
             else:
                 super().run()
 
+    def finalize_options(self):
+        super().finalize_options()
+        # Create placeholder directories for package-data validation.
+        Path("src/numba/openmp/libs/openmp/lib").mkdir(parents=True, exist_ok=True)
+
     def _build_cmake(self, ext: CMakeExtension):
         print("Build CMake extension:", ext.name)
         # Delete build directory if it exists to avoid errors with stale
