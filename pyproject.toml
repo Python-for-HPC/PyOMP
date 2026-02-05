@@ -79,3 +79,8 @@ before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
 CC = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
 CXX = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang++"
+# Set the deplioyment target to macOS 11.0.
+MACOSX_DEPLOYMENT_TARGET = "11.0"
+# Set the cmake prefix path to find libraries in the conda environment which is
+# compatible with the macos target.
+CMAKE_PREFIX_PATH = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/"
