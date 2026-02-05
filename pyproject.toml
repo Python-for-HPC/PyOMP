@@ -7,7 +7,7 @@ name = "pyomp"
 dynamic = ["version"]
 description = "Python OpenMP library based on Numba"
 readme = "README.md"
-requires-python = ">=3.10, <3.14"
+requires-python = ">=3.10, <3.15"
 license = "BSD-2-Clause"
 license-files = ["LICENSE", "LICENSE-OPENMP.txt"]
 classifiers = [
