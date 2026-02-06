@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75.3", "wheel", "setuptools-scm>=8", "cmake>=3.20"]
+requires = ["setuptools>=75.3", "setuptools-scm>=8", "cmake>=3.20", "ninja"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "pyomp"
 dynamic = ["version"]
 description = "Python OpenMP library based on Numba"
 readme = "README.md"
-requires-python = ">=3.10, <3.14"
+requires-python = ">=3.10, <3.15"
 license = "BSD-2-Clause"
 license-files = ["LICENSE", "LICENSE-OPENMP.txt"]
 classifiers = [
@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Compilers",
 ]
-dependencies = ["numba>=0.61, <0.62", "lark", "cffi", "setuptools"]
+dependencies = ["numba>=0.62, <0.64", "lark", "cffi", "setuptools"]
 maintainers = [
     { name = "Giorgis Georgakoudis", email = "georgakoudis1@llnl.gov" },
 ]
@@ -37,7 +37,7 @@ include = ["numba.openmp*"]
 
 # Bundle the CMake-installed artifacts into the wheel.
 [tool.setuptools.package-data]
-"numba.openmp.libs" = ["pass/*", "libomp/**/*"]
+"numba.openmp.libs" = ["pass/*", "openmp/**/*"]
 
 # setuptools-scm config
 [tool.setuptools_scm]
@@ -49,7 +49,6 @@ archs = ["native"]
 # Pass LLVM_VERSION from the host environment to cibuildwheel.
 environment-pass = ["LLVM_VERSION"]
 # We use miniconda3 to get the clang/llvm toolchain on Linux.
-before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
 before-build = ["rm -rf build dist src/*.egg-info"]
 skip = ["*-musllinux_*", "cp38-*"]
 test-command = [
@@ -59,14 +58,32 @@ test-command = [
     "OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget",
 ]
 
-[tool.cibuildwheel.linux]
-before-all = [
-    "yum install -y elfutils-libelf-devel libffi-devel",
-    "bash buildscripts/cibuildwheel/setup-miniconda3.sh",
-]
-
 [tool.cibuildwheel.environment]
-LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}"
-PATH = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin:${PATH}"
 USE_CXX11_ABI = "1"
 PIP_NO_INPUT = "1"
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum install -y elfutils-libelf-devel libffi-devel clang-devel-20.1.8 llvm-devel-20.1.8",
+]
+
+[tool.cibuildwheel.linux.environment]
+ENABLE_BUNDLED_LIBOMP = "1"
+ENABLE_BUNDLED_LIBOMPTARGET = "1"
+LLVM_DIR = "/usr/lib64/cmake/llvm"
+CC = "/usr/bin/clang"
+CXX = "/usr/bin/clang++"
+
+[tool.cibuildwheel.macos]
+before-all = ["bash buildscripts/cibuildwheel/setup-miniconda3.sh"]
+
+[tool.cibuildwheel.macos.environment]
+ENABLE_BUNDLED_LIBOMP = "1"
+LLVM_DIR = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
+CC = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
+CXX = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/bin/clang++"
+# Set the deplioyment target to macOS 11.0.
+MACOSX_DEPLOYMENT_TARGET = "11.0"
+# Set the cmake prefix path to find libraries in the conda environment which is
+# compatible with the macos target.
+CMAKE_PREFIX_PATH = "${PWD}/_stage/miniconda3/envs/llvmdev-${LLVM_VERSION}/"

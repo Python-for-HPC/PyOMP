@@ -56,6 +56,7 @@ variables:
         - "3.11"
         - "3.12"
         - "3.13"
+        - "3.14"
 
 build-and-test-tioga:
   extends: [.base-job, .python-variants]

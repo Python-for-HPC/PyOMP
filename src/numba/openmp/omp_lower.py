@@ -1937,7 +1937,8 @@ class OpenmpVisitor(Transformer):
         else:
             # Neither TEAMS or PARALLEL in directive, set teams, threads to 1.
             start_tags.append(openmp_tag("QUAL.OMP.NUM_TEAMS", 1))
-            start_tags.append(openmp_tag("QUAL.OMP.THREAD_LIMIT", 1))
+            # Set thread limit to 0 to use runtime default.
+            start_tags.append(openmp_tag("QUAL.OMP.THREAD_LIMIT", 0))
 
         if DEBUG_OPENMP >= 1:
             for clause in clauses:

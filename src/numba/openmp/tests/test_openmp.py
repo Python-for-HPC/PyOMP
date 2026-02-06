@@ -3541,14 +3541,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         np.testing.assert_equal(threads2, 256)
 
     def target_nest_parallel(self, device):
-        # TODO: map should be "from" instead of "tofrom" once this is fixed.
         target_pragma = f"target device({device}) map(from: a)"
-        # NOTE: num_threads should be a multiple of warp size, e.g. for NVIDIA
-        # V100 it is 32, the OpenMP runtime floors non-multiple of warp size.
-        # TODO: Newer LLVM versions should not have this restriction.
-        parallel_pragma = (
-            "parallel num_threads(32)"  # + (" shared(a)" if explicit else "")
-        )
+        parallel_pragma = "parallel num_threads(32)"
 
         @njit
         def test_impl():
