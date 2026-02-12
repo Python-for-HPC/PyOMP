@@ -84,7 +84,7 @@ omp_get_ancestor_thread_num = _OpenmpExternalFunction(
 omp_get_team_size = _OpenmpExternalFunction(
     "omp_get_team_size", types.int32(types.int32)
 )
-omp_in_final = _OpenmpExternalFunction("omp_in_finale", types.int32())
+omp_in_final = _OpenmpExternalFunction("omp_in_final", types.int32())
 omp_get_proc_bind = _OpenmpExternalFunction("omp_get_proc_bind", types.int32())
 omp_get_num_places = _OpenmpExternalFunction("omp_get_num_places", types.int32())
 omp_get_place_num_procs = _OpenmpExternalFunction(
