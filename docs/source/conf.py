@@ -1,21 +1,33 @@
 # Configuration file for the Sphinx documentation builder.
 
+import os
 import subprocess
+import datetime
 
 # -- Project information
 
 project = "PyOMP"
-copyright = "2024, PyOMP developers"
+start_year = 2024
+this_year = datetime.datetime.today().year
+copyright_years = (
+    str(start_year) if start_year == this_year else f"{start_year}-{this_year}"
+)
+copyright = f"{copyright_years}, PyOMP developers"
 author = "Giorgis Georgakoudis"
 
 try:
-    release = (
-        subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"])
-        .strip()
-        .decode()
-    )
+    # Prefer RTD provided version when available.
+    release = os.environ.get("READTHEDOCS_VERSION")
+    if not release:
+        # Ensure tags are available in shallow or sparse CI clones
+        subprocess.run(["git", "fetch", "--tags"], check=False)
+        release = (
+            subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"])
+            .strip()
+            .decode()
+        )
 except subprocess.CalledProcessError:
-    release = "latest"
+    release = os.environ.get("READTHEDOCS_VERSION", "latest")
 version = release
 
 # -- General configuration
