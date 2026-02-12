@@ -1,16 +1,62 @@
 Usage
 =====
 
-OpenMP for Python builds on `Numba <https://numba.pydata.org/>`_ Just-In-Time
-(JIT) compilation extensions to implement portable parallel execution using
-LLVM's OpenMP implementation.
-OpenMP regions are specified using a ``with`` statement for the ``openmp``
-context, passing the OpenMP syntax specification as a string.
-The OpenMP specification syntax in PyOMP is identical to the C/C++ syntax and
-section :doc:`openmp` provides information on what are the currently supported
-OpenMP directives.
+Syntax
+------
 
-Diving right in, this is a minimal, parallel `hello world` example:
+Overview
+~~~~~~~~
+PyOMP is an extension to `Numba <https://numba.pydata.org/>`_ that brings
+OpenMP parallel programming capabilities to Python. All PyOMP functionality
+is implemented in the ``numba.openmp`` module.
+
+To use PyOMP, you **must** import from the ``numba.openmp`` module. Key imports
+include:
+
+* ``njit`` - The JIT decorator for compiling functions with OpenMP support
+* ``openmp_context`` (typically aliased as ``openmp``) - The context manager for specifying OpenMP directives
+* OpenMP runtime functions - Functions for querying and controlling parallel execution (e.g., ``omp_get_thread_num()``, ``omp_get_num_threads()``)
+
+OpenMP directives
+~~~~~~~~~~~~~~~~~
+OpenMP parallel regions are specified using a ``with`` statement for the
+``openmp`` context, passing the OpenMP syntax specification as a string.
+The ``with`` statement for OpenMP regions **must** always be placed
+within a function decorated with the ``@njit`` decorator from ``numba.openmp``.
+The OpenMP directive syntax in PyOMP is identical to the C/C++ OpenMP syntax.
+For a complete list of supported OpenMP directives with detailed information,
+see section :doc:`openmp`.
+
+.. important::
+   OpenMP regions **must** be placed within functions decorated with the
+   ``@njit`` decorator from ``numba.openmp``. Failure to do so will result in
+   undefined behavior, including potential runtime errors or incorrect
+   execution. Always ensure that any function containing OpenMP directives is
+   properly decorated to avoid such issues.
+
+
+OpenMP runtime functions
+~~~~~~~~~~~~~~~~~~~~~~~~
+Beyond directives, PyOMP exposes OpenMP runtime functions that allow you to
+query and control parallel execution behavior. These functions are imported
+directly from ``numba.openmp``. Commonly used runtime functions include:
+
+* ``omp_get_thread_num()`` - Returns the unique identifier of the calling thread
+* ``omp_get_num_threads()`` - Returns the total number of threads in the current parallel region
+* ``omp_set_num_threads(n)`` - Sets the number of threads for subsequent parallel regions
+* ``omp_get_wtime()`` - Returns elapsed wall-clock time (useful for performance profiling)
+* ``omp_get_max_threads()`` - Returns the maximum number of threads available
+
+For a comprehensive list of all available runtime functions, refer to the
+:doc:`openmp` documentation.
+
+Examples
+--------
+
+CPU parallelism example
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Here is a minimal parallel "hello world" example for CPU execution:
 
 .. code-block:: python
    :linenos:
@@ -26,23 +72,17 @@ Diving right in, this is a minimal, parallel `hello world` example:
 
    hello()
 
-The important things to notice here are:
+Key aspects of this example:
 
-* the required numba imports in lines 1--3
+* **Imports** (lines 1--3): Import the ``njit`` decorator, ``openmp_context`` context manager, and runtime function ``omp_get_thread_num()`` from ``numba.openmp``.
 
-* the ``@njit`` decorator to the ``hello()`` function in line 5 to JIT compile the function in `nopython` mode, which generates native binary code using LLVM bypassing the Python interpreter
+* **@njit decorator** (line 5): Required to compile the function with OpenMP support using Numba's JIT compiler in nopython mode.
 
-* the specification of a parallel region in lines 7--8 that executes the code inside the ``with`` block multithreaded, in parallel, using OpenMP.
+* **Parallel region** (lines 7--8): The ``with openmp("parallel")`` statement creates a parallel region that executes the enclosed code block across multiple threads.
 
-OpenMP runtime functions, such as ``omp_get_thread_num()`` returning the unique
-thread numerical identifier, are also available in PyOMP, explicitly imported
-from the ``numba.openmp`` implementation (see line 3).
+* **Runtime function** (line 8): ``omp_get_thread_num()`` returns the unique thread identifier, demonstrating how to use OpenMP runtime functions within a parallel region.
 
-Executing this example, the expected output on an 8-core CPU machine is:
-
-.. note::
-
-   The print order may differ
+On an 8-core machine, the output will display one line per thread. Note that thread execution order is non-deterministic:
 
 .. code-block:: bash
 
@@ -55,23 +95,19 @@ Executing this example, the expected output on an 8-core CPU machine is:
    Hello from thread 1
    Hello from thread 6
 
-PyOMP supports GPU programming through the ``target`` directive in OpenMP
-offloading.
-The current implementations supports only NVIDIA GPUs with AMD and Intel support
-under way.
+GPU offloading example
+~~~~~~~~~~~~~~~~~~~~~~
 
-This is a very basic example of an OpenMP offloading program for GPU
-execution, using the common idiom of ``target teams distribute parallel for``.
-It parallelizes a vector addition loop by distributing its iterations (1M
-elements) over all available parallelism -- teams of threads mapping to
-thread-blocks on the GPU device:
+PyOMP supports GPU programming through OpenMP's ``target`` directive for device offloading.
+Currently, NVIDIA GPUs are supported (AMD and Intel support are in development).
+
+This example parallelizes a vector addition operation using the GPU:
 
 .. code-block:: python
    :linenos:
 
    from numba.openmp import njit
    from numba.openmp import openmp_context as openmp
-   from numba.openmp import omp_get_thread_num
    import numpy as np
 
    @njit
@@ -89,6 +125,12 @@ thread-blocks on the GPU device:
    c = vecadd(a, b, n)
    print("c = ", c)
 
-The expected output is as follows::
+The ``target teams distribute parallel for`` directive offloads the loop to the GPU.
+The directive automatically distributes loop iterations across GPU teams (thread-blocks)
+and threads to maximize available parallelism.
+
+Expected output:
+
+.. code-block:: bash
 
    c = [3. 3. 3. ... 3. 3. 3.]

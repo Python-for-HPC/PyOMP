@@ -38,6 +38,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",
+    "sphinx_copybutton",
 ]
 
 intersphinx_mapping = {
@@ -45,6 +46,11 @@ intersphinx_mapping = {
     "sphinx": ("https://www.sphinx-doc.org/en/master/", None),
 }
 intersphinx_disabled_domains = ["std"]
+
+# -- Options for sphinx_copybutton
+
+sphinx_copybutton_prompt_text = r">>> |\.\.\. "
+sphinx_copybutton_prompt_is_regexp = True
 
 templates_path = ["_templates"]
 

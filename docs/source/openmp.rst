@@ -1,7 +1,10 @@
 OpenMP support
 ==============
 
-The following tables show supported OpenMP directives and the support status of
+OpenMP directives and clauses
+-----------------------------
+
+The following section shows supported OpenMP directives and the support status of
 their clauses.
 
 .. note::
@@ -10,103 +13,179 @@ their clauses.
    🔶 = partial support
 
 
-.. csv-table::
-   
-   ,
-   **barrier**,
+barrier
+~~~~~~~
 
-.. csv-table::
+No clauses.
 
-   ,
-   **critical**,
+critical
+~~~~~~~~
 
-.. csv-table::
+No clauses.
 
-   ,allocate,collapse,firstprivate,lastprivate,linear,nowait,order,ordered,private,reduction,schedule
-   **for**,❌,✅,✅,✅,❌,❌,❌,❌,✅,🔶,❌
+for
+~~~
 
-.. csv-table::
-   
-   ,allocate,copyin,default,firstprivate,if,num_threads,private,proc_bind,reduction,shared
-   **parallel**,❌,❌,✅,✅,✅,✅,✅,❌,🔶,✅
+* ✅ collapse, firstprivate, lastprivate, private
+* 🔶 reduction
+* ❌ allocate, linear, nowait, order, ordered, schedule
 
-.. csv-table::
-   
-   ,*See clauses for* **parallel** *and* **for** directives
-   **parallel for**,
+parallel
+~~~~~~~~
 
-.. csv-table::
+* ✅ default, firstprivate, if, num_threads, private, shared
+* 🔶 reduction
+* ❌ allocate, copyin, proc_bind
 
-   ,allocate,copyprivate,firstprivate,nowait,private
-   **single**,❌,❌,❌,❌,❌
+parallel for
+~~~~~~~~~~~~
 
-.. csv-table::
+Combines ``parallel`` and ``for`` directives. See clauses for `for`_ and `parallel`_ above.
 
-   ,affinity,allocate,default,detach,if,in_reduction,final,firstprivate,mergeable,priority,private,shared,untied
-   **task**,❌,❌,✅,❌,❌,❌,❌,✅,❌,❌,✅,✅,❌
+single
+~~~~~~
 
-.. csv-table::
+* ❌ allocate, copyprivate, firstprivate, nowait, private
 
-   ,depend,nowait
-   **taskwait**,❌,❌
+task
+~~~~
 
-.. csv-table::
+* ✅ default, firstprivate, private, shared
+* ❌ affinity, allocate, detach, if, in_reduction, final, mergeable, priority, untied
 
-   ,allocate,defaultmap,depend,device,firstprivate,has_device_addr,if,in_reduction,is_device_ptr,map,nowait,private,thread_limit,uses_allocators
-   **target**,❌,❌,❌,✅,✅,❌,❌,❌,❌,✅,❌,✅,✅,❌
+taskwait
+~~~~~~~~
 
-.. csv-table::
+* ❌ depend, nowait
 
-   ,private,firstprivate,shared,reduction,default,num_teams,thread_limit
-   **teams**,✅,✅,✅,🔶,✅,✅,✅
+target
+~~~~~~
 
-.. csv-table::
+* ✅ device, firstprivate, map, private, thread_limit
+* ❌ allocate, defaultmap, depend, has_device_addr, if, in_reduction, is_device_ptr, nowait, uses_allocators
 
-   ,allocate,collapse,dist_schedule,firstprivate,lastprivate,order,private
-   **distribute**,❌,❌,❌,✅,✅,❌,✅
+teams
+~~~~~
 
-.. csv-table::
+* ✅ default, firstprivate, num_teams, private, shared, thread_limit
+* 🔶 reduction
 
-   ,*See clauses for* **teams** *and* **distribute** directives
-   **teams distribute**,
+distribute
+~~~~~~~~~~
 
-.. csv-table::
+* ✅ firstprivate, lastprivate, private
+* ❌ allocate, collapse, dist_schedule, order
 
-   ,*See clauses for* **teams** *and* **teams** directives
-   **target teams**,
+teams distribute
+~~~~~~~~~~~~~~~~
+
+Combines ``teams`` and ``distribute`` directives. See clauses for `teams`_ and `distribute`_ above.
+
+target teams
+~~~~~~~~~~~~
+
+Combines ``target`` and ``teams`` directives. See clauses for `target`_ and `teams`_ above.
+
+target data
+~~~~~~~~~~~
+
+* ✅ device, map
+* ❌ if, use_device_ptr, use_device_addr
+
+target enter data
+~~~~~~~~~~~~~~~~~
+
+* ✅ device, map
+* ❌ depend, if, nowait
+
+target exit data
+~~~~~~~~~~~~~~~~
+
+Same clauses as `target enter data`_. See above.
+
+target update
+~~~~~~~~~~~~~
+
+* ✅ device, from, to
+* ❌ depend, if, nowait
+
+target teams distribute
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Combines ``target``, ``teams``, and ``distribute`` directives. See clauses for `target`_, `teams`_, and `distribute`_ above.
+
+distribute parallel for
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Combines ``distribute`` and ``parallel for`` directives. See clauses for `distribute`_, `parallel`_, and `for`_ above.
+
+target teams distribute parallel for
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Combines ``target``, ``teams``, ``distribute``, and ``parallel for`` directives. See clauses for `target`_, `teams`_, `parallel`_, and `for`_ above.
 
 
-.. csv-table::
+OpenMP runtime functions
+-------------------------
+**Thread and team information:**
 
-   ,device,if,map,use_device_ptr,use_device_addr
-   **target data**,✅,❌,✅,❌,❌
-   
-.. csv-table::
+* ``omp_get_thread_num()`` - Returns the unique identifier of the calling thread
+* ``omp_get_num_threads()`` - Returns the total number of threads in the current parallel region
+* ``omp_set_num_threads(n)`` - Sets the number of threads for subsequent parallel regions
+* ``omp_get_max_threads()`` - Returns the maximum number of threads available
+* ``omp_get_num_procs()`` - Returns the number of processors in the system
+* ``omp_get_thread_limit()`` - Returns the thread limit for the parallel region
+* ``omp_in_parallel()`` - Returns 1 if called within a parallel region, 0 otherwise
+* ``omp_get_team_num()`` - Returns the team number in a target region
+* ``omp_get_num_teams()`` - Returns the number of teams in a target region
 
-   ,depend,device,if,map,nowait
-   **target enter data**,❌,✅,❌,✅,❌
+**Timing:**
 
-.. csv-table::
+* ``omp_get_wtime()`` - Returns elapsed wall-clock time (useful for performance profiling)
 
-   ,*See clauses for the* **target enter data** directive
-   **target exit data**,
+**Nested and hierarchical parallelism:**
 
-.. csv-table::
+* ``omp_set_nested(flag)`` - Enables or disables nested parallelism
+* ``omp_set_dynamic(flag)`` - Enables or disables dynamic thread adjustment
+* ``omp_set_max_active_levels(n)`` - Sets the maximum number of nested parallel levels
+* ``omp_get_max_active_levels()`` - Returns the maximum number of nested parallel levels
+* ``omp_get_level()`` - Returns the current nesting level
+* ``omp_get_active_level()`` - Returns the current active nesting level
+* ``omp_get_ancestor_thread_num(level)`` - Returns the thread number at a given nesting level
+* ``omp_get_team_size(level)`` - Returns the team size at a given nesting level
+* ``omp_get_supported_active_levels()`` - Returns the supported number of nested active levels
 
-   ,nowait,depend,device,from,if,to
-   **target update**,❌,❌,✅,✅,❌,✅
+**Advanced features:**
 
-.. csv-table::
+* ``omp_get_proc_bind()`` - Returns the processor binding policy
+* ``omp_get_num_places()`` - Returns the number of available places
+* ``omp_get_place_num_procs(place)`` - Returns the number of processors in a place
+* ``omp_get_place_num()`` - Returns the current place number
 
-   ,*See clauses for* **target** *and* **teams distribute** directives
-   **target teams distribute**,
+Supported features and platforms
+---------------------------------
 
-.. csv-table::
+PyOMP builds on `Numba <https://numba.pydata.org/>`_ Just-In-Time (JIT)
+compilation extensions to implement portable parallel execution using LLVM's
+OpenMP implementation.
 
-   ,*See clauses for* **distribute** *and* **parallel for** directives
-   **distribute parallel for**,
+OpenMP support
+~~~~~~~~~~~~~~
 
-.. csv-table::
+PyOMP supports OpenMP features that are officially supported by the LLVM OpenMP
+runtime. The specific set of supported features depends on the version of the
+LLVM OpenMP runtime and the version of Numba you are using. As both LLVM and
+Numba evolve, support for additional OpenMP features may be added in future
+PyOMP releases. For detailed information about Numba and LLVM version
+compatibility, see the `Numba support info
+<https://numba.readthedocs.io/en/stable/user/installing.html#numba-support-info>`_
+in the Numba documentation.
 
-   ,*See clauses for* **target** *and* **teams** *and* **distribute parallel for** directives
-   **target teams distribute parallel for**,
+GPU offloading support
+~~~~~~~~~~~~~~~~~~~~~~
+
+PyOMP supports GPU offloading exclusively for NVIDIA GPU architectures. The
+specific GPU architecture versions supported (e.g., compute capability levels)
+depend on the LLVM OpenMP runtime support in your environment. Consult the
+LLVM OpenMP documentation for your specific version to determine which NVIDIA
+GPU architectures are supported.
