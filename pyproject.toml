@@ -27,17 +27,12 @@ Homepage = "https://github.com/Python-for-HPC/PyOMP"
 Issues = "https://github.com/Python-for-HPC/PyOMP/issues"
 
 [tool.setuptools]
-include-package-data = true
+include-package-data = false
 package-dir = { "" = "src" }
 
-# Use discovery for the numba.* namespace.
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["numba.openmp*"]
-
-# Bundle the CMake-installed artifacts into the wheel.
-[tool.setuptools.package-data]
-"numba.openmp.libs" = ["pass/*", "openmp/**/*"]
+include = ["numba*"]
 
 # setuptools-scm config
 [tool.setuptools_scm]
