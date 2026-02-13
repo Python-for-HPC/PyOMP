@@ -92,7 +92,10 @@ def _init():
     if sys_platform.startswith("darwin") or sys_platform.startswith("win32"):
         return
 
-    omptargetlib = libpath / "openmp" / "lib" / "libomptarget.so"
+    llvm_major, llvm_minor, _ = ll.llvm_version_info
+    omptargetlib = (
+        libpath / "openmp" / "lib" / f"libomptarget.so.{llvm_major}.{llvm_minor}"
+    )
     if omptargetlib.exists():
         if DEBUG_OPENMP >= 1:
             print("Found OpenMP target runtime library at", omptargetlib)

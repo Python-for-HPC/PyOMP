@@ -1,1 +1,0 @@
-recursive-include src/numba/openmp/libs *.py *.so *.a *.bc
