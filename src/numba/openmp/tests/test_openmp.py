@@ -5051,6 +5051,27 @@ class TestOpenmpPi(TestOpenmpBase):
         njit_output = njit(test_impl)(0, 1024, test_pi_comp_njit)
         self.assert_outputs_equal(py_output, njit_output)
 
+class TestOpenmpRuntimeFunctions(TestOpenmpBase):
+    def __init__(self, *args):
+        TestOpenmpBase.__init__(self, *args)
+
+    def test_omp_get_max_threads(self):
+        @njit
+        def test_impl():
+            return omp_get_max_threads()
+
+        jit_max_threads = test_impl()
+        python_max_threads = omp_get_max_threads()
+        self.assertEqual(jit_max_threads, python_max_threads)
+
+    def test_omp_get_num_procs(self):
+        @njit
+        def test_impl():
+            return omp_get_num_procs()
+
+        jit_num_procs = test_impl()
+        python_num_procs = omp_get_num_procs()
+        self.assertEqual(jit_num_procs, python_num_procs)
 
 if __name__ == "__main__":
     unittest.main()

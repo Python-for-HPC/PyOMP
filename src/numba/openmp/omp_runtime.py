@@ -6,15 +6,6 @@ from numba.core.datamodel.models import OpaqueModel
 
 class _OpenmpExternalFunction(types.ExternalFunction):
     def __call__(self, *args):
-        import inspect
-
-        frm = inspect.stack()[1]
-        mod = inspect.getmodule(frm[0])
-        if mod.__name__.startswith("numba") and not mod.__name__.startswith(
-            "numba.openmp.tests"
-        ):
-            return super(ExternalFunction, self).__call__(*args)
-
         # Resolve the function address via llvmlite's symbol table so we
         # call the same LLVM-registered symbol the JIT uses. Then wrap
         # it with ctypes CFUNCTYPE to call from Python. This avoids
