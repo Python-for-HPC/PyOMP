@@ -129,6 +129,10 @@ class BuildCMakeExt(build_ext):
             include_dir = install_dir / "lib/cmake"
             if include_dir.exists():
                 shutil.rmtree(include_dir)
+        # Remove symlinks in the install directory to avoid copies.
+        for file in install_dir.rglob("*"):
+            if file.is_symlink():
+                file.unlink()
 
     def _env_toolchain_args(self, ext):
         args = []
@@ -183,50 +187,53 @@ class PrepareOpenMP:
             print(f"Using downloaded llvm-project at {tmp}", flush=True)
 
         print("Extracting llvm-project...", flush=True)
-        with tarfile.open(tmp) as tf:
-            # The root dir llvm-project-20.1.8.src
-            root_name = tf.getnames()[0]
+        root_dir = Path(f"_downloads/libomp/llvm-project-{cls.LLVM_VERSION}.src")
+        if not root_dir.exists():
+            with tarfile.open(tmp) as tf:
+                # Extract only needed subdirectories
+                root_name = f"llvm-project-{cls.LLVM_VERSION}.src"
 
-            # Extract only needed subdirectories
-            members = [
-                m
-                for m in tf.getmembers()
-                if m.name.startswith(f"{root_name}/openmp/")
-                or m.name.startswith(f"{root_name}/offload/")
-                or m.name.startswith(f"{root_name}/runtimes/")
-                or m.name.startswith(f"{root_name}/cmake/")
-                or m.name.startswith(f"{root_name}/llvm/cmake/")
-                or m.name.startswith(f"{root_name}/llvm/utils/")
-                or m.name.startswith(f"{root_name}/libc/")
-            ]
+                # Use prefix tuple + any() for faster membership testing
+                prefixes = (
+                    f"{root_name}/openmp/",
+                    f"{root_name}/offload/",
+                    f"{root_name}/runtimes/",
+                    f"{root_name}/cmake/",
+                    f"{root_name}/llvm/cmake/",
+                    f"{root_name}/llvm/utils/",
+                    f"{root_name}/libc/",
+                )
 
-            parentdir = tmp.parent
-            # Base arguments for extractall.
-            kwargs = {"path": parentdir, "members": members}
+                include_members = [
+                    m
+                    for m in tf.getmembers()
+                    if any(m.name.startswith(p) for p in prefixes)
+                ]
 
-            # Check if data filter is available.
-            if hasattr(tarfile, "data_filter"):
-                # If this exists, the 'filter' argument is guaranteed to work
-                kwargs["filter"] = "data"
+                parentdir = tmp.parent
+                # Base arguments for extractall.
+                kwargs = {"path": parentdir, "members": include_members}
 
-            tf.extractall(**kwargs)
+                # Check if data filter is available.
+                if hasattr(tarfile, "data_filter"):
+                    # If this exists, the 'filter' argument is guaranteed to work
+                    kwargs["filter"] = "data"
 
-            source_dir = parentdir / root_name
-            print("Extracted llvm-project to:", source_dir, flush=True)
+                tf.extractall(**kwargs)
 
-        print("Applying patches to llvm-project...", flush=True)
-        for patch in sorted(
-            Path(f"src/numba/openmp/libs/openmp/patches/{cls.LLVM_VERSION}")
-            .absolute()
-            .glob("*.patch")
-        ):
-            print("applying patch", patch, flush=True)
-            subprocess.run(
-                ["patch", "-p1", "-i", str(patch)],
-                cwd=source_dir,
-                check=True,
-                stdin=subprocess.DEVNULL,
-            )
+            print("Applying patches to llvm-project...", flush=True)
+            for patch in sorted(
+                Path(f"src/numba/openmp/libs/openmp/patches/{cls.LLVM_VERSION}")
+                .absolute()
+                .glob("*.patch")
+            ):
+                print("applying patch", patch, flush=True)
+                subprocess.run(
+                    ["patch", "-p1", "-N", "-i", str(patch)],
+                    cwd=root_dir,
+                    check=True,
+                    stdin=subprocess.DEVNULL,
+                )
 
 
 def _check_true(env_var):
