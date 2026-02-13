@@ -1,5 +1,7 @@
 {% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0').lstrip('v') %}
 {% set LLVM_VERSION = environ.get('LLVM_VERSION', '20.1.8') %}
+{% set LLVM_VERSION_MAJOR = LLVM_VERSION.split('.')[0] %}
+{% set LLVM_VERSION_MINOR = LLVM_VERSION.split('.')[1] %}
 
 package:
   name: pyomp
@@ -64,11 +66,11 @@ requirements:
 
 test:
   commands:
-    - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.dylib                 # [osx]
-    - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.so                    # [linux]
-    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-amdgpu.bc        # [linux]
-    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-nvptx.bc         # [linux]
-    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget.so               # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.dylib                                                # [osx]
+    - test -f $SP_DIR/numba/openmp/libs/pass/libIntrinsicsOpenMP.so                                                   # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-amdgpu.bc                                             # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-nvptx.bc                                              # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget.so.{{ LLVM_VERSION_MAJOR }}.{{ LLVM_VERSION_MINOR }}  # [linux]
 
 about:
   home: https://github.com/Python-for-HPC/PyOMP
