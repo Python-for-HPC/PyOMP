@@ -8,7 +8,6 @@ import os
 from setuptools import setup, Extension
 from setuptools import Command
 from setuptools.command.build_ext import build_ext
-from setuptools.command.bdist_wheel import bdist_wheel
 
 
 class CleanCommand(Command):
@@ -29,34 +28,21 @@ class CleanCommand(Command):
             shutil.rmtree(egg_info, ignore_errors=True)
 
 
-class CustomBdistWheel(bdist_wheel):
-    def run(self):
-        # Ensure all build steps are run before bdist_wheel
-        self.run_command("build_ext")
-        super().run()
-
-
 class CMakeExtension(Extension):
     def __init__(
         self,
         name,
         *,
+        setup=None,
         source_dir=None,
         install_dir=None,
-        url=None,
-        sha256=None,
         cmake_args=[],
     ):
         # Don't invoke the original build_ext for this special extension.
         super().__init__(name, sources=[])
-        if source_dir and url:
-            raise ValueError(
-                "CMakeExtension should have either a source_dir or a url, not both."
-            )
+        self.setup = setup
         self.source_dir = source_dir
         self.install_dir = install_dir
-        self.url = url
-        self.sha256 = sha256
         self.cmake_args = cmake_args
 
 
@@ -81,9 +67,17 @@ class BuildCMakeExt(build_ext):
         shutil.rmtree(build_dir, ignore_errors=True)
         build_dir.mkdir(parents=True, exist_ok=True)
 
-        lib_dir = Path(
-            self.get_finalized_command("build_py").get_package_dir("numba.openmp.libs")
-        )
+        if ext.setup:
+            ext.setup.setup()
+
+        if self.inplace:
+            lib_dir = Path(
+                self.get_finalized_command("build_py").get_package_dir(
+                    "numba.openmp.libs"
+                )
+            )
+        else:
+            lib_dir = Path(self.build_lib) / "numba/openmp/libs"
 
         extra_cmake_args = self._env_toolchain_args(ext)
         # Set RPATH.
@@ -149,79 +143,90 @@ class BuildCMakeExt(build_ext):
         return args
 
 
-def _prepare_source_openmp(sha256=None):
+class PrepareOpenMP:
+    setup_done = False
     LLVM_VERSION = os.environ.get("LLVM_VERSION", None)
-    assert LLVM_VERSION is not None, "LLVM_VERSION environment variable must be set."
-    url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/llvm-project-{LLVM_VERSION}.src.tar.xz"
 
-    tmp = Path("_downloads/libomp") / f"llvm-project-{LLVM_VERSION}.tar.gz"
-    tmp.parent.mkdir(parents=True, exist_ok=True)
+    @classmethod
+    def setup(cls):
+        if not cls.setup_done:
+            cls._prepare_source_openmp()
+            cls.setup_done = True
 
-    # Download the source tarball if it does not exist.
-    if not tmp.exists():
-        print(f"Downloading llvm-project version {LLVM_VERSION} url:", url)
-        with urllib.request.urlopen(url) as r:
-            with tmp.open("wb") as f:
-                f.write(r.read())
-    else:
-        print(f"Using downloaded llvm-project at {tmp}")
+    @classmethod
+    def get_source_dir(cls):
+        return Path(
+            f"_downloads/libomp/llvm-project-{cls.LLVM_VERSION}.src/runtimes"
+        ).absolute()
 
-    if sha256:
-        import hashlib
-
-        hasher = hashlib.sha256()
-        with tmp.open("rb") as f:
-            hasher.update(f.read())
-        if hasher.hexdigest() != sha256:
-            raise ValueError(f"SHA256 mismatch for {url}")
-
-    print("Extracting llvm-project...")
-    with tarfile.open(tmp) as tf:
-        # The root dir llvm-project-20.1.8.src
-        root_name = tf.getnames()[0]
-
-        # Extract only needed subdirectories
-        members = [
-            m
-            for m in tf.getmembers()
-            if m.name.startswith(f"{root_name}/openmp/")
-            or m.name.startswith(f"{root_name}/offload/")
-            or m.name.startswith(f"{root_name}/runtimes/")
-            or m.name.startswith(f"{root_name}/cmake/")
-            or m.name.startswith(f"{root_name}/llvm/cmake/")
-            or m.name.startswith(f"{root_name}/llvm/utils/")
-            or m.name.startswith(f"{root_name}/libc/")
-        ]
-
-        parentdir = tmp.parent
-        # Base arguments for extractall.
-        kwargs = {"path": parentdir, "members": members}
-
-        # Check if data filter is available.
-        if hasattr(tarfile, "data_filter"):
-            # If this exists, the 'filter' argument is guaranteed to work
-            kwargs["filter"] = "data"
-
-        tf.extractall(**kwargs)
-
-        source_dir = parentdir / root_name
-        print("Extracted llvm-project to:", source_dir)
-
-    print("Applying patches to llvm-project...")
-    for patch in sorted(
-        Path(f"src/numba/openmp/libs/openmp/patches/{LLVM_VERSION}")
-        .absolute()
-        .glob("*.patch")
-    ):
-        print("applying patch", patch)
-        subprocess.run(
-            ["patch", "-p1", "-i", str(patch)],
-            cwd=source_dir,
-            check=True,
-            stdin=subprocess.DEVNULL,
+    @classmethod
+    def _prepare_source_openmp(cls):
+        assert cls.LLVM_VERSION is not None, (
+            "LLVM_VERSION environment variable must be set."
         )
+        url = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{cls.LLVM_VERSION}/llvm-project-{cls.LLVM_VERSION}.src.tar.xz"
 
-    return f"{source_dir}/runtimes"
+        tmp = Path("_downloads/libomp") / f"llvm-project-{cls.LLVM_VERSION}.tar.gz"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+
+        # Download the source tarball if it does not exist.
+        if not tmp.exists():
+            print(
+                f"Downloading llvm-project version {cls.LLVM_VERSION} url:",
+                url,
+                flush=True,
+            )
+            with urllib.request.urlopen(url) as r:
+                with tmp.open("wb") as f:
+                    f.write(r.read())
+        else:
+            print(f"Using downloaded llvm-project at {tmp}", flush=True)
+
+        print("Extracting llvm-project...", flush=True)
+        with tarfile.open(tmp) as tf:
+            # The root dir llvm-project-20.1.8.src
+            root_name = tf.getnames()[0]
+
+            # Extract only needed subdirectories
+            members = [
+                m
+                for m in tf.getmembers()
+                if m.name.startswith(f"{root_name}/openmp/")
+                or m.name.startswith(f"{root_name}/offload/")
+                or m.name.startswith(f"{root_name}/runtimes/")
+                or m.name.startswith(f"{root_name}/cmake/")
+                or m.name.startswith(f"{root_name}/llvm/cmake/")
+                or m.name.startswith(f"{root_name}/llvm/utils/")
+                or m.name.startswith(f"{root_name}/libc/")
+            ]
+
+            parentdir = tmp.parent
+            # Base arguments for extractall.
+            kwargs = {"path": parentdir, "members": members}
+
+            # Check if data filter is available.
+            if hasattr(tarfile, "data_filter"):
+                # If this exists, the 'filter' argument is guaranteed to work
+                kwargs["filter"] = "data"
+
+            tf.extractall(**kwargs)
+
+            source_dir = parentdir / root_name
+            print("Extracted llvm-project to:", source_dir, flush=True)
+
+        print("Applying patches to llvm-project...", flush=True)
+        for patch in sorted(
+            Path(f"src/numba/openmp/libs/openmp/patches/{cls.LLVM_VERSION}")
+            .absolute()
+            .glob("*.patch")
+        ):
+            print("applying patch", patch, flush=True)
+            subprocess.run(
+                ["patch", "-p1", "-i", str(patch)],
+                cwd=source_dir,
+                check=True,
+                stdin=subprocess.DEVNULL,
+            )
 
 
 def _check_true(env_var):
@@ -234,10 +239,6 @@ def _check_true(env_var):
 ext_modules = [CMakeExtension("pass", source_dir="src/numba/openmp/libs/pass")]
 
 
-# Prepare source directory if either bundled libomp or libomptarget is enabled.
-if _check_true("ENABLE_BUNDLED_LIBOMP") or _check_true("ENABLE_BUNDLED_LIBOMPTARGET"):
-    openmp_source_dir = _prepare_source_openmp()
-
 # Optionally enable bundled libomp build via ENABLE_BUNDLED_LIBOMP=1.  We want
 # to avoid bundling for conda builds to avoid duplicate OpenMP runtime conflicts
 # (e.g., numba 0.62+ and libopenblas already require llvm-openmp).
@@ -245,7 +246,8 @@ if _check_true("ENABLE_BUNDLED_LIBOMP"):
     ext_modules.append(
         CMakeExtension(
             "libomp",
-            source_dir=openmp_source_dir,
+            setup=PrepareOpenMP,
+            source_dir=PrepareOpenMP.get_source_dir(),
             install_dir="openmp",
             cmake_args=[
                 "-DOPENMP_STANDALONE_BUILD=ON",
@@ -265,7 +267,8 @@ if _check_true("ENABLE_BUNDLED_LIBOMPTARGET"):
     ext_modules.append(
         CMakeExtension(
             "libomptarget",
-            source_dir=openmp_source_dir,
+            setup=PrepareOpenMP,
+            source_dir=PrepareOpenMP.get_source_dir(),
             install_dir="openmp",
             cmake_args=[
                 "-DOPENMP_STANDALONE_BUILD=ON",
@@ -283,6 +286,5 @@ setup(
     cmdclass={
         "clean": CleanCommand,
         "build_ext": BuildCMakeExt,
-        **({"bdist_wheel": CustomBdistWheel} if CustomBdistWheel else {}),
     },
 )
