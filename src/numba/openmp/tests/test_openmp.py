@@ -5051,6 +5051,7 @@ class TestOpenmpPi(TestOpenmpBase):
         njit_output = njit(test_impl)(0, 1024, test_pi_comp_njit)
         self.assert_outputs_equal(py_output, njit_output)
 
+
 class TestOpenmpRuntimeFunctions(TestOpenmpBase):
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
@@ -5072,6 +5073,20 @@ class TestOpenmpRuntimeFunctions(TestOpenmpBase):
         jit_num_procs = test_impl()
         python_num_procs = omp_get_num_procs()
         self.assertEqual(jit_num_procs, python_num_procs)
+
+    @linux_only
+    def test_omp_get_num_devices(self):
+        from numba.openmp import omp_get_num_devices
+
+        @njit
+        def test_impl():
+            return omp_get_num_devices()
+
+        jit_num_devices = test_impl()
+        python_num_devices = omp_get_num_devices()
+        self.assertEqual(jit_num_devices, python_num_devices)
+        self.assertGreater(jit_num_devices, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

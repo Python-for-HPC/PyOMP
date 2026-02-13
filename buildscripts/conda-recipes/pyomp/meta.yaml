@@ -71,6 +71,8 @@ test:
     - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-amdgpu.bc                                             # [linux]
     - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget-nvptx.bc                                              # [linux]
     - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libomptarget.so.{{ LLVM_VERSION_MAJOR }}.{{ LLVM_VERSION_MINOR }}  # [linux]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libpyomp_loader.dylib                                              # [osx]
+    - test -f $SP_DIR/numba/openmp/libs/openmp/lib/libpyomp_loader.so                                                 # [linux]
 
 about:
   home: https://github.com/Python-for-HPC/PyOMP
