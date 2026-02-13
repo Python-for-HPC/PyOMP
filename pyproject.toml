@@ -50,7 +50,8 @@ archs = ["native"]
 environment-pass = ["LLVM_VERSION"]
 # We use miniconda3 to get the clang/llvm toolchain on Linux.
 before-build = ["rm -rf build dist src/*.egg-info"]
-skip = ["*-musllinux_*", "cp38-*"]
+# Skip building 3.14t wheels as they are not supported by the current numba/llvmlite version.
+skip = ["*-musllinux_*", "cp38-*", "cp314t-*"]
 test-command = [
     # Run host OpenMP tests.
     "TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp",
