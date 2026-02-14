@@ -28,11 +28,8 @@ Issues = "https://github.com/Python-for-HPC/PyOMP/issues"
 
 [tool.setuptools]
 include-package-data = false
+packages = ["numba.openmp", "numba.openmp.tests"]
 package-dir = { "" = "src" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["numba*"]
 
 # setuptools-scm config
 [tool.setuptools_scm]
