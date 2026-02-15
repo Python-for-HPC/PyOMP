@@ -169,8 +169,8 @@ OpenMP and GPU Offloading Support
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 PyOMP builds on `Numba <https://numba.pydata.org/>`_ Just-In-Time (JIT)
-compilation extensions with LLVM's OpenMP implementation to provide portable
-parallel execution. The supported OpenMP features depend on your versions of
+compilation extensions and leverages LLVM's OpenMP implementation to provide
+portable parallel execution. The supported OpenMP features depend on your versions of
 LLVM and Numba. For compatibility details, see the `Numba support info
 <https://numba.readthedocs.io/en/stable/user/installing.html#numba-support-info>`_
 in the Numba documentation.
