@@ -54,6 +54,10 @@ class BuildCMakeExt(build_ext):
             else:
                 super().run()
 
+        # Compile the loader wrapper after building all extensions to link with
+        # libomp and libomptarget.
+        self._build_loader_wrapper()
+
     def finalize_options(self):
         super().finalize_options()
         # Create placeholder directories for package-data validation.
@@ -145,6 +149,81 @@ class BuildCMakeExt(build_ext):
         if os.environ.get("CXX"):
             args.append(f"-DCMAKE_CXX_COMPILER={os.environ['CXX']}")
         return args
+
+    def _build_loader_wrapper(self):
+        """Compiles the pyomp_loader wrapper to lock in load order."""
+        # Find build directory.
+        if self.inplace:
+            lib_dir = Path(
+                self.get_finalized_command("build_py").get_package_dir(
+                    "numba.openmp.libs"
+                )
+            )
+        else:
+            lib_dir = Path(self.build_lib) / "numba/openmp/libs"
+
+        target_lib_dir = lib_dir / "openmp" / "lib"
+        target_lib_dir.mkdir(parents=True, exist_ok=True)
+
+        # Find libomp in build directory or system library paths.
+        omp_libs = list(target_lib_dir.glob("libomp.*"))
+        if omp_libs:
+            link_omp = str(omp_libs[0])
+            print(f"Wrapper linking local libomp: {link_omp}")
+        else:
+            link_omp = "-lomp"
+            print("Wrapper linking system libomp (-lomp)")
+
+        # Find libomptarget in build directory or system library paths (Linux
+        # only). For now we always build libomptarget but we may want to link
+        # with system libomptarget if it becomes available.
+        if sys.platform.startswith("linux"):
+            tgt_libs = list(target_lib_dir.glob("libomptarget.so*"))
+            if tgt_libs:
+                assert len(tgt_libs) == 1, "Expected single libomptarget library"
+                link_tgt = str(tgt_libs[0])
+                print(f"Wrapper linking local libomptarget: {link_tgt}")
+            else:
+                link_tgt = "-lomptarget"
+                print("Wrapper linking system libomptarget (-lomptarget)")
+        else:
+            link_tgt = ""
+
+        # Generate the C wrapper file.
+        loader_c = Path(self.build_temp) / "pyomp_loader.c"
+        loader_c.parent.mkdir(parents=True, exist_ok=True)
+        loader_c.write_text("void pyomp_loader_init(void) {}\n")
+
+        # Determine library extension and platform-specific linker flags.
+        if sys.platform.startswith("linux"):
+            lib_ext = ".so"
+            rpath_flag = "-Wl,-rpath=$ORIGIN"
+            extra_link_flags = ["-Wl,--no-as-needed"]
+        elif sys.platform == "darwin":
+            lib_ext = ".dylib"
+            rpath_flag = "-Wl,-rpath,@loader_path"
+            extra_link_flags = ["-Wl,-undefined,dynamic_lookup"]
+        else:
+            raise RuntimeError(f"Unsupported platform: {sys.platform}")
+
+        loader_so = target_lib_dir / f"libpyomp_loader{lib_ext}"
+        cc = os.environ.get("CC", "gcc")
+
+        # Compile the wrapper.
+        cmd = [
+            cc,
+            "-shared",
+            "-fPIC",
+            str(loader_c),
+            "-o",
+            str(loader_so),
+            link_omp,
+            link_tgt,
+            rpath_flag,
+        ] + extra_link_flags
+
+        print("Compiling pyomp_loader wrapper")
+        subprocess.run(cmd, check=True)
 
 
 class PrepareOpenMP:
