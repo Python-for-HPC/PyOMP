@@ -206,7 +206,7 @@ Platform Details
 Notes
 ^^^^^
 
-* Python 3.14 (threaded version, cp314t) is not supported with the current Numba/llvmlite version.
+* Python 3.14 free-threaded build (cp314t) is not supported with the current Numba/llvmlite version.
 * LLVM version 20.1.8 is used for the current PyOMP 0.5.x releases.
 * For GPU offloading support, NVIDIA GPU and NVIDIA driver are required on supported Linux platforms.
 * AMD GPU support is in active development.
