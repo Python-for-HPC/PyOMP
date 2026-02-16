@@ -165,27 +165,48 @@ OpenMP runtime functions
 Supported features and platforms
 ---------------------------------
 
+OpenMP and GPU Offloading Support
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 PyOMP builds on `Numba <https://numba.pydata.org/>`_ Just-In-Time (JIT)
-compilation extensions to implement portable parallel execution using LLVM's
-OpenMP implementation.
-
-OpenMP support
-~~~~~~~~~~~~~~
-
-PyOMP supports OpenMP features that are officially supported by the LLVM OpenMP
-runtime. The specific set of supported features depends on the version of the
-LLVM OpenMP runtime and the version of Numba you are using. As both LLVM and
-Numba evolve, support for additional OpenMP features may be added in future
-PyOMP releases. For detailed information about Numba and LLVM version
-compatibility, see the `Numba support info
+compilation extensions and leverages LLVM's OpenMP implementation to provide
+portable parallel execution. The supported OpenMP features depend on your versions of
+LLVM and Numba. For compatibility details, see the `Numba support info
 <https://numba.readthedocs.io/en/stable/user/installing.html#numba-support-info>`_
 in the Numba documentation.
 
-GPU offloading support
-~~~~~~~~~~~~~~~~~~~~~~
+PyOMP also supports GPU offloading for NVIDIA GPUs. The supported GPU
+architectures depend on the LLVM version and its OpenMP runtime. Consult the
+LLVM OpenMP documentation for details on your specific version.
 
-PyOMP supports GPU offloading exclusively for NVIDIA GPU architectures. The
-specific GPU architecture versions supported (e.g., compute capability levels)
-depend on the LLVM OpenMP runtime support in your environment. Consult the
-LLVM OpenMP documentation for your specific version to determine which NVIDIA
-GPU architectures are supported.
+Version and platform support
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following table shows tested combinations of PyOMP, Numba, Python, LLVM, and supported platforms:
+
+.. table::
+   :widths: auto
+
+   ===================== ==================== ==================== ============ ================================
+   PyOMP                 Numba                Python               LLVM         Supported Platforms
+   ===================== ==================== ==================== ============ ================================
+   0.5.x                 0.62.x - 0.63.x      3.10 - 3.14          20.x         linux-64, osx-arm64, linux-arm64
+   0.4.x                 0.61.x               3.10 - 3.13          15.x         linux-64, osx-arm64, linux-arm64
+   0.3.x                 0.57.x - 0.60.x      3.9 - 3.12           14.x         linux-64, osx-arm64, linux-arm64
+   ===================== ==================== ==================== ============ ================================
+
+Platform Details
+^^^^^^^^^^^^^^^^
+
+* **linux-64**: Linux x86_64 architecture
+* **osx-arm64**: macOS ARM64 (Apple Silicon)
+* **linux-arm64**: Linux ARM64 architecture
+* **GPU offloading**: Available on Linux platforms only (linux-64 and linux-arm64)
+
+Notes
+^^^^^
+
+* Python 3.14 free-threaded build (cp314t) is not supported with the current Numba/llvmlite version.
+* LLVM version 20.1.8 is used for the current PyOMP 0.5.x releases.
+* For GPU offloading support, NVIDIA GPU and NVIDIA driver are required on supported Linux platforms.
+* AMD GPU support is in active development.
