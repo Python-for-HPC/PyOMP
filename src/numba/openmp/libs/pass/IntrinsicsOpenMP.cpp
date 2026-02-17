@@ -650,21 +650,23 @@ struct IntrinsicsOpenMP {
             FATAL_ERROR("Target enter data should never appear inside a "
                         "device target region");
           CGIOMP.emitOMPTargetData(Fn, BBEntry, BBExit, DSAValueMap,
-                                   StructMappingInfoMap);
+                                   StructMappingInfoMap, TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_enter_data) {
           if (IsDeviceTargetRegion)
             FATAL_ERROR("Target enter data should never appear inside a "
                         "device target region");
 
           CGIOMP.emitOMPTargetEnterData(Fn, BBEntry, DSAValueMap,
-                                        StructMappingInfoMap);
+                                        StructMappingInfoMap,
+                                        TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_exit_data) {
           if (IsDeviceTargetRegion)
             FATAL_ERROR("Target exit data should never appear inside a "
                         "device target region");
 
           CGIOMP.emitOMPTargetExitData(Fn, BBEntry, DSAValueMap,
-                                       StructMappingInfoMap);
+                                       StructMappingInfoMap,
+                                       TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_update) {
           if (IsDeviceTargetRegion)
             FATAL_ERROR("Target exit data should never appear inside a "
