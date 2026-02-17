@@ -167,7 +167,7 @@ class TestOpenmpBase(TestCase):
 
     skip_disabled = int(os.environ.get("OVERRIDE_TEST_SKIP", 0)) != 0
     run_target = int(os.environ.get("RUN_TARGET", 0)) != 0
-    test_devices = os.environ.get("TEST_DEVICES", "")
+    test_device = os.environ.get("TEST_DEVICE", "")
 
     env_vars = {
         "OMP_NUM_THREADS": omp_get_num_procs(),
@@ -3139,24 +3139,32 @@ class TestOpenmpTaskloop(TestOpenmpBase):
 )
 class TestOpenmpTarget(TestOpenmpBase):
     """
-    OpenMP target offloading tests. TEST_DEVICES is a required env var to
-    specify the device numbers to run the tests on: 0 for CUDA backend, 1 for
-    host backend. It is expected to be a comma-separated list of integer values.
+    OpenMP target offloading tests. TEST_DEVICE is a required env var to
+    specify the device to run tests. It accepts "host" or "nvidia" as targets
+    and uses OpenMP offloading info to find the device id for the target.
     """
 
     devices = []
-    assert TestOpenmpBase.test_devices, (
-        "Expected env var TEST_DEVICES (comma-separated list of device numbers)"
+    assert TestOpenmpBase.test_device, (
+        "Expected env var TEST_DEVICE to specify the test target device (e.g. 'host' or 'gpu')"
     )
-    devices = [int(devno) for devno in TestOpenmpBase.test_devices.split(",")]
+
+    from numba.openmp.offloading import find_device_ids
+
+    devices = find_device_ids(type=TestOpenmpBase.test_device)
     assert devices, "Expected non-empty test devices list"
+
+    # Use only the first device.
+    devices = [int(devices[0])]
+    print(f"Testing OpenMP target offloading on device(s): {devices}")
+    input("Press Enter to continue...")
 
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
 
     @classmethod
     def is_testing_cpu(cls):
-        return 1 in cls.devices
+        return TestOpenmpBase.test_device == "host"
 
     # How to check for nowait?
     # Currently checks only compilation.
