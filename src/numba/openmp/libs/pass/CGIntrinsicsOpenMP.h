@@ -499,7 +499,7 @@ public:
 
   void emitOMPTargetUpdate(Function *Fn, BasicBlock *BBEntry,
                            DSAValueMapTy &DSAValueMap,
-                           StructMapTy &StructMappingInfoMap);
+                           StructMapTy &StructMappingInfoMap, Value *DeviceID);
 
   void emitOMPDistribute(DSAValueMapTy &DSAValueMap,
                          OMPLoopInfoStruct &OMPLoopInfo, BasicBlock *StartBB,

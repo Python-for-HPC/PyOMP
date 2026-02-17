@@ -2715,9 +2715,10 @@ void CGIntrinsicsOpenMP::emitOMPTargetData(Function *Fn, BasicBlock *BBEntry,
                         DeviceID);
 }
 
-void CGIntrinsicsOpenMP::emitOMPTargetUpdate(
-    Function *Fn, BasicBlock *BBEntry, DSAValueMapTy &DSAValueMap,
-    StructMapTy &StructMappingInfoMap) {
+void CGIntrinsicsOpenMP::emitOMPTargetUpdate(Function *Fn, BasicBlock *BBEntry,
+                                             DSAValueMapTy &DSAValueMap,
+                                             StructMapTy &StructMappingInfoMap,
+                                             Value *DeviceID) {
   const DebugLoc DL = BBEntry->getTerminator()->getDebugLoc();
   OpenMPIRBuilder::LocationDescription Loc(
       InsertPointTy(BBEntry, BBEntry->getTerminator()->getIterator()), DL);
@@ -2737,9 +2738,12 @@ void CGIntrinsicsOpenMP::emitOMPTargetUpdate(
   emitOMPOffloadingMappings(AllocaIP, DSAValueMap, StructMappingInfoMap,
                             OffloadingMappingArgs, /* IsTargetRegion */ false);
 
+  assert(DeviceID && "Expected non-null device id");
+  Value *DeviceIDCast = createScalarCast(DeviceID, OMPBuilder.Int64);
+
   OMPBuilder.Builder.CreateCall(
       TargetDataUpdateMapper,
-      {SrcLoc, ConstantInt::get(OMPBuilder.Int64, -1),
+      {SrcLoc, DeviceIDCast,
        ConstantInt::get(OMPBuilder.Int32, OffloadingMappingArgs.Size),
        OffloadingMappingArgs.BasePtrs, OffloadingMappingArgs.Ptrs,
        OffloadingMappingArgs.Sizes, OffloadingMappingArgs.MapTypes,

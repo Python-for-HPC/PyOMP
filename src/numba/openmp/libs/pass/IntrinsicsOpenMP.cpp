@@ -673,7 +673,7 @@ struct IntrinsicsOpenMP {
                         "device target region");
 
           CGIOMP.emitOMPTargetUpdate(Fn, BBEntry, DSAValueMap,
-                                     StructMappingInfoMap);
+                                     StructMappingInfoMap, TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_teams_distribute) {
           TargetInfo.ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
           CGIOMP.emitOMPDistribute(DSAValueMap, OMPLoopInfo, StartBB, BBExit,
