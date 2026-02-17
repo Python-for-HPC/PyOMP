@@ -1,0 +1,182 @@
+diff --git a/offload/include/device.h b/offload/include/device.h
+index 3132d35..8e70851 100644
+--- a/offload/include/device.h
++++ b/offload/include/device.h
+@@ -18,6 +18,7 @@
+ #include <cstdint>
+ #include <cstring>
+ #include <list>
++#include <llvm/Support/raw_ostream.h>
+ #include <map>
+ #include <memory>
+ #include <mutex>
+@@ -122,7 +123,7 @@ struct DeviceTy {
+   int32_t queryAsync(AsyncInfoTy &AsyncInfo);
+ 
+   /// Calls the corresponding print device info function in the plugin.
+-  bool printDeviceInfo();
++  bool printDeviceInfo(llvm::raw_ostream *OS = nullptr);
+ 
+   /// Event related interfaces.
+   /// {
+diff --git a/offload/plugins-nextgen/common/include/PluginInterface.h b/offload/plugins-nextgen/common/include/PluginInterface.h
+index eb266e8..241d132 100644
+--- a/offload/plugins-nextgen/common/include/PluginInterface.h
++++ b/offload/plugins-nextgen/common/include/PluginInterface.h
+@@ -158,10 +158,13 @@ public:
+   const std::deque<InfoQueueEntryTy> &getQueue() const { return Queue; }
+ 
+   /// Print all info entries added to the queue.
+-  void print() const {
++  void print(llvm::raw_ostream *OS = nullptr) const {
+     // We print four spances for each level.
+     constexpr uint64_t IndentSize = 4;
+ 
++    // Choose output stream: provided one or llvm::outs().
++    llvm::raw_ostream &Out = OS ? *OS : llvm::outs();
++
+     // Find the maximum key length (level + key) to compute the individual
+     // indentation of each entry.
+     uint64_t MaxKeySize = 0;
+@@ -178,9 +181,9 @@ public:
+       uint64_t ValIndentSize =
+           MaxKeySize - (Entry.Key.size() + KeyIndentSize) + IndentSize;
+ 
+-      llvm::outs() << std::string(KeyIndentSize, ' ') << Entry.Key
+-                   << std::string(ValIndentSize, ' ') << Entry.Value
+-                   << (Entry.Units.empty() ? "" : " ") << Entry.Units << "\n";
++      Out << std::string(KeyIndentSize, ' ') << Entry.Key
++          << std::string(ValIndentSize, ' ') << Entry.Value
++          << (Entry.Units.empty() ? "" : " ") << Entry.Units << "\n";
+     }
+   }
+ };
+@@ -866,7 +869,7 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
+   virtual Error syncEventImpl(void *EventPtr) = 0;
+ 
+   /// Print information about the device.
+-  Error printInfo();
++  Error printInfo(llvm::raw_ostream *OS = nullptr);
+   virtual Error obtainInfoImpl(InfoQueueTy &Info) = 0;
+ 
+   /// Getters of the grid values.
+@@ -1295,7 +1298,7 @@ public:
+   int32_t query_async(int32_t DeviceId, __tgt_async_info *AsyncInfoPtr);
+ 
+   /// Prints information about the given devices supported by the plugin.
+-  void print_device_info(int32_t DeviceId);
++  void print_device_info(int32_t DeviceId, llvm::raw_ostream *OS = nullptr);
+ 
+   /// Creates an event in the given plugin if supported.
+   int32_t create_event(int32_t DeviceId, void **EventPtr);
+diff --git a/offload/plugins-nextgen/common/src/PluginInterface.cpp b/offload/plugins-nextgen/common/src/PluginInterface.cpp
+index 57672b0..b8c84e6 100644
+--- a/offload/plugins-nextgen/common/src/PluginInterface.cpp
++++ b/offload/plugins-nextgen/common/src/PluginInterface.cpp
+@@ -1546,7 +1546,7 @@ Error GenericDeviceTy::initDeviceInfo(__tgt_device_info *DeviceInfo) {
+   return initDeviceInfoImpl(DeviceInfo);
+ }
+ 
+-Error GenericDeviceTy::printInfo() {
++Error GenericDeviceTy::printInfo(llvm::raw_ostream *OS) {
+   InfoQueueTy InfoQueue;
+ 
+   // Get the vendor-specific info entries describing the device properties.
+@@ -1554,7 +1554,7 @@ Error GenericDeviceTy::printInfo() {
+     return Err;
+ 
+   // Print all info entries.
+-  InfoQueue.print();
++  InfoQueue.print(OS);
+ 
+   return Plugin::success();
+ }
+@@ -2036,8 +2036,8 @@ int32_t GenericPluginTy::query_async(int32_t DeviceId,
+   return OFFLOAD_SUCCESS;
+ }
+ 
+-void GenericPluginTy::print_device_info(int32_t DeviceId) {
+-  if (auto Err = getDevice(DeviceId).printInfo())
++void GenericPluginTy::print_device_info(int32_t DeviceId, raw_ostream *OS) {
++  if (auto Err = getDevice(DeviceId).printInfo(OS))
+     REPORT("Failure to print device %d info: %s\n", DeviceId,
+            toString(std::move(Err)).data());
+ }
+diff --git a/offload/src/device.cpp b/offload/src/device.cpp
+index 943c778..e2640f2 100644
+--- a/offload/src/device.cpp
++++ b/offload/src/device.cpp
+@@ -24,6 +24,7 @@
+ 
+ #include "Shared/EnvironmentVar.h"
+ #include "llvm/Support/Error.h"
++#include "llvm/Support/raw_ostream.h"
+ 
+ #include <cassert>
+ #include <climits>
+@@ -221,8 +222,8 @@ int32_t DeviceTy::launchKernel(void *TgtEntryPtr, void **TgtVarsPtr,
+ }
+ 
+ // Run region on device
+-bool DeviceTy::printDeviceInfo() {
+-  RTL->print_device_info(RTLDeviceID);
++bool DeviceTy::printDeviceInfo(llvm::raw_ostream *OS) {
++  RTL->print_device_info(RTLDeviceID, OS);
+   return true;
+ }
+ 
+diff --git a/offload/src/exports b/offload/src/exports
+index 2406776..f43f9a5 100644
+--- a/offload/src/exports
++++ b/offload/src/exports
+@@ -62,6 +62,7 @@ VERS1.0 {
+     llvm_omp_target_unlock_mem;
+     __tgt_set_info_flag;
+     __tgt_print_device_info;
++    __tgt_get_device_info;
+     omp_get_interop_ptr;
+     omp_get_interop_str;
+     omp_get_interop_int;
+diff --git a/offload/src/interface.cpp b/offload/src/interface.cpp
+index ad84a43..ed25c85 100644
+--- a/offload/src/interface.cpp
++++ b/offload/src/interface.cpp
+@@ -25,6 +25,7 @@
+ #include "Utils/ExponentialBackoff.h"
+ 
+ #include "llvm/Frontend/OpenMP/OMPConstants.h"
++#include "llvm/Support/raw_ostream.h"
+ 
+ #include <cassert>
+ #include <cstdint>
+@@ -294,7 +295,7 @@ static KernelArgsTy *upgradeKernelArgs(KernelArgsTy *KernelArgs,
+ 
+   // FIXME: This is a WA to "calibrate" the bad work done in the front end.
+   // Delete this ugly code after the front end emits proper values.
+-  auto CorrectMultiDim = [](uint32_t(&Val)[3]) {
++  auto CorrectMultiDim = [](uint32_t (&Val)[3]) {
+     if (Val[1] == 0)
+       Val[1] = 1;
+     if (Val[2] == 0)
+@@ -512,6 +513,21 @@ EXTERN int __tgt_print_device_info(int64_t DeviceId) {
+   return DeviceOrErr->printDeviceInfo();
+ }
+ 
++EXTERN int __tgt_get_device_info(int64_t DeviceId,
++                                 void (*CopyCallback)(const char *, size_t)) {
++  assert(PM && "Runtime not initialized");
++  auto DeviceOrErr = PM->getDevice(DeviceId);
++  if (!DeviceOrErr)
++    FATAL_MESSAGE(DeviceId, "%s", toString(DeviceOrErr.takeError()).c_str());
++
++  std::string DeviceInfoStr;
++  llvm::raw_string_ostream OS{DeviceInfoStr};
++  bool Ret = DeviceOrErr->printDeviceInfo(&OS);
++  CopyCallback(DeviceInfoStr.c_str(), DeviceInfoStr.size());
++
++  return Ret;
++}
++
+ EXTERN void __tgt_target_nowait_query(void **AsyncHandle) {
+   assert(PM && "Runtime not initialized");
+   OMPT_IF_BUILT(ReturnAddressSetterRAII RA(__builtin_return_address(0)));

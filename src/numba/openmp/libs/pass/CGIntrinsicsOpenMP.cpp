@@ -2318,7 +2318,8 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
       /*TargetInfo.NoWait*/ false};
   OpenMPIRBuilder::getKernelArgsVector(Args, OMPBuilder.Builder, ArgsVector);
 
-  Value *DeviceID = ConstantInt::get(OMPBuilder.Int64, -1);
+  assert(TargetInfo.DeviceID && "Expected non-null device id");
+  Value *DeviceID = createScalarCast(TargetInfo.DeviceID, OMPBuilder.Int64);
   Value *OffloadResult = nullptr;
   OMPBuilder.emitTargetKernel(Loc, AllocaIP, OffloadResult, Ident, DeviceID,
                               NumTeams, ThreadLimit, OMPRegionId, ArgsVector);

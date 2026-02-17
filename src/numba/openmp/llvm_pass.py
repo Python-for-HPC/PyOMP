@@ -31,6 +31,10 @@ def run_intrinsics_openmp_pass(ll_module):
     ]
     lib.runIntrinsicsOpenMPPass.restype = ctypes.c_int
 
+    if DEBUG_OPENMP_LLVM_PASS >= 1:
+        with open(f"{ll_module.name}.ll", "w") as f:
+            f.write(str(ll_module))
+
     bc = ll_module.as_bitcode()
     buf = ctypes.create_string_buffer(bc)
     ptr = ctypes.cast(buf, ctypes.c_void_p)

@@ -229,6 +229,7 @@ struct TargetInfoStruct {
   Value *ThreadLimit = nullptr;
   OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
   bool NoWait = false;
+  Value *DeviceID = nullptr;
 };
 
 struct ParRegionInfoStruct {

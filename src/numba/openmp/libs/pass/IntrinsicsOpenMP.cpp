@@ -405,7 +405,9 @@ struct IntrinsicsOpenMP {
               assert(ELF && "Expected constant string for ELF");
               TargetInfo.ELF = ELF;
             } else if (Tag.starts_with("QUAL.OMP.DEVICE")) {
-              // TODO: Handle device selection for target regions.
+              assert(O.input_size() == 1 &&
+                     "Expected a single device id value");
+              TargetInfo.DeviceID = TagInputs[0];
             } else if (Tag.starts_with("QUAL.OMP.NUM_TEAMS")) {
               assert(O.input_size() == 1 && "Expected single NumTeams value");
               switch (Dir) {
