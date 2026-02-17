@@ -405,7 +405,9 @@ struct IntrinsicsOpenMP {
               assert(ELF && "Expected constant string for ELF");
               TargetInfo.ELF = ELF;
             } else if (Tag.starts_with("QUAL.OMP.DEVICE")) {
-              // TODO: Handle device selection for target regions.
+              assert(O.input_size() == 1 &&
+                     "Expected a single device id value");
+              TargetInfo.DeviceID = TagInputs[0];
             } else if (Tag.starts_with("QUAL.OMP.NUM_TEAMS")) {
               assert(O.input_size() == 1 && "Expected single NumTeams value");
               switch (Dir) {
@@ -648,28 +650,30 @@ struct IntrinsicsOpenMP {
             FATAL_ERROR("Target enter data should never appear inside a "
                         "device target region");
           CGIOMP.emitOMPTargetData(Fn, BBEntry, BBExit, DSAValueMap,
-                                   StructMappingInfoMap);
+                                   StructMappingInfoMap, TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_enter_data) {
           if (IsDeviceTargetRegion)
             FATAL_ERROR("Target enter data should never appear inside a "
                         "device target region");
 
           CGIOMP.emitOMPTargetEnterData(Fn, BBEntry, DSAValueMap,
-                                        StructMappingInfoMap);
+                                        StructMappingInfoMap,
+                                        TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_exit_data) {
           if (IsDeviceTargetRegion)
             FATAL_ERROR("Target exit data should never appear inside a "
                         "device target region");
 
           CGIOMP.emitOMPTargetExitData(Fn, BBEntry, DSAValueMap,
-                                       StructMappingInfoMap);
+                                       StructMappingInfoMap,
+                                       TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_update) {
           if (IsDeviceTargetRegion)
             FATAL_ERROR("Target exit data should never appear inside a "
                         "device target region");
 
           CGIOMP.emitOMPTargetUpdate(Fn, BBEntry, DSAValueMap,
-                                     StructMappingInfoMap);
+                                     StructMappingInfoMap, TargetInfo.DeviceID);
         } else if (Dir == OMPD_target_teams_distribute) {
           TargetInfo.ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
           CGIOMP.emitOMPDistribute(DSAValueMap, OMPLoopInfo, StartBB, BBExit,

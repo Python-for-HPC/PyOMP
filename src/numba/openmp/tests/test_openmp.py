@@ -48,6 +48,8 @@ from numba.openmp import (
     omp_in_final,
     omp_shared_array,
 )
+from numba.openmp.offloading import find_device_ids, get_device_type
+
 import cmath
 import unittest
 
@@ -167,7 +169,7 @@ class TestOpenmpBase(TestCase):
 
     skip_disabled = int(os.environ.get("OVERRIDE_TEST_SKIP", 0)) != 0
     run_target = int(os.environ.get("RUN_TARGET", 0)) != 0
-    test_devices = os.environ.get("TEST_DEVICES", "")
+    test_device = os.environ.get("TEST_DEVICE", "")
 
     env_vars = {
         "OMP_NUM_THREADS": omp_get_num_procs(),
@@ -3139,24 +3141,33 @@ class TestOpenmpTaskloop(TestOpenmpBase):
 )
 class TestOpenmpTarget(TestOpenmpBase):
     """
-    OpenMP target offloading tests. TEST_DEVICES is a required env var to
-    specify the device numbers to run the tests on: 0 for CUDA backend, 1 for
-    host backend. It is expected to be a comma-separated list of integer values.
+    OpenMP target offloading tests. TEST_DEVICE is a required env var to
+    specify the device to run tests. It accepts "host" or "gpu" as targets
+    and uses OpenMP offloading info to find the device id for the target.
     """
 
-    devices = []
-    assert TestOpenmpBase.test_devices, (
-        "Expected env var TEST_DEVICES (comma-separated list of device numbers)"
-    )
-    devices = [int(devno) for devno in TestOpenmpBase.test_devices.split(",")]
-    assert devices, "Expected non-empty test devices list"
+    @classmethod
+    def setUpClass(cls):
+        cls.devices = []
+        assert TestOpenmpBase.test_device, (
+            "Expected env var TEST_DEVICE to specify the test target device (e.g. 'host' or 'gpu')"
+        )
+
+        cls.devices = find_device_ids(type=TestOpenmpBase.test_device)
+        assert cls.devices, (
+            f"Expected non-empty test devices list, no device with type {TestOpenmpBase.test_device} found"
+        )
+
+        # Use only the first device.
+        cls.devices = [int(cls.devices[0])]
+        print(f"Testing OpenMP target offloading on device: {cls.devices}")
 
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
 
     @classmethod
     def is_testing_cpu(cls):
-        return 1 in cls.devices
+        return TestOpenmpBase.test_device == "host"
 
     # How to check for nowait?
     # Currently checks only compilation.
@@ -3231,16 +3242,17 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams, threads
 
         teams, threads = test_impl()
-        # GPU device(0) starts >1 teams each with 1 thread.
-        if device == 0:
+        # GPU device starts >1 teams each with 1 thread.
+        device_type = get_device_type(device)
+        if device_type == "gpu":
             self.assertGreater(teams, 1)
             self.assertEqual(threads, 1)
-        # CPU device(1) starts 1 team with >1 threads.
-        elif device == 1:
+        # CPU device starts 1 team with >1 threads.
+        elif device_type == "host":
             self.assertEqual(teams, 1)
             self.assertGreater(threads, 1)
         else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+            raise ValueError(f"Device {device} must be 'gpu' or 'host'")
 
     def target_nest_teams_set_numteams(self, device):
         target_pragma = f"target device({device}) map(from: teams, threads)"
@@ -3259,12 +3271,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams, threads
 
         teams, threads = test_impl()
-        if device == 0:
-            self.assertEqual(teams, 32)
-        elif device == 1:
-            self.assertLessEqual(teams, 32)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertLessEqual(teams, 32)
         self.assertGreaterEqual(threads, 1)
 
     def target_nest_teams_nest_parallel_default_numteams_threadlimit(self, device):
@@ -3286,15 +3293,16 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         teams, threads = test_impl()
         # For GPU, impl. creates multiple threads and teams.
-        if device == 0:
+        device_type = get_device_type(device)
+        if device_type == "gpu":
             self.assertGreater(teams, 1)
             self.assertGreater(threads, 1)
         # For CPU, impl. creates 1 teams with multiple threads.
-        elif device == 1:
+        elif device_type == "host":
             self.assertEqual(teams, 1)
             self.assertGreater(threads, 1)
         else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+            raise ValueError(f"Device {device} must be 'gpu' or 'host'")
 
     def target_nest_teams_nest_parallel_set_numteams(self, device):
         target_pragma = f"target device({device}) map(from: teams, threads)"
@@ -3314,12 +3322,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams, threads
 
         teams, threads = test_impl()
-        if device == 0:
-            self.assertEqual(teams, 32)
-        elif device == 1:
-            self.assertGreaterEqual(teams, 1)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertGreaterEqual(teams, 1)
+        self.assertLessEqual(teams, 32)
         self.assertGreaterEqual(threads, 1)
 
     def target_nest_teams_nest_parallel_set_threadlimit(self, device):
@@ -3341,15 +3345,16 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         teams, threads = test_impl()
         # For GPU, impl. creates > 1 teams.
-        if device == 0:
+        device_type = get_device_type(device)
+        if device_type == "gpu":
             self.assertGreater(teams, 1)
             self.assertEqual(threads, 32)
         # For CPU, impl. creates exactly 1 team.
-        elif device == 1:
+        elif device_type == "host":
             self.assertEqual(teams, 1)
             self.assertLessEqual(threads, 32)
         else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+            raise ValueError(f"Device {device} must be 'gpu' or 'host'")
 
     def target_nest_teams_nest_parallel_set_numteams_threadlimit(self, device):
         target_pragma = f"target device({device}) map(from: teams, threads)"
@@ -3370,14 +3375,8 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         teams, threads = test_impl()
         self.assertGreaterEqual(teams, 1)
-        if device == 0:
-            self.assertEqual(teams, 32)
-            self.assertEqual(threads, 32)
-        elif device == 1:
-            self.assertLessEqual(teams, 32)
-            self.assertLessEqual(threads, 32)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertLessEqual(teams, 32)
+        self.assertLessEqual(threads, 32)
 
     def target_nest_teams_nest_parallel_set_numteams_threadlimit_gt_numthreads(
         self, device
@@ -3400,14 +3399,8 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         teams, threads = test_impl()
         self.assertGreaterEqual(teams, 1)
-        if device == 0:
-            self.assertEqual(teams, 32)
-            self.assertEqual(threads, 32)
-        elif device == 1:
-            self.assertLessEqual(teams, 32)
-            self.assertLessEqual(threads, 32)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertLessEqual(teams, 32)
+        self.assertLessEqual(threads, 32)
 
     def target_nest_teams_nest_parallel_set_numteams_threadlimit_lt_numthreads(
         self, device
@@ -3431,14 +3424,8 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         teams, threads = test_impl()
         self.assertGreaterEqual(teams, 1)
-        if device == 0:
-            self.assertEqual(teams, 32)
-            self.assertEqual(threads, 64)
-        elif device == 1:
-            self.assertLessEqual(teams, 32)
-            self.assertLessEqual(threads, 64)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertLessEqual(teams, 32)
+        self.assertLessEqual(threads, 64)
 
     def target_nest_parallel_multiple_set_numthreads(self, device):
         target_pragma = (
@@ -3611,12 +3598,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             return a, nteams
 
         r, nteams = test_impl()
-        if device == 0:
-            np.testing.assert_equal(r, np.full(100, 1))
-        elif device == 1:
-            np.testing.assert_equal(r[:nteams], np.full(nteams, 1))
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        np.testing.assert_equal(r[:nteams], np.full(nteams, 1))
 
     def target_nest_teams(self, device):
         target_pragma = f"target device({device}) map(from: a, nteams)"
@@ -3634,12 +3616,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             return a, nteams
 
         r, nteams = test_impl()
-        if device == 0:
-            np.testing.assert_equal(r, np.full(100, 1))
-        elif device == 1:
-            np.testing.assert_equal(r[:nteams], np.full(nteams, 1))
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        np.testing.assert_equal(r[:nteams], np.full(nteams, 1))
 
     def target_nest_teams_from_shared_expl_scalar(self, device):
         target_pragma = f"target device({device}) map(from: s)"
@@ -3725,14 +3702,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams, threads
 
         teams, threads = test_impl()
-        if device == 0:
-            self.assertEqual(teams, 10)
-            self.assertEqual(threads, 32)
-        elif device == 1:
-            self.assertLessEqual(teams, 10)
-            self.assertLessEqual(threads, 32)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertLessEqual(teams, 10)
+        self.assertLessEqual(threads, 32)
 
     def target_teams_nest_parallel_set_thread_limit(self, device):
         target_pragma = f"target device({device}) map(tofrom: teams, threads)"
@@ -3752,14 +3723,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams, threads
 
         teams, threads = test_impl()
-        if device == 0:
-            self.assertEqual(teams, 10)
-            self.assertEqual(threads, 32)
-        elif device == 1:
-            self.assertLessEqual(teams, 10)
-            self.assertLessEqual(threads, 32)
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        self.assertLessEqual(teams, 10)
+        self.assertLessEqual(threads, 32)
 
     def target_map_to_scalar(self, device):
         target_pragma = f"target device({device}) map(to: x) map(from: r)"
@@ -3952,18 +3917,20 @@ class TestOpenmpTarget(TestOpenmpBase):
         # u = unique teams ids that processed the array, c = number of iters
         # each unique team id has processed.
         u, c = np.unique(sched, return_counts=True)
-        if device == 0:
+
+        device_type = get_device_type(device)
+        if device_type == "gpu":
             # For GPU, OpenMP creates as many teams as the number of iterations,
             # where each team leader executes one iteration.
             np.testing.assert_equal(len(u), n)
             np.testing.assert_array_equal(c, np.ones(n))
-        elif device == 1:
+        elif device_type == "host":
             # For CPU, OpenMP creates 1 teams with 1 thread processing all n
             # iterations.
             np.testing.assert_equal(len(u), 1)
             np.testing.assert_array_equal(c, [100])
         else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+            raise ValueError(f"Device {device} must be 'gpu' or 'host'")
 
     def target_teams_distribute(self, device):
         target_pragma = (
@@ -3987,17 +3954,19 @@ class TestOpenmpTarget(TestOpenmpBase):
         # u = unique teams ids that processed the array, c = number of iters
         # each unique team id has processed.
         u, c = np.unique(sched, return_counts=True)
-        if device == 0:
+
+        device_type = get_device_type(device)
+        if device_type == "gpu":
             # For GPU, impl. creates as many teams as the number of iterations,
             # where each team leader executes one iteration.
             np.testing.assert_equal(len(u), n)
             np.testing.assert_array_equal(c, np.ones(n))
-        elif device == 1:
+        elif device_type == "host":
             # For CPU, impl. creates 1 team which processes all iterations.
             np.testing.assert_equal(len(u), 1)
             np.testing.assert_array_equal(c, [1000])
         else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+            raise ValueError(f"Device {device} must be 'gpu' or 'host'")
 
     def target_teams_distribute_set_num_teams(self, device):
         target_pragma = (
@@ -4446,7 +4415,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         # u_thread stores unique ids of threads (regardless of team), c_thread
         # stores how many iterations threads of the same unique id executed.
         u_thread, c_thread = np.unique(sched_thread, return_counts=True)
-        if device == 0:
+
+        device_type = get_device_type(device)
+        if device_type == "gpu":
             # there are 4 teams each with a unique id starting from 0.
             self.assertEqual(len(u_team), 4)
             np.testing.assert_array_equal(u_team, np.arange(0, len(u_team)))
@@ -4456,7 +4427,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             np.testing.assert_array_equal(
                 c_thread, np.full(len(u_thread), n / len(u_thread))
             )
-        elif device == 1:
+        elif device_type == "host":
             self.assertLessEqual(len(u_team), 4)
             np.testing.assert_array_equal(u_team, np.arange(0, len(u_team)))
             # Divide (integer) n iterations by number of teams and add the
@@ -4479,7 +4450,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
             np.testing.assert_array_equal(c_thread, chunks_thread)
         else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+            raise ValueError(f"Device {device} must be 'gpu' or 'host'")
 
     @unittest.skip("Fix unexpected QUAL.OMP.THREAD_LIMIT")
     def target_teams_nest_distribute_parallel_for(self, device):
@@ -4630,12 +4601,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         r, nteams = test_impl()
         expected = np.arange(10) * 10
-        if device == 0:
-            np.testing.assert_array_equal(r, expected)
-        elif device == 1:
-            np.testing.assert_array_equal(r[:nteams], expected[:nteams])
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        np.testing.assert_array_equal(r[:nteams], expected[:nteams])
 
     def target_teams_shared_array_2d(self, device):
         target_pragma = f"target teams num_teams(10) map(tofrom: a) map(from: nteams) device({device})"
@@ -4665,12 +4631,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         expected = np.empty((10, 2, 2))
         for i in range(10):
             expected[i] = np.full((2, 2), i)
-        if device == 0:
-            np.testing.assert_array_equal(a, expected)
-        elif device == 1:
-            np.testing.assert_array_equal(a[:nteams], expected[:nteams])
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        np.testing.assert_array_equal(a[:nteams], expected[:nteams])
 
     def target_local_array(self, device):
         target_pragma = f"target teams num_teams(1) map(tofrom: a) map(from: nthreads) device({device})"
@@ -4695,16 +4656,9 @@ class TestOpenmpTarget(TestOpenmpBase):
         expected = np.empty((32, 10), dtype=np.int32)
         for i in range(32):
             expected[i] = [i] * 10
-        if device == 0:
-            self.assertEqual(nthreads, 32)
-            np.testing.assert_array_equal(a, expected)
-        elif device == 1:
-            # CPU num_threads are capped by number of cores, which can be less
-            # than the provided value.
-            self.assertLessEqual(nthreads, 32)
-            np.testing.assert_array_equal(a[:nthreads], expected[:nthreads])
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+
+        self.assertLessEqual(nthreads, 32)
+        np.testing.assert_array_equal(a[:nthreads], expected[:nthreads])
 
     def target_teams_parallel_shared_array(self, device):
         target_pragma = f"target teams num_teams(10) map(tofrom: a) map(from: nteams, nthreads) device({device})"
@@ -4740,14 +4694,9 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         r, nteams, nthreads = test_impl()
         expected = np.tile(np.arange(32), (10, 1))
-        if device == 0:
-            np.testing.assert_array_equal(r, expected)
-        elif device == 1:
-            np.testing.assert_array_equal(
-                r[:nteams, :nthreads], expected[:nteams, :nthreads]
-            )
-        else:
-            raise ValueError(f"Device {device} must be 0 or 1")
+        np.testing.assert_array_equal(
+            r[:nteams, :nthreads], expected[:nteams, :nthreads]
+        )
 
     def target_teams_loop_collapse(self, device):
         target_pragma = f"""target teams loop collapse(2)

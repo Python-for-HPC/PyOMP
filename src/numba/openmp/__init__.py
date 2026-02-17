@@ -56,9 +56,22 @@ from .exceptions import (  # noqa: F401
 from .overloads import omp_shared_array  # noqa: F401
 from .omp_context import _OpenmpContextType
 from .decorators import jit, njit  # noqa: F401
+from .offloading import (  # noqa: F401
+    find_device_ids,
+    get_device_type,
+    get_device_vendor,
+    get_device_arch,
+    print_device_info,
+    print_offloading_info,
+)
 
 
-def _init():
+def _init_runtimes():
+    """
+    Initialize the OpenMP runtimes by loading the wrapper library that links
+    with libomp and libomptarget, and calling the libomptarget initialization
+    functions.
+    """
     sys_platform = sys.platform
 
     # Find the wrapper library, which links with libomp and libomptarget, and
@@ -97,6 +110,55 @@ def _init():
     except Exception as e:
         if DEBUG_OPENMP >= 1:
             print(f"Warning: Failed to initialize OpenMP target runtime: {e}")
+
+
+def _init_offloading_info():
+    """
+    Iterate over all OpenMP devices and query their info using the __tgt_get_device_info.
+    """
+    from .offloading import add_device_info
+
+    num_devices = omp_get_num_devices()
+
+    try:
+        addr = ll.address_of_symbol("__tgt_get_device_info")
+        if not addr:
+            if DEBUG_OPENMP >= 1:
+                print(
+                    "Symbol __tgt_get_device_info not found in OpenMP runtime, skipping device info initialization"
+                )
+        from ctypes import (
+            CFUNCTYPE,
+            c_void_p,
+            c_size_t,
+            c_int,
+            string_at,
+        )
+
+        copy_callback_ctype = CFUNCTYPE(None, c_void_p, c_size_t)
+        cfunctype = CFUNCTYPE(c_int, c_int, copy_callback_ctype)
+        __tgt_get_device_info = cfunctype(addr)
+
+        for i in range(num_devices):
+            out = bytearray()
+
+            def _copy_cb(ptr, size):
+                out.extend(string_at(ptr, size))
+
+            copy_cb = copy_callback_ctype(_copy_cb)
+            __tgt_get_device_info(i, copy_cb)
+
+            info_str = out.decode()
+            add_device_info(i, info_str)
+
+    except Exception as e:
+        if DEBUG_OPENMP >= 1:
+            print(f"Warning: Failed to initialize offloading info: {e}")
+
+
+def _init():
+    _init_runtimes()
+    _init_offloading_info()
 
 
 _init()

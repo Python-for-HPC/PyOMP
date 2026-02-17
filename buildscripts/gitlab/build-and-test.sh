@@ -41,8 +41,8 @@ git checkout ${CI_COMMIT_SHA}
 CC=clang CXX=clang++ python -m pip install -v .
 
 # Run host OpenMP tests.
-TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
+RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
 # Run device (cpu target) OpenMP tests.
-OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget
+OMP_TARGET_OFFLOAD=mandatory TEST_DEVICE=host RUN_TARGET=1 python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget
 
 popd

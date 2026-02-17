@@ -109,7 +109,7 @@ def get_dotted_type(x, typemap, lowerer):
 
 
 class OpenMPCUDACodegen:
-    def __init__(self):
+    def __init__(self, sm=None):
         import numba.cuda.api as cudaapi
         import numba.cuda.cudadrv.libs as cudalibs
         from numba.cuda.codegen import CUDA_TRIPLE
@@ -117,9 +117,14 @@ class OpenMPCUDACodegen:
 
         # The OpenMP target runtime prefers the blocking sync flag, so we set it
         # here before creating the CUDA context.
-        driver.driver.cuDevicePrimaryCtxSetFlags(0, enums.CU_CTX_SCHED_BLOCKING_SYNC)
-        self.cc = cudaapi.get_current_device().compute_capability
-        self.sm = "sm_" + str(self.cc[0]) + str(self.cc[1])
+        if sm is None:
+            driver.driver.cuDevicePrimaryCtxSetFlags(
+                0, enums.CU_CTX_SCHED_BLOCKING_SYNC
+            )
+            self.cc = cudaapi.get_current_device().compute_capability
+            self.sm = "sm_" + str(self.cc[0]) + str(self.cc[1])
+        else:
+            self.sm = sm
 
         # Read the libdevice bitcode for the architecture to link with the module.
         self.libdevice_path = cudalibs.get_libdevice()
@@ -305,10 +310,10 @@ _omp_cuda_codegen = None
 # Accessor for the singleton OpenMPCUDACodegen instance. Initializes the
 # instance on first use to ensure a single CUDA context and codegen setup
 # per process.
-def get_omp_cuda_codegen():
+def get_omp_cuda_codegen(arch=None):
     global _omp_cuda_codegen
     if _omp_cuda_codegen is None:
-        _omp_cuda_codegen = OpenMPCUDACodegen()
+        _omp_cuda_codegen = OpenMPCUDACodegen(sm=arch)
     return _omp_cuda_codegen
 
 
@@ -1294,7 +1299,9 @@ class openmp_region_start(ir.Stmt):
             self.tags = list(
                 filter(lambda x: x.name != "QUAL.OMP.OMPX_ATTRIBUTE", self.tags)
             )
-            selected_device = 0
+
+            # Use provided device number if there is a device tag.  Otherwise,
+            # add a device tag with the default device number.
             device_tags = get_tags_of_type(self.tags, "QUAL.OMP.DEVICE")
             if len(device_tags) > 0:
                 device_tag = device_tags[-1]
@@ -1304,6 +1311,11 @@ class openmp_region_start(ir.Stmt):
                     assert False
                 if DEBUG_OPENMP >= 1:
                     print("new selected device:", selected_device)
+            else:
+                from .omp_runtime import omp_get_default_device
+
+                selected_device = omp_get_default_device()
+                self.tags.append(openmp_tag("QUAL.OMP.DEVICE", selected_device))
 
             struct_tags, extras_before = add_struct_tags(self, var_table)
             self.tags.extend(struct_tags)
@@ -1615,7 +1627,11 @@ class openmp_region_start(ir.Stmt):
             if DEBUG_OPENMP >= 1:
                 print("selected_device:", selected_device)
 
-            if selected_device == 1:
+            from .offloading import get_device_type, get_device_vendor, get_device_arch
+
+            device_type = get_device_type(selected_device)
+            device_vendor = get_device_vendor(selected_device)
+            if device_type == "host":
                 flags = Flags()
                 flags.enable_ssa = False
                 device_lowerer_pipeline = OnlyLower
@@ -1644,7 +1660,7 @@ class openmp_region_start(ir.Stmt):
                 subtarget._internal_codegen._library_class = CustomAOTCPUCodeLibrary
                 subtarget._internal_codegen._engine.set_object_cache(None, None)
                 device_target = subtarget
-            elif selected_device == 0:
+            elif device_type == "gpu" and device_vendor == "nvidia":
                 from numba.core import target_extension
 
                 orig_target = getattr(
@@ -1683,7 +1699,9 @@ class openmp_region_start(ir.Stmt):
                 )
                 dprint_func_ir(outlined_ir, "outlined_ir after replace np.empty")
             else:
-                raise NotImplementedError("Unsupported OpenMP device number")
+                raise NotImplementedError(
+                    f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
+                )
 
             device_target.state_copy = state_copy
             # Do not compile (generate native code), just lower (to LLVM)
@@ -1794,7 +1812,7 @@ class openmp_region_start(ir.Stmt):
                     )
 
             # TODO: move device pipelines in numba proper.
-            if selected_device == 1:
+            if device_type == "host":
                 if DEBUG_OPENMP >= 1:
                     with open(cres_library.name + ".ll", "w") as f:
                         f.write(cres_library.get_llvm_str())
@@ -1824,12 +1842,14 @@ class openmp_region_start(ir.Stmt):
                 if DEBUG_OPENMP >= 1:
                     print("target_elf:", type(target_elf), len(target_elf))
                     sys.stdout.flush()
-            elif selected_device == 0:
+            elif device_type == "gpu" and device_vendor == "nvidia":
                 target_extension._active_context.target = orig_target
-                omp_cuda_cg = get_omp_cuda_codegen()
+                omp_cuda_cg = get_omp_cuda_codegen(get_device_arch(selected_device))
                 target_elf = omp_cuda_cg.get_target_image(cres, ompx_attrs)
             else:
-                raise NotImplementedError("Unsupported OpenMP device number")
+                raise NotImplementedError(
+                    f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
+                )
 
             # if cuda then run ptxas on the cres and pass that
 

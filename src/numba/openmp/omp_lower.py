@@ -2196,8 +2196,10 @@ class OpenmpVisitor(Transformer):
 
         firstprivate_dead_after = list(
             filter(
-                lambda x: x.name == "QUAL.OMP.FIRSTPRIVATE"
-                and x.arg not in live_map[self.blk_end],
+                lambda x: (
+                    x.name == "QUAL.OMP.FIRSTPRIVATE"
+                    and x.arg not in live_map[self.blk_end]
+                ),
                 start_tags,
             )
         )
@@ -3094,20 +3096,40 @@ def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra
 
     args = extra["args"]
     arg = args[0]
+
     # If OpenMP argument is not a constant or not a string then raise exception
-    if not isinstance(arg, (ir.Const, ir.FreeVar)):
+    # Accept ir.Const, ir.FreeVar, and ir.Global (closure variables)
+    if not isinstance(arg, (ir.Const, ir.FreeVar, ir.Global)):
         raise NonconstantOpenmpSpecification(
             f"Non-constant OpenMP specification at line {arg.loc}"
         )
-    if not isinstance(arg.value, str):
-        raise NonStringOpenmpSpecification(
-            f"Non-string OpenMP specification at line {arg.loc}"
-        )
+
+    # Extract the actual string value from Const, FreeVar, or Global
+    if isinstance(arg, ir.Const):
+        pragma_value = arg.value
+        if not isinstance(pragma_value, str):
+            raise NonStringOpenmpSpecification(
+                f"Non-string OpenMP specification at line {arg.loc}"
+            )
+    elif isinstance(arg, ir.Global):
+        # ir.Global has the value attribute directly
+        pragma_value = arg.value
+        if not isinstance(pragma_value, str):
+            raise NonStringOpenmpSpecification(
+                f"Non-string OpenMP specification at line {arg.loc}"
+            )
+    elif isinstance(arg, ir.FreeVar):
+        # For FreeVar, infer the constant value from the closure
+        pragma_value = arg.infer_constant()
+        if not isinstance(pragma_value, str):
+            raise NonStringOpenmpSpecification(
+                f"Non-string OpenMP specification at line {arg.loc}"
+            )
 
     if DEBUG_OPENMP >= 1:
         print("args:", args, type(args))
-        print("arg:", arg, type(arg), arg.value, type(arg.value))
-    parse_res = openmp_parser.parse(arg.value)
+        print("arg:", arg, type(arg), pragma_value, type(pragma_value))
+    parse_res = openmp_parser.parse(pragma_value)
     if DEBUG_OPENMP >= 1:
         print(parse_res.pretty())
     visitor = OpenmpVisitor(func_ir, blocks, blk_start, blk_end, body_blocks, loc)

@@ -229,6 +229,7 @@ struct TargetInfoStruct {
   Value *ThreadLimit = nullptr;
   OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
   bool NoWait = false;
+  Value *DeviceID = nullptr;
 };
 
 struct ParRegionInfoStruct {
@@ -484,19 +485,21 @@ public:
 
   void emitOMPTargetData(Function *Fn, BasicBlock *BBEntry, BasicBlock *BBExit,
                          DSAValueMapTy &DSAValueMap,
-                         StructMapTy &StructMappingInfoMap);
+                         StructMapTy &StructMappingInfoMap, Value *DeviceID);
 
   void emitOMPTargetEnterData(Function *Fn, BasicBlock *BBEntry,
                               DSAValueMapTy &DSAValueMap,
-                              StructMapTy &StructMappingInfoMap);
+                              StructMapTy &StructMappingInfoMap,
+                              Value *DeviceID);
 
   void emitOMPTargetExitData(Function *Fn, BasicBlock *BBEntry,
                              DSAValueMapTy &DSAValueMap,
-                             StructMapTy &StructMappingInfoMap);
+                             StructMapTy &StructMappingInfoMap,
+                             Value *DeviceID);
 
   void emitOMPTargetUpdate(Function *Fn, BasicBlock *BBEntry,
                            DSAValueMapTy &DSAValueMap,
-                           StructMapTy &StructMappingInfoMap);
+                           StructMapTy &StructMappingInfoMap, Value *DeviceID);
 
   void emitOMPDistribute(DSAValueMapTy &DSAValueMap,
                          OMPLoopInfoStruct &OMPLoopInfo, BasicBlock *StartBB,
