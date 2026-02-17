@@ -3146,19 +3146,20 @@ class TestOpenmpTarget(TestOpenmpBase):
     and uses OpenMP offloading info to find the device id for the target.
     """
 
-    devices = []
-    assert TestOpenmpBase.test_device, (
-        "Expected env var TEST_DEVICE to specify the test target device (e.g. 'host' or 'gpu')"
-    )
+    if TestOpenmpBase.run_target:
+        devices = []
+        assert TestOpenmpBase.test_device, (
+            "Expected env var TEST_DEVICE to specify the test target device (e.g. 'host' or 'gpu')"
+        )
 
-    devices = find_device_ids(type=TestOpenmpBase.test_device)
-    assert devices, (
-        f"Expected non-empty test devices list, no device with type {TestOpenmpBase.test_device} found"
-    )
+        devices = find_device_ids(type=TestOpenmpBase.test_device)
+        assert devices, (
+            f"Expected non-empty test devices list, no device with type {TestOpenmpBase.test_device} found"
+        )
 
-    # Use only the first device.
-    devices = [int(devices[0])]
-    print(f"Testing OpenMP target offloading on device: {devices}")
+        # Use only the first device.
+        devices = [int(devices[0])]
+        print(f"Testing OpenMP target offloading on device: {devices}")
 
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)

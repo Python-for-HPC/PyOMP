@@ -104,10 +104,10 @@ jobs:
           python -c "import numba; assert numba.__version__ == '${{ matrix.numba-version }}'"
 
           # Run host OpenMP tests.
-          TEST_DEVICES=0 RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
+          RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp
 
           # Run device (cpu target) OpenMP tests.
-          OMP_TARGET_OFFLOAD=mandatory TEST_DEVICES=1 RUN_TARGET=1 \
+          OMP_TARGET_OFFLOAD=mandatory TEST_DEVICE=host RUN_TARGET=1 \
             python -m numba.runtests -v -- numba.openmp.tests.test_openmp.TestOpenmpTarget
 
   # Only on pre-release: Publish to TestPyPI for testing.
