@@ -3158,8 +3158,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
     # Use only the first device.
     devices = [int(devices[0])]
-    print(f"Testing OpenMP target offloading on device(s): {devices}")
-    input("Press Enter to continue...")
+    print(f"Testing OpenMP target offloading on device: {devices}")
 
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
