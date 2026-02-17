@@ -3142,7 +3142,7 @@ class TestOpenmpTaskloop(TestOpenmpBase):
 class TestOpenmpTarget(TestOpenmpBase):
     """
     OpenMP target offloading tests. TEST_DEVICE is a required env var to
-    specify the device to run tests. It accepts "host" or "nvidia" as targets
+    specify the device to run tests. It accepts "host" or "gpu" as targets
     and uses OpenMP offloading info to find the device id for the target.
     """
 
