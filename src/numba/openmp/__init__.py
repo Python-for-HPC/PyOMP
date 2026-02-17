@@ -123,9 +123,10 @@ def _init_offloading_info():
     try:
         addr = ll.address_of_symbol("__tgt_get_device_info")
         if not addr:
-            raise RuntimeError(
-                "Symbol __tgt_get_device_info not found in OpenMP runtime"
-            )
+            if DEBUG_OPENMP >= 1:
+                print(
+                    "Symbol __tgt_get_device_info not found in OpenMP runtime, skipping device info initialization"
+                )
         from ctypes import (
             CFUNCTYPE,
             c_void_p,
@@ -151,7 +152,8 @@ def _init_offloading_info():
             add_device_info(i, info_str)
 
     except Exception as e:
-        print(f"Warning: Failed to initialize offloading info: {e}")
+        if DEBUG_OPENMP >= 1:
+            print(f"Warning: Failed to initialize offloading info: {e}")
 
 
 def _init():

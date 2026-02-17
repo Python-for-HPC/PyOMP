@@ -3146,7 +3146,8 @@ class TestOpenmpTarget(TestOpenmpBase):
     and uses OpenMP offloading info to find the device id for the target.
     """
 
-    if TestOpenmpBase.run_target:
+    @classmethod
+    def setUpClass(cls):
         devices = []
         assert TestOpenmpBase.test_device, (
             "Expected env var TEST_DEVICE to specify the test target device (e.g. 'host' or 'gpu')"
