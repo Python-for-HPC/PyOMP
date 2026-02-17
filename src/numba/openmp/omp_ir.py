@@ -1699,7 +1699,9 @@ class openmp_region_start(ir.Stmt):
                 )
                 dprint_func_ir(outlined_ir, "outlined_ir after replace np.empty")
             else:
-                raise NotImplementedError("Unsupported OpenMP device number")
+                raise NotImplementedError(
+                    f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
+                )
 
             device_target.state_copy = state_copy
             # Do not compile (generate native code), just lower (to LLVM)
@@ -1845,7 +1847,9 @@ class openmp_region_start(ir.Stmt):
                 omp_cuda_cg = get_omp_cuda_codegen(get_device_arch(selected_device))
                 target_elf = omp_cuda_cg.get_target_image(cres, ompx_attrs)
             else:
-                raise NotImplementedError("Unsupported OpenMP device number")
+                raise NotImplementedError(
+                    f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
+                )
 
             # if cuda then run ptxas on the cres and pass that
 
