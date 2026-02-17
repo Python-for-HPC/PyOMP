@@ -3148,19 +3148,19 @@ class TestOpenmpTarget(TestOpenmpBase):
 
     @classmethod
     def setUpClass(cls):
-        devices = []
+        cls.devices = []
         assert TestOpenmpBase.test_device, (
             "Expected env var TEST_DEVICE to specify the test target device (e.g. 'host' or 'gpu')"
         )
 
-        devices = find_device_ids(type=TestOpenmpBase.test_device)
-        assert devices, (
+        cls.devices = find_device_ids(type=TestOpenmpBase.test_device)
+        assert cls.devices, (
             f"Expected non-empty test devices list, no device with type {TestOpenmpBase.test_device} found"
         )
 
         # Use only the first device.
-        devices = [int(devices[0])]
-        print(f"Testing OpenMP target offloading on device: {devices}")
+        cls.devices = [int(cls.devices[0])]
+        print(f"Testing OpenMP target offloading on device: {cls.devices}")
 
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
