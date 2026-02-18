@@ -7,7 +7,7 @@ You can install PyOMP from PyPI using `pip`:
 
    $ pip install pyomp
 
-It is also possible to install PyOMP through conda:
+It is also possible to install PyOMP through `conda`:
 
 .. code-block:: console
 

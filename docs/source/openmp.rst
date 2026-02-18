@@ -127,45 +127,106 @@ Combines ``target``, ``teams``, ``distribute``, and ``parallel for`` directives.
 
 OpenMP runtime functions
 -------------------------
-**Thread and team information:**
 
-* ``omp_get_thread_num()`` - Returns the unique identifier of the calling thread
-* ``omp_get_num_threads()`` - Returns the total number of threads in the current parallel region
-* ``omp_set_num_threads(n)`` - Sets the number of threads for subsequent parallel regions
-* ``omp_get_max_threads()`` - Returns the maximum number of threads available
-* ``omp_get_num_procs()`` - Returns the number of processors in the system
-* ``omp_get_thread_limit()`` - Returns the thread limit for the parallel region
-* ``omp_in_parallel()`` - Returns 1 if called within a parallel region, 0 otherwise
-* ``omp_get_team_num()`` - Returns the team number in a target region
-* ``omp_get_num_teams()`` - Returns the number of teams in a target region
+Thread and team information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Timing:**
+.. list-table::
+   :widths: 35 65
 
-* ``omp_get_wtime()`` - Returns elapsed wall-clock time (useful for performance profiling)
+   * - **omp_get_thread_num()**
+     - Returns the unique identifier of the calling thread
+   * - **omp_get_num_threads()**
+     - Returns the total number of threads in the current parallel region
+   * - **omp_set_num_threads(n)**
+     - Sets the number of threads for subsequent parallel regions
+   * - **omp_get_max_threads()**
+     - Returns the maximum number of threads available
+   * - **omp_get_num_procs()**
+     - Returns the number of processors in the system
+   * - **omp_get_thread_limit()**
+     - Returns the thread limit for the parallel region
+   * - **omp_in_parallel()**
+     - Returns 1 if called within a parallel region, 0 otherwise
+   * - **omp_get_team_num()**
+     - Returns the team number in a target region
+   * - **omp_get_num_teams()**
+     - Returns the number of teams in a target region
 
-**Nested and hierarchical parallelism:**
+Timing
+~~~~~~
 
-* ``omp_set_nested(flag)`` - Enables or disables nested parallelism
-* ``omp_set_dynamic(flag)`` - Enables or disables dynamic thread adjustment
-* ``omp_set_max_active_levels(n)`` - Sets the maximum number of nested parallel levels
-* ``omp_get_max_active_levels()`` - Returns the maximum number of nested parallel levels
-* ``omp_get_level()`` - Returns the current nesting level
-* ``omp_get_active_level()`` - Returns the current active nesting level
-* ``omp_get_ancestor_thread_num(level)`` - Returns the thread number at a given nesting level
-* ``omp_get_team_size(level)`` - Returns the team size at a given nesting level
-* ``omp_get_supported_active_levels()`` - Returns the supported number of nested active levels
+.. list-table::
+   :widths: 35 65
 
-**Advanced features:**
+   * - **omp_get_wtime()**
+     - Returns elapsed wall-clock time (useful for performance profiling)
 
-* ``omp_get_proc_bind()`` - Returns the processor binding policy
-* ``omp_get_num_places()`` - Returns the number of available places
-* ``omp_get_place_num_procs(place)`` - Returns the number of processors in a place
-* ``omp_get_place_num()`` - Returns the current place number
+Nested and hierarchical parallelism
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :widths: 35 65
+
+   * - **omp_set_nested(flag)**
+     - Enables or disables nested parallelism
+   * - **omp_set_dynamic(flag)**
+     - Enables or disables dynamic thread adjustment
+   * - **omp_set_max_active_levels(n)**
+     - Sets the maximum number of nested parallel levels
+   * - **omp_get_max_active_levels()**
+     - Returns the maximum number of nested parallel levels
+   * - **omp_get_level()**
+     - Returns the current nesting level
+   * - **omp_get_active_level()**
+     - Returns the current active nesting level
+   * - **omp_get_ancestor_thread_num(level)**
+     - Returns the thread number at a given nesting level
+   * - **omp_get_team_size(level)**
+     - Returns the team size at a given nesting level
+   * - **omp_get_supported_active_levels()**
+     - Returns the supported number of nested active levels
+
+Advanced features
+~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :widths: 35 65
+
+   * - **omp_get_proc_bind()**
+     - Returns the processor binding policy
+   * - **omp_get_num_places()**
+     - Returns the number of available places
+   * - **omp_get_place_num_procs(place)**
+     - Returns the number of processors in a place
+   * - **omp_get_place_num()**
+     - Returns the current place number
+   * - **omp_in_final()**
+     - Returns 1 if called in a final task, 0 otherwise
+
+Device and target offloading
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :widths: 35 65
+
+   * - **omp_get_num_devices()**
+     - Returns the number of available target devices
+   * - **omp_get_device_num()**
+     - Returns the device number of the current target device
+   * - **omp_set_default_device(device_id)**
+     - Sets the default device for subsequent target regions
+   * - **omp_get_default_device()**
+     - Returns the default device ID for target regions
+   * - **omp_is_initial_device()**
+     - Returns 1 if executing on the initial device (host), 0 otherwise
+   * - **omp_get_initial_device()**
+     - Returns the device ID of the initial device (host)
 
 Supported features and platforms
 ---------------------------------
 
-OpenMP and GPU Offloading Support
+OpenMP and GPU offloading support
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 PyOMP builds on `Numba <https://numba.pydata.org/>`_ Just-In-Time (JIT)
@@ -178,6 +239,111 @@ in the Numba documentation.
 PyOMP also supports GPU offloading for NVIDIA GPUs. The supported GPU
 architectures depend on the LLVM version and its OpenMP runtime. Consult the
 LLVM OpenMP documentation for details on your specific version.
+
+Device selection and querying
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+PyOMP provides utilities in the ``offloading`` module to query available OpenMP target
+devices and select specific devices for offloading based on device type, vendor, and
+architecture. This enables fine-grained control over where target regions execute.
+
+Discovering Available Devices
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To see all available devices and their properties, use ``print_offloading_info()``:
+
+.. code-block:: python
+
+   from numba.openmp.offloading import print_offloading_info
+
+   print_offloading_info()
+
+This prints information about all devices, including device counts and default device settings.
+
+Finding devices by criteria
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To programmatically find device IDs matching specific criteria, use ``find_device_ids()``:
+
+.. code-block:: python
+
+   from numba.openmp.offloading import find_device_ids
+
+   # Find all GPU devices
+   gpu_devices = find_device_ids(type="gpu")
+
+   # Find all NVIDIA GPUs
+   nvidia_gpus = find_device_ids(vendor="nvidia")
+
+   # Find NVIDIA GPUs with specific architecture (e.g., sm_80)
+   sm80_gpus = find_device_ids(vendor="nvidia", arch="sm_80")
+
+   # Find all AMD GPUs
+   amd_gpus = find_device_ids(vendor="amd")
+
+   # Find host/CPU device
+   host_devices = find_device_ids(type="host")
+
+The function returns a list of device IDs (integers) matching the criteria. Any parameter
+can be ``None`` to act as a wildcard and match all values.
+
+Querying device properties
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To determine the type, vendor, or architecture of a specific device ID, use the property
+getter functions:
+
+.. code-block:: python
+
+   from numba.openmp.offloading import (
+       get_device_type,
+       get_device_vendor,
+       get_device_arch,
+   )
+
+   # Check device type
+   dev_type = get_device_type(device_id)  # Returns "gpu", "host", or None
+
+   # Check vendor
+   vendor = get_device_vendor(device_id)  # Returns "nvidia", "amd", "host", or None
+
+   # Check architecture
+   arch = get_device_arch(device_id)  # Returns architecture string or None
+
+Using device ids in target regions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Once you have identified a device ID, you can use it in OpenMP target directives via the
+``device`` clause:
+
+.. code-block:: python
+
+   from numba.openmp import njit, openmp_context as openmp
+   from numba.openmp.offloading import find_device_ids
+   import numpy as np
+
+   # Find first available NVIDIA GPU
+   nvidia_devices = find_device_ids(vendor="nvidia")
+   if nvidia_devices:
+       device_id = nvidia_devices[0]
+   else:
+       # Fall back to host if no NVIDIA GPU found
+       device_id = find_device_ids(type="host")[0]
+
+
+   @njit
+   def inc(x):
+       with openmp(f"target loop device({device_id}) map(tofrom: x)"):
+           # Computation runs on specified device
+           for i in range(len(x)):
+               x[i] = x[i] + 1
+
+       return x
+
+
+   x = inc(np.ones(10))
+   print(f"Result on device {device_id}: {x}")
+
 
 Version and platform support
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -195,7 +361,19 @@ The following table shows tested combinations of PyOMP, Numba, Python, LLVM, and
    0.3.x                 0.57.x - 0.60.x      3.9 - 3.12           14.x         linux-64, osx-arm64, linux-arm64
    ===================== ==================== ==================== ============ ================================
 
-Platform Details
+OpenMP parallelism support by platform
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+=========== ================ ================= ===================
+Platform    CPU              NVIDIA GPU        AMD GPU
+=========== ================ ================= ===================
+linux-64    ✅ Supported     ✅ Supported      🔶 Work in progress
+linux-arm64 ✅ Supported     ✅ Supported      🔶 Work in progress
+osx-arm64   ✅ Supported     ❌ Unsupported    ❌ Unsupported
+=========== ================ ================= ===================
+
+
+Platform details
 ^^^^^^^^^^^^^^^^
 
 * **linux-64**: Linux x86_64 architecture
