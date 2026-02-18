@@ -39,11 +39,6 @@ from .omp_runtime import (  # noqa F401
     omp_get_initial_device,
 )
 
-from .compiler import (
-    CustomCompiler,
-    CustomFunctionCompiler,
-)
-
 from .exceptions import (  # noqa: F401
     UnspecifiedVarInDefaultNone,
     ParallelForExtraCode,

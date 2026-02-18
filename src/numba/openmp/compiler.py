@@ -321,15 +321,14 @@ class CustomCPUCodeLibrary(JITCodeLibrary):
                 raise RuntimeError("error registering OpenMP offloading descriptor")
 
 
-class CustomFunctionCompiler(_FunctionCompiler):
-    def _customize_flags(self, flags):
-        # We need to disable SSA form for OpenMP analysis to detect variables
-        # used within regions.
-        flags.enable_ssa = False
-        return flags
-
-
 class CustomCompiler(compiler.CompilerBase):
+    def __init__(self, typingctx, targetctx, library, args, return_type, flags, locals):
+        # Ensure SSA form is disabled for OpenMP analysis to detect variables used within regions.
+        flags.enable_ssa = False
+        super().__init__(
+            typingctx, targetctx, library, args, return_type, flags, locals
+        )
+
     @staticmethod
     def custom_untyped_pipeline(state, name="untyped-openmp"):
         """Returns an untyped part of the nopython OpenMP pipeline"""
@@ -366,14 +365,15 @@ class CustomCompiler(compiler.CompilerBase):
         pm.add_pass(FindLiterallyCalls, "find literally calls")
         pm.add_pass(LiteralUnroll, "handles literal_unroll")
 
-        if state.flags.enable_ssa:
-            assert False, "SSA form is not supported in OpenMP"
+        assert not state.flags.enable_ssa, (
+            "SSA form is not supported in OpenMP compilation"
+        )
 
         pm.add_pass(LiteralPropagationSubPipelinePass, "Literal propagation")
-        # Run WithLifting late to for make_implicit_explicit to work.  TODO: We
-        # should create a pass that does this instead of replicating and hacking
-        # the untyped pipeline. This handling may also negatively affect
-        # optimizations.
+        # Run WithLifting late to for make_implicit_explicit to work.
+        # TODO: We should create a pass that does this instead of replicating
+        # and hacking the untyped pipeline. This handling may also negatively
+        # affect optimizations.
         pm.add_pass(WithLifting, "Handle with contexts")
 
         pm.finalize()
