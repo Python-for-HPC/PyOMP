@@ -3084,6 +3084,165 @@ def remove_ssa_from_func_ir(func_ir):
     func_ir._definitions = build_definitions(func_ir.blocks)
 
 
+class _ExtendedConstantInference:
+    """
+    Extended ConstantInference that supports binop for string concatenation.
+    """
+
+    def __init__(self, func_ir):
+        from numba.core.consts import ConstantInference
+
+        self._base_inference = ConstantInference(func_ir)
+        self._func_ir = func_ir
+
+    def infer_constant(self, name, loc=None):
+        """Infer a constant value, delegating to base inference first."""
+        from numba.core.errors import ConstantInferenceError
+
+        try:
+            return self._base_inference.infer_constant(name, loc=loc)
+        except ConstantInferenceError:
+            # If base inference fails, check if the variable's definition is
+            # an expression we can handle (like binop or call)
+            try:
+                defn = self._func_ir.get_definition(name)
+                if isinstance(defn, ir.Expr):
+                    if defn.op == "binop":
+                        return self.infer_expr(defn, loc=loc)
+                    elif defn.op == "call":
+                        return self.infer_expr(defn, loc=loc)
+            except (KeyError, AttributeError):
+                pass
+            raise
+
+    def _infer_value(self, val, loc=None):
+        """
+        Infer a constant from a value which might be a variable name or an expression.
+        """
+        from numba.core.errors import ConstantInferenceError
+
+        if isinstance(val, ir.Var):
+            return self.infer_constant(val.name, loc=val.loc)
+        elif isinstance(val, ir.Expr):
+            return self.infer_expr(val, loc=loc)
+        elif isinstance(val, str):
+            # Direct variable name
+            return self.infer_constant(val, loc=loc)
+        else:
+            raise ConstantInferenceError(f"Cannot infer value for {val}", loc=loc)
+
+    def infer_expr(self, expr, loc=None):
+        """
+        Infer an expression, with added support for binop (string concatenation)
+        and format_value() calls.
+        """
+        from numba.core.errors import ConstantInferenceError
+
+        if expr.op == "binop":
+            # Support binary operations for string concatenation
+            try:
+                lhs = self._infer_value(expr.lhs, loc=expr.loc)
+                rhs = self._infer_value(expr.rhs, loc=expr.loc)
+                # String concatenation
+                if isinstance(lhs, str) and isinstance(rhs, str):
+                    return lhs + rhs
+            except ConstantInferenceError:
+                raise
+            # If it's not string concatenation
+            raise ConstantInferenceError(
+                f"Cannot infer binop: {lhs!r} + {rhs!r}", loc=expr.loc
+            )
+        elif expr.op == "call":
+            # Handle str() and format_value() calls
+            try:
+                func = expr.func
+
+                # Try to infer what function is being called
+                func_name = None
+                if isinstance(func, ir.Global):
+                    if func.value is str:
+                        func_name = "str"
+                elif isinstance(func, ir.Var):
+                    # Try to resolve the variable to see what function it points to
+                    try:
+                        func_defn = self._func_ir.get_definition(func.name)
+                        # Handle ir.Global directly (Python 3.13+ for format_simple)
+                        if isinstance(func_defn, ir.Global):
+                            if func_defn.value is str:
+                                func_name = "str"
+                        elif (
+                            isinstance(func_defn, ir.Expr) and func_defn.op == "global"
+                        ):
+                            if func_defn.value is str:
+                                func_name = "str"
+                            elif (
+                                hasattr(func_defn.value, "__name__")
+                                and "format_value" in func_defn.value.__name__
+                            ):
+                                func_name = "format_value"
+                        else:
+                            # Check if the variable name itself suggests what it is
+                            if "format_value" in func.name:
+                                func_name = "format_value"
+                    except (KeyError, AttributeError):
+                        if "format_value" in func.name:
+                            func_name = "format_value"
+
+                # Handle str() calls
+                if func_name == "str" or (
+                    isinstance(func, ir.Global) and func.value is str
+                ):
+                    if len(expr.args) >= 1:
+                        arg_val = self._infer_value(expr.args[0], loc=expr.loc)
+                        return str(arg_val)
+
+                # Handle format_value calls (used in f-strings)
+                if func_name == "format_value":
+                    if len(expr.args) >= 1:
+                        arg_val = self._infer_value(expr.args[0], loc=expr.loc)
+                        return str(arg_val)
+
+                # If we don't recognize the function, don't try base inference
+                raise ConstantInferenceError(
+                    f"Cannot infer call to unknown function: {func}", loc=expr.loc
+                )
+
+            except ConstantInferenceError:
+                raise
+        else:
+            # Delegate to base inference for other operations
+            return self._base_inference._infer_expr(expr)
+
+
+def _try_infer_string_constant(arg, func_ir):
+    """
+    Try to infer a constant string value from an IR node.
+    Uses extended ConstantInference that supports binop for string concatenation
+    and format_value calls used in f-strings.
+
+    Returns the string value if resolvable, None otherwise.
+    """
+    from numba.core.errors import ConstantInferenceError
+
+    try:
+        inference = _ExtendedConstantInference(func_ir)
+
+        # For variables, use ConstantInference to resolve them
+        if isinstance(arg, ir.Var):
+            value = inference.infer_constant(arg.name, loc=arg.loc)
+            if isinstance(value, str):
+                return value
+        # For expressions, try using the extended inference
+        elif isinstance(arg, ir.Expr):
+            value = inference.infer_expr(arg)
+            if isinstance(value, str):
+                return value
+    except (ConstantInferenceError, AttributeError, NotImplementedError):
+        pass
+
+    return None
+
+
 def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra):
     """Given the starting and ending block of the with-context,
     replaces the head block with a new block that has the starting
@@ -3097,14 +3256,16 @@ def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra
     args = extra["args"]
     arg = args[0]
 
+    pragma_value = None
+
     # If OpenMP argument is not a constant or not a string then raise exception
-    # Accept ir.Const, ir.FreeVar, and ir.Global (closure variables)
-    if not isinstance(arg, (ir.Const, ir.FreeVar, ir.Global)):
+    # Accept ir.Const, ir.FreeVar, ir.Global, ir.Expr, and ir.Var
+    if not isinstance(arg, (ir.Const, ir.FreeVar, ir.Global, ir.Expr, ir.Var)):
         raise NonconstantOpenmpSpecification(
             f"Non-constant OpenMP specification at line {arg.loc}"
         )
 
-    # Extract the actual string value from Const, FreeVar, or Global
+    # Extract the actual string value from various IR types
     if isinstance(arg, ir.Const):
         pragma_value = arg.value
         if not isinstance(pragma_value, str):
@@ -3121,6 +3282,17 @@ def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra
     elif isinstance(arg, ir.FreeVar):
         # For FreeVar, infer the constant value from the closure
         pragma_value = arg.infer_constant()
+        if not isinstance(pragma_value, str):
+            raise NonStringOpenmpSpecification(
+                f"Non-string OpenMP specification at line {arg.loc}"
+            )
+    else:
+        # Handle ir.Var and ir.Expr using ConstantInference
+        pragma_value = _try_infer_string_constant(arg, func_ir)
+        if pragma_value is None:
+            raise NonconstantOpenmpSpecification(
+                f"Cannot infer constant OpenMP specification at line {arg.loc}"
+            )
         if not isinstance(pragma_value, str):
             raise NonStringOpenmpSpecification(
                 f"Non-string OpenMP specification at line {arg.loc}"

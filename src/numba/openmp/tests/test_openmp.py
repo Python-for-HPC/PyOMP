@@ -2032,7 +2032,7 @@ class TestOpenmpConstraints(TestOpenmpBase):
         with self.assertRaises(NonconstantOpenmpSpecification) as raises:
             test_impl(np.zeros(100))
         self.assertIn(
-            "Non-constant OpenMP specification at line", str(raises.exception)
+            "Cannot infer constant OpenMP specification", str(raises.exception)
         )
 
     # def test_parallel_for_blocking_if(self):
@@ -5035,6 +5035,137 @@ class TestOpenmpRuntimeFunctions(TestOpenmpBase):
         python_num_devices = omp_get_num_devices()
         self.assertEqual(jit_num_devices, python_num_devices)
         self.assertGreater(jit_num_devices, 0)
+
+
+class TestOpenmpStringPatterns(TestOpenmpBase):
+    def __init__(self, *args):
+        TestOpenmpBase.__init__(self, *args)
+
+    def test_omp_jit_const_string(self):
+        @njit
+        def test_impl(x):
+            with openmp("parallel num_threads(4)"):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_py_const_string(self):
+        omp_string = "parallel num_threads(4)"
+
+        @njit
+        def test_impl(x):
+            with openmp(omp_string):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_jit_fstring(self):
+        @njit
+        def test_impl(x):
+            num_threads = 4
+            with openmp(f"parallel num_threads({num_threads})"):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_py_fstring(self):
+        num_threads = 4
+        omp_string = f"parallel num_threads({num_threads})"
+
+        @njit
+        def test_impl(x):
+            with openmp(omp_string):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_string_concat_literals(self):
+        @njit
+        def test_impl(x):
+            with openmp("parallel " + "num_threads(4)"):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_string_concat_jit_variables(self):
+        @njit
+        def test_impl(x):
+            prefix = "parallel "
+            suffix = "num_threads(4)"
+            with openmp(prefix + suffix):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_string_concat_variables(self):
+        num_threads = 4
+        omp_string = "parallel num_threads(" + str(num_threads) + ")"
+
+        @njit
+        def test_impl(x):
+            with openmp(omp_string):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_nested_concat(self):
+        prefix = "parallel "
+        suffix = "num_threads(4)"
+        omp_string = prefix + suffix
+
+        @njit
+        def test_impl(x):
+            with openmp(omp_string):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
+
+    def test_omp_explicit_str_call(self):
+        num_threads = 4
+        omp_string = "parallel " + "num_threads(" + str(num_threads) + ")"
+
+        @njit
+        def test_impl(x):
+            with openmp(omp_string):
+                tid = omp_get_thread_num()
+                x[tid] = x[tid] + 1
+            return x
+
+        x = np.zeros(4)
+        x = test_impl(x)
+        np.testing.assert_array_equal(x, np.ones(4))
 
 
 if __name__ == "__main__":
