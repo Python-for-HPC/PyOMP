@@ -1,8 +1,6 @@
-import contextlib
 import math
 import numbers
 import os
-import platform
 import numpy as np
 
 from numba.core import (
@@ -18,7 +16,6 @@ from numba.tests.support import (
     linux_only,
 )
 
-import numba.openmp
 from numba.openmp import njit
 from numba.openmp import openmp_context as openmp
 from numba.openmp import (
@@ -35,7 +32,6 @@ from numba.openmp import (
     UnspecifiedVarInDefaultNone,
     NonconstantOpenmpSpecification,
     NonStringOpenmpSpecification,
-    omp_get_thread_limit,
     ParallelForExtraCode,
     ParallelForWrongLoopCount,
     omp_in_parallel,
@@ -46,110 +42,12 @@ from numba.openmp import (
     omp_get_team_num,
     omp_get_num_teams,
     omp_in_final,
-    omp_shared_array,
 )
 from numba.openmp.offloading import find_device_ids, get_device_type
 
-import cmath
 import unittest
 
-# NOTE: Each OpenMP test class is run in separate subprocess, this is to reduce
-# memory pressure in CI settings. The environment variable "SUBPROC_TEST" is
-# used to determine whether a test is skipped or not, such that if you want to
-# run any OpenMP test directly this environment variable can be set. The
-# subprocesses running the test classes set this environment variable as the new
-# process starts which enables the tests within the process. The decorator
-# @needs_subprocess is used to ensure the appropriate test skips are made.
 
-#
-# class TestOpenmpRunner(TestCase):
-#    _numba_parallel_test_ = False
-#
-#    # Each test class can run for 30 minutes before time out.
-#    _TIMEOUT = 1800
-#
-#    """This is the test runner for all the OpenMP tests, it runs them in
-#    subprocesses as described above. The convention for the test method naming
-#    is: `test_<TestClass>` where <TestClass> is the name of the test class in
-#    this module.
-#    """
-#    def runner(self):
-#        themod = self.__module__
-#        test_clazz_name = self.id().split('.')[-1].split('_')[-1]
-#        # don't specify a given test, it's an entire class that needs running
-#        self.subprocess_test_runner(test_module=themod,
-#                                    test_class=test_clazz_name,
-#                                    timeout=self._TIMEOUT)
-#
-#    """
-#    def test_TestOpenmpBasic(self):
-#        self.runner()
-#    """
-#
-#    def test_TestOpenmpRoutinesEnvVariables(self):
-#        self.runner()
-#
-#    def test_TestOpenmpParallelForResults(self):
-#        self.runner()
-#
-#    def test_TestOpenmpWorksharingSchedule(self):
-#        self.runner()
-#
-#    def test_TestOpenmpParallelClauses(self):
-#        self.runner()
-#
-#    def test_TestOpenmpDataClauses(self):
-#        self.runner()
-#
-#    def test_TestOpenmpConstraints(self):
-#        self.runner()
-#
-#    def test_TestOpenmpConcurrency(self):
-#        self.runner()
-#
-#    def test_TestOpenmpTask(self):
-#        self.runner()
-#
-#    def test_TestOpenmpTaskloop(self):
-#        self.runner()
-#
-#    def test_TestOpenmpTarget(self):
-#        self.runner()
-#
-#    def test_TestOpenmpPi(self):
-#        self.runner()
-
-
-x86_only = unittest.skipIf(
-    platform.machine() not in ("i386", "x86_64"), "x86 only test"
-)
-
-
-def null_comparer(a, b):
-    """
-    Used with check_arq_equality to indicate that we do not care
-    whether the value of the parameter at the end of the function
-    has a particular value.
-    """
-    pass
-
-
-@contextlib.contextmanager
-def override_config(name, value):
-    """
-    Return a context manager that temporarily sets an openmp config variable
-    *name* to *value*.  *name* must be the name of an existing variable
-    in openmp.
-    """
-    old_value = getattr(numba.openmp, name)
-    setattr(numba.openmp, name, value)
-    try:
-        yield
-    finally:
-        setattr(numba.openmp, name, old_value)
-
-
-# @needs_subprocess
 class TestOpenmpBase(TestCase):
     """
     Base class for testing OpenMP.
@@ -242,31 +140,11 @@ class TestPipeline(object):
         self.state.metadata = {}
 
 
-#
-# class TestOpenmpBasic(TestOpenmpBase):
-#    """OpenMP smoke tests. These tests check the most basic
-#    functionality"""
-#
-#    def __init__(self, *args):
-#        TestOpenmpBase.__init__(self, *args)
-
-
 class TestOpenmpRoutinesEnvVariables(TestOpenmpBase):
     MAX_THREADS = 5
 
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
-
-    """
-    def test_func_get_wtime(self):
-        @njit
-        def test_impl(t):
-            start = omp_get_wtime()
-            time.sleep(t)
-            return omp_get_wtime() - start
-        t = 0.5
-        np.testing.assert_approx_equal(test_impl(t), t, signifcant=2)
-    """
 
     def test_func_get_max_threads(self):
         @njit
@@ -595,17 +473,6 @@ class TestOpenmpParallelForResults(TestOpenmpBase):
         r = test_impl(12)
         np.testing.assert_array_equal(r, np.arange(1, 13, dtype=np.int32))
 
-    """
-    def test_parallel_for_dictionary(self):
-        def test_impl(N, c):
-            l = {}
-            with openmp("parallel for"):
-                for i in range(N):
-                    l[i] = i % c
-            return l
-        # check
-    """
-
     def test_parallel_for_num_threads(self):
         @njit
         def test_impl(nt):
@@ -685,8 +552,6 @@ class TestOpenmpWorksharingSchedule(TestOpenmpBase):
     def __init__(self, *args):
         TestOpenmpBase.__init__(self, *args)
 
-    # Giorgis pass doesn't support static with chunksize yet?
-    # @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Abort - unimplemented")
     # TODO: check the schedule
     def test_avg_sched_const(self):
         @njit
@@ -2035,23 +1900,6 @@ class TestOpenmpConstraints(TestOpenmpBase):
             "Cannot infer constant OpenMP specification", str(raises.exception)
         )
 
-    # def test_parallel_for_blocking_if(self):
-    #    @njit
-    #    def test_impl():
-    #        n = 0
-    #        with openmp("parallel"):
-    #            half_threads = omp_get_num_threads()//2
-    #            if omp_get_thread_num() < half_threads:
-    #                with openmp("for reduction(+:n)"):
-    #                    for _ in range(half_threads):
-    #                        n += 1
-    #        return n
-
-    #    #with self.assertRaises(AssertionError) as raises:
-    #     #   njit(test_impl)
-    #    test_impl()
-    #    #print(str(raises.exception))
-
     def test_parallel_for_delaying_condition(self):
         @njit
         def test_impl():
@@ -2293,33 +2141,6 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         np.testing.assert_array_equal(r[0], np.ones((2, nt)))
         assert np.any(r[1])
 
-    # Revisit - how to prove atomic works without a race condition?
-    # def test_atomic_threads(self):
-    #    def test_impl(N, iters):
-    #        omp_set_num_threads(N)
-    #        count = 0
-    #        p = 0
-    #        sum = 0
-    #        with openmp("parallel"):
-    #            with openmp("barrier"):
-    #                pass
-    #            with openmp("for private(p, sum)"):
-    #                for _ in range(iters):
-    #                    with openmp("atomic"):
-    #                        p = count
-    #                        sum = 0
-    #                        for i in range(10000):
-    #                            if i % 2 == 0:
-    #                                sum += 1
-    #                            else:
-    #                                sum -= 1
-    #                        p += 1 + sum
-    #                        count = p
-    #        return count
-    #    iters = 1000
-    #    r = test_impl(2, iters)
-    #    create check
-
     @unittest.skipUnless(TestOpenmpBase.skip_disabled, "Unimplemented")
     def test_atomic(self):
         @njit
@@ -2344,20 +2165,6 @@ class TestOpenmpConcurrency(TestOpenmpBase):
 
         nt, N, c = 27, 8, 6
         rc = np.zeros(N)
-        # ba = np.zeros(nt)
-        # for i in range(nt):
-        #    index = i % N
-        #    rc[index] = nt % c
-        # print("rc1:", rc)
-
-        # for i in range(nt):
-        #    index = i % N
-        #    ba[i] = rc[index-1] + index
-
-        # for i in range(nt):
-        #    index = i % N
-        #    rc[index] += ba[i]
-        # print("rc2:", rc)
 
         for i in range(nt):
             index = i % N
@@ -2452,56 +2259,6 @@ class TestOpenmpConcurrency(TestOpenmpBase):
         a = np.full(nt, c)
         for i in range(nt):
             np.testing.assert_array_equal(r[i], a)
-
-    #    def test_for_nowait(self):
-    #        @njit
-    #        def test_impl(nt, n, c1, c2):
-    #            a = np.zeros(n)
-    #            b = np.zeros(n)
-    #            ac = np.zeros((nt, n))
-    #            sum = 0
-    #            with openmp("parallel num_threads(nt) private(tn)"):
-    #                tn = omp_get_thread_num()
-    #                with openmp("for nowait schedule(static) private(sum)"):
-    #                    for i in range(n):
-    #                        # Sleep
-    #                        sum = 0
-    #                        for j in range(i * 1000):
-    #                            if j % 2 == 0:
-    #                                sum += 1
-    #                            else:
-    #                                sum -= 1
-    #                        a[i] = i * c1 + sum
-    #                for j in range(nt):
-    #                    ac[tn][j] = a[j]
-    #                with openmp("for schedule(static)"):
-    #                    for i in range(n):
-    #                        b[i] = a[i] + c2
-    #            return b, ac
-    #        nt, n, c1, c2 = 8, 30, 5, -7
-    #        r = test_impl(nt, n, c1, c2)
-    #        a = np.arange(n) * c1
-    #        np.testing.assert_array_equal(r[0], a + c2)
-    #        arc = [np.array_equal(r[1][i], a) for i in range(nt)]
-    #        assert(not np.all(arc))
-    #
-    #    def test_nowait_result(self):
-    #        def test_impl(n, m, a, b, y, z):
-    #            omp_set_num_threads(5)
-    #
-    #            with openmp("parallel"):
-    #                with openmp("for nowait"):
-    #                    for i in range(1, n):
-    #                        b[i] = (a[i] + a[i-1]) / 2.0
-    #                with openmp("for nowait"):
-    #                    for i in range(m):
-    #                        y[i] = math.sqrt(z[i])
-    #
-    #            return b, y
-    #        n, m = 10, 20
-    #        r = test_impl(n, m, np.ones(n), np.zeros(n),
-    #                    np.zeros(m), np.full(m, 13))
-    # create check
 
     def test_nested_parallel_for(self):
         @njit
@@ -3517,9 +3274,9 @@ class TestOpenmpTarget(TestOpenmpBase):
                         threads2 = omp_get_num_threads()
             return max_threads, teams1, threads1, teams2, threads2
 
-        # NOTE: max_threads for device(0) is the number of threads set by the
-        # sibling parallel legion with the highest num_threads clause.
-        # For device(1), is the number of max threads as determined by the host
+        # NOTE: max_threads for device 'gpu' is the number of threads set by the
+        # sibling parallel legion with the highest num_threads clause.  For
+        # device 'host', is the number of max threads as determined by the host
         # runtime.
         max_threads, teams1, threads1, teams2, threads2 = test_impl()
         np.testing.assert_equal(teams1, 1)
@@ -4190,9 +3947,6 @@ class TestOpenmpTarget(TestOpenmpBase):
         a = test_impl()
         np.testing.assert_array_equal(a, np.full(10, 4))
 
-    @unittest.skip(
-        reason="Libomptarget does not support this correctly due to omp_get_num_devices()=0 issue, some static init is missing."
-    )
     def target_enter_exit_data_to_from_hostonly(self, device):
         target_enter = f"""target enter data device({device})
                                 map(to: a)"""
@@ -4208,10 +3962,6 @@ class TestOpenmpTarget(TestOpenmpBase):
 
             a += 1
 
-            # XXX: Test passes if uncommented!
-            # with openmp("target device(1)"):
-            #    pass
-
             with openmp(target_exit):
                 pass
 
@@ -4220,9 +3970,6 @@ class TestOpenmpTarget(TestOpenmpBase):
         a = test_impl()
         np.testing.assert_array_equal(a, np.full(10, 1))
 
-    @unittest.skip(
-        reason="Libomptarget does not support this correctly due to omp_get_num_devices()=0 issue, some static init is missing."
-    )
     def target_data_tofrom_hostonly(self, device):
         target_data = f"""target data device({device})
                                 map(tofrom: a)"""
@@ -4232,10 +3979,6 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.ones(10)
             with openmp(target_data):
                 a += 1
-
-            # XXX: Test passes if uncommented!
-            with openmp("target device(1)"):
-                pass
 
             return a
 
@@ -5022,6 +4765,24 @@ class TestOpenmpRuntimeFunctions(TestOpenmpBase):
         jit_num_procs = test_impl()
         python_num_procs = omp_get_num_procs()
         self.assertEqual(jit_num_procs, python_num_procs)
+
+    def test_omp_get_wtime(self):
+        @njit
+        def test_impl(t):
+            start = omp_get_wtime()
+            while start + t > omp_get_wtime():
+                continue
+            return omp_get_wtime() - start
+
+        t = 0.25
+        delay = test_impl(t)
+        self.assertAlmostEqual(delay, t, places=2)
+
+        start = omp_get_wtime()
+        while start + t > omp_get_wtime():
+            continue
+        delay = omp_get_wtime() - start
+        self.assertAlmostEqual(delay, t, places=2)
 
     @linux_only
     def test_omp_get_num_devices(self):
