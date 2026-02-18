@@ -100,10 +100,10 @@ out the [Documentation](https://pyomp.readthedocs.io).
 
 PyOMP supports both CPU and GPU programming.
 For GPU programming, PyOMP implements OpenMP's `target` directive for offloading
-and supports the `device` clause, with `device(0)` by convention offloading to a
-GPU device.
-It is also possible to use the host as a multi-core CPU target device (mainly
-for testing purposes) by setting `device(1)`.
+and supports the `device` clause to select the offloading target device.
+For more information see the [GPU
+Offloading](https://pyomp.readthedocs.io/en/latest/openmp.html#openmp-and-gpu-offloading-support)
+section in the documentation.
 
 ### Example
 
