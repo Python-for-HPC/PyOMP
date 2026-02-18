@@ -3166,7 +3166,11 @@ class _ExtendedConstantInference:
                     # Try to resolve the variable to see what function it points to
                     try:
                         func_defn = self._func_ir.get_definition(func.name)
-                        if isinstance(func_defn, ir.Expr) and func_defn.op == "global":
+                        # Handle ir.Global directly (Python 3.13+ for format_simple)
+                        if isinstance(func_defn, ir.Global):
+                            if func_defn.value is str:
+                                func_name = "str"
+                        elif isinstance(func_defn, ir.Expr) and func_defn.op == "global":
                             if func_defn.value is str:
                                 func_name = "str"
                             elif (
