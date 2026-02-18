@@ -262,47 +262,49 @@ class OpenmpVisitor(Transformer):
         inputs_to_region,
         def_but_live_out,
         private_to_region,
-        for_task=False,
+        for_task=None,
     ):
-        if for_task is None:
-            for_task = []
+        """Convert implicit OpenMP data sharing to explicit clauses.
+
+        Args:
+            for_task: Task region info (dict-like) for task-specific handling, or None to skip.
+        """
+
+        def add_clause(var_name, tag_name):
+            """Helper to add a data sharing clause and track it."""
+            explicit_clauses.append(openmp_tag(tag_name, var_name))
+            vars_in_explicit[var_name] = explicit_clauses[-1]
+
+        def should_be_firstprivate(var_name):
+            """Check if variable should be FIRSTPRIVATE in task regions."""
+            return (
+                for_task
+                and get_var_from_enclosing(for_task, var_name) != "QUAL.OMP.SHARED"
+            )
+
         if gen_shared:
+            # Input variables and variables defined live out: may be SHARED or FIRSTPRIVATE
             for var_name in sorted(inputs_to_region):
-                if (
-                    for_task != False
-                    and get_var_from_enclosing(for_task, var_name) != "QUAL.OMP.SHARED"
-                ):
-                    explicit_clauses.append(
-                        openmp_tag("QUAL.OMP.FIRSTPRIVATE", var_name)
-                    )
-                else:
-                    explicit_clauses.append(openmp_tag("QUAL.OMP.SHARED", var_name))
-                vars_in_explicit[var_name] = explicit_clauses[-1]
+                tag = (
+                    "QUAL.OMP.FIRSTPRIVATE"
+                    if should_be_firstprivate(var_name)
+                    else "QUAL.OMP.SHARED"
+                )
+                add_clause(var_name, tag)
 
+            # We should re-think whether allowing variables defined in the
+            # region to be live out. SHARED makes sense if we allow it.
             for var_name in sorted(def_but_live_out):
-                if (
-                    for_task != False
-                    and get_var_from_enclosing(for_task, var_name) != "QUAL.OMP.SHARED"
-                ):
-                    explicit_clauses.append(
-                        openmp_tag("QUAL.OMP.FIRSTPRIVATE", var_name)
-                    )
-                else:
-                    explicit_clauses.append(openmp_tag("QUAL.OMP.SHARED", var_name))
-                vars_in_explicit[var_name] = explicit_clauses[-1]
+                tag = (
+                    "QUAL.OMP.FIRSTPRIVATE"
+                    if should_be_firstprivate(var_name)
+                    else "QUAL.OMP.SHARED"
+                )
+                add_clause(var_name, tag)
 
-            # What to do below for task regions?
-            for var_name in sorted(private_to_region):
-                temp_var = ir.Var(scope, var_name, self.loc)
-                if not is_internal_var(temp_var):
-                    explicit_clauses.append(openmp_tag("QUAL.OMP.PRIVATE", var_name))
-                    vars_in_explicit[var_name] = explicit_clauses[-1]
-
+        # All private variables (user-defined and compiler-generated)
         for var_name in sorted(private_to_region):
-            temp_var = ir.Var(scope, var_name, self.loc)
-            if is_internal_var(temp_var):
-                explicit_clauses.append(openmp_tag("QUAL.OMP.PRIVATE", var_name))
-                vars_in_explicit[var_name] = explicit_clauses[-1]
+            add_clause(var_name, "QUAL.OMP.PRIVATE")
 
     def make_implicit_explicit_target(
         self,
@@ -355,28 +357,6 @@ class OpenmpVisitor(Transformer):
                     )
                 )
                 vars_in_explicit[var_name] = explicit_clauses[-1]
-
-    def add_explicits_to_start(
-        self,
-        scope,
-        vars_in_explicit,
-        explicit_clauses,
-        gen_shared,
-        start_tags,
-        keep_alive,
-    ):
-        start_tags.extend(explicit_clauses)
-        return []
-        # tags_for_enclosing = []
-        # for var in vars_in_explicit:
-        #    if not is_private(vars_in_explicit[var].name):
-        #        print("EVAR_COPY FOR", var)
-        #        evar = ir.Var(scope, var, self.loc)
-        #        evar_copy = scope.redefine("evar_copy_aets", self.loc)
-        #        keep_alive.append(ir.Assign(evar, evar_copy, self.loc))
-        #        #keep_alive.append(ir.Assign(evar, evar, self.loc))
-        #        tags_for_enclosing.append(openmp_tag("QUAL.OMP.PRIVATE", evar_copy))
-        # return tags_for_enclosing
 
     def flatten(self, all_clauses, start_block):
         if DEBUG_OPENMP >= 1:
@@ -1089,22 +1069,7 @@ class OpenmpVisitor(Transformer):
 
                     self.blocks[latch_block_num] = latch_block
                     for bb in back_blocks:
-                        if False:
-                            str_var = scope.redefine("$str_var", inst.loc)
-                            str_const = ir.Const("mid start:", inst.loc)
-                            str_assign = ir.Assign(str_const, str_var, inst.loc)
-                            str_print = ir.Print([str_var, size_var], None, inst.loc)
-                            # before_start.append(str_assign)
-                            # before_start.append(str_print)
-                            self.blocks[bb].body = self.blocks[bb].body[:-1] + [
-                                str_assign,
-                                str_print,
-                                ir.Jump(latch_block_num, inst.loc),
-                            ]
-                        else:
-                            self.blocks[bb].body[-1] = ir.Jump(
-                                latch_block_num, inst.loc
-                            )
+                        self.blocks[bb].body[-1] = ir.Jump(latch_block_num, inst.loc)
                     # -------------------------------------------------------------
 
                     # ---------- Header Manipulation ------------------------------
@@ -1183,13 +1148,9 @@ class OpenmpVisitor(Transformer):
                     )
 
                     header_block.body = new_end
-                    # header_block.body = [fake_iternext, fake_second, unnormalize_iv] + header_block.body[:-1] + new_end
 
                     # -------------------------------------------------------------
 
-                    # const_start_var = loop_index.scope.redefine("$const_start", inst.loc)
-                    # before_start.append(ir.Assign(ir.Const(0, inst.loc), const_start_var, inst.loc))
-                    # start_tags.append(openmp_tag("QUAL.OMP.FIRSTPRIVATE", const_start_var.name))
                     start_tags.append(
                         openmp_tag("QUAL.OMP.NORMALIZED.IV", omp_iv_var.name)
                     )
@@ -1232,8 +1193,7 @@ class OpenmpVisitor(Transformer):
                     add_tags_to_enclosing(
                         self.func_ir, self.blk_start, tags_for_enclosing
                     )
-                    # start_tags.append(openmp_tag("QUAL.OMP.NORMALIZED.IV", loop_index.name))
-                    # start_tags.append(openmp_tag("QUAL.OMP.NORMALIZED.UB", size_var.name))
+
                     return (
                         True,
                         loop_blocks_for_io,
@@ -1947,7 +1907,6 @@ class OpenmpVisitor(Transformer):
         self.some_data_clause_directive(
             clauses, start_tags, end_tags, 0, has_loop=has_loop, for_target=True
         )
-        # self.some_data_clause_directive(args, start_tags, end_tags, lexer_count, has_loop=has_loop)
 
     def add_to_returns(self, stmts):
         for blk in self.blocks.values():
@@ -2184,15 +2143,7 @@ class OpenmpVisitor(Transformer):
             print("live_out_copy:", sorted(live_out_copy))
             print("private_to_region:", sorted(private_to_region))
 
-        keep_alive = []
-        tags_for_enclosing = self.add_explicits_to_start(
-            scope, vars_in_explicit_clauses, clauses, True, start_tags, keep_alive
-        )
-        add_tags_to_enclosing(self.func_ir, self.blk_start, tags_for_enclosing)
-
-        # or_start = openmp_region_start([openmp_tag("DIR.OMP.TARGET", target_num)] + clauses, 0, self.loc)
-        # or_end   = openmp_region_end(or_start, [openmp_tag("DIR.OMP.END.TARGET", target_num)], self.loc)
-        # new_header_block_num = max(self.blocks.keys()) + 1
+        start_tags.extend(clauses)
 
         firstprivate_dead_after = list(
             filter(
@@ -2210,8 +2161,6 @@ class OpenmpVisitor(Transformer):
         or_end = openmp_region_end(or_start, end_tags, self.loc)
 
         if DEBUG_OPENMP >= 1:
-            for x in keep_alive:
-                print("keep_alive:", x)
             for x in firstprivate_dead_after:
                 print("firstprivate_dead_after:", x)
 
@@ -2232,11 +2181,7 @@ class OpenmpVisitor(Transformer):
                 + [ir.Jump(new_block_num, self.loc)]
             )
 
-            if for_task:
-                exit_block.body = [or_end] + exit_block.body
-                self.add_to_returns(keep_alive)
-            else:
-                exit_block.body = [or_end] + keep_alive + exit_block.body
+            exit_block.body = [or_end] + exit_block.body
         else:
             new_header_block = ir.Block(scope, self.loc)
             new_header_block.body = [or_start] + after_start + sblk.body[:]
@@ -2249,11 +2194,7 @@ class OpenmpVisitor(Transformer):
             # follows. Favoring the add_block_in_order method for consistency.
             # sblk.body = before_start + [or_start] + after_start + sblk.body[:]
 
-            if for_task:
-                eblk.body = [or_end] + eblk.body[:]
-                self.add_to_returns(keep_alive)
-            else:
-                eblk.body = [or_end] + keep_alive + eblk.body[:]
+            eblk.body = [or_end] + eblk.body[:]
 
         add_enclosing_region(self.func_ir, self.body_blocks, or_start)
         return clauses
@@ -3310,10 +3251,10 @@ def _add_openmp_ir_nodes(func_ir, blocks, blk_start, blk_end, body_blocks, extra
     except VisitError as e:
         raise e.__context__
     except Exception:
-        print("generic transform exception")
+        print("Generic transform exception")
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
         print(exc_type, fname, exc_tb.tb_lineno)
-        print("Internal error for OpenMp pragma '{}'".format(arg.value))
+        print("Internal error for OpenMP pragma '{}'".format(arg.value))
         sys.exit(-2)
     assert blocks is visitor.blocks
