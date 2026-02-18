@@ -1,10 +1,7 @@
 import warnings
 import numba
 
-from .compiler import (
-    CustomCompiler,
-    CustomFunctionCompiler,
-)
+from .compiler import CustomCompiler
 
 
 def jit(*args, **kws):
@@ -16,10 +13,8 @@ def jit(*args, **kws):
     if "forceobj" in kws:
         warnings.warn("forceobj is set for njit and is ignored", RuntimeWarning)
         del kws["forceobj"]
-    kws.update({"nopython": True, "nogil": True})
+    kws.update({"nopython": True, "nogil": True, "pipeline_class": CustomCompiler})
     dispatcher = numba.jit(*args, **kws)
-    dispatcher._compiler.__class__ = CustomFunctionCompiler
-    dispatcher._compiler.pipeline_class = CustomCompiler
     return dispatcher
 
 
