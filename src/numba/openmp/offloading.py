@@ -21,9 +21,7 @@ def add_device_info(device_id, info_text):
     try:
         _device_info_map[device_id] = _parse_device_info(info_text)
     except Exception as e:
-        raise RuntimeError(
-            f"Warning: Failed to parse device info for device {device_id}: {e}"
-        )
+        raise RuntimeError(f"Failed to parse device info for device {device_id}: {e}")
 
 
 def _parse_device_info(output: str):
@@ -52,11 +50,17 @@ def _parse_device_info(output: str):
 
         device_info_all[key] = val
 
-    if "amd" in device_info_all.get("vendor name", ""):
+    if (
+        "hsa openmp device number" in device_info_all.keys()
+        or "amd" in device_info_all.get("vendor name", "")
+    ):
         vendor = "amd"
         devtype = "gpu"
         arch = device_info_all.get("device name", "")
-    elif "nvidia" in device_info_all.get("device name", ""):
+    elif (
+        "cuda openmp device number" in device_info_all.keys()
+        or "nvidia" in device_info_all.get("device name", "")
+    ):
         vendor = "nvidia"
         devtype = "gpu"
         arch = device_info_all.get("compute capabilities", "")
