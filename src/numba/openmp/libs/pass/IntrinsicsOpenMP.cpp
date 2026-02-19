@@ -708,7 +708,7 @@ struct IntrinsicsOpenMP {
           FATAL_ERROR("Unknown directive");
         }
 
-        if (verifyFunction(*Fn, &errs()))
+        if (DebugOpenMPFlag && verifyFunction(*Fn, &errs()))
           FATAL_ERROR("Verification of IntrinsicsOpenMP lowering failed!");
       }
     }
@@ -827,7 +827,7 @@ extern "C" int runIntrinsicsOpenMPPass(const char *BitcodePtr,
   MPM.run(*M, MAM);
 
   // Verify the module before writing bitcode
-  if (verifyModule(*M, &errs())) {
+  if (DebugOpenMPFlag && verifyModule(*M, &errs())) {
     errs() << "ERROR: Module verification failed after IntrinsicsOpenMPPass\n";
     return 1;
   }
