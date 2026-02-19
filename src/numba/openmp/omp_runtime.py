@@ -1,5 +1,4 @@
 from numba.core import types
-from numba.core.types.functions import ExternalFunction
 from numba.core.datamodel.registry import register_default as model_register
 from numba.core.datamodel.models import OpaqueModel
 

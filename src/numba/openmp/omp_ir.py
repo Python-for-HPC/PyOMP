@@ -1,7 +1,6 @@
 from numba.core import (
     ir,
     types,
-    cgutils,
     typing,
     transforms,
     bytecode,
@@ -85,14 +84,12 @@ def openmp_region_alloca(obj, alloca_instr, typ):
 
 
 def push_alloca_callback(lowerer, callback, data, builder):
-    # cgutils.push_alloca_callbacks(callback, data)
     if not hasattr(builder, "_lowerer_push_alloca_callbacks"):
         builder._lowerer_push_alloca_callbacks = 0
     builder._lowerer_push_alloca_callbacks += 1
 
 
 def pop_alloca_callback(lowerer, builder):
-    # cgutils.pop_alloca_callbacks()
     builder._lowerer_push_alloca_callbacks -= 1
 
 
@@ -865,16 +862,6 @@ class openmp_region_start(ir.Stmt):
         # process them then they won't lead to infinite recursion.
         self.alloca_queue.append((alloca_instr, typ))
 
-    def process_alloca_queue(self):
-        # This should be old code...making sure with the assertion.
-        assert len(self.alloca_queue) == 0
-        has_update = False
-        for alloca_instr, typ in self.alloca_queue:
-            has_update = self.process_one_alloca(alloca_instr, typ) or has_update
-        if has_update:
-            self.update_tags()
-        self.alloca_queue = []
-
     def post_lowering_process_alloca_queue(self, enter_directive):
         has_update = False
         if DEBUG_OPENMP >= 1:
@@ -951,7 +938,6 @@ class openmp_region_start(ir.Stmt):
 
     def update_context(self, context, builder):
         cctyp = type(context.call_conv)
-        # print("start update_context id(context)", id(context), "id(const.call_conv)", id(context.call_conv), "cctyp", cctyp, "id(cctyp)", id(cctyp))
 
         if (
             not hasattr(cctyp, "pyomp_patch_installed")
@@ -974,7 +960,6 @@ class openmp_region_start(ir.Stmt):
                 self.orig_return_user_exc(builder, *args, **kwargs)
 
             setattr(cctyp, "return_user_exc", pyomp_return_user_exc)
-            # print("after", id(pyomp_return_user_exc), id(cctyp.return_user_exc))
 
             setattr(
                 cctyp, "orig_return_status_propagate", cctyp.return_status_propagate
@@ -988,14 +973,12 @@ class openmp_region_start(ir.Stmt):
             setattr(cctyp, "return_status_propagate", pyomp_return_status_propagate)
 
         cemtyp = type(context.error_model)
-        # print("start update_context id(context)", id(context), "id(const.error_model)", id(context.error_model), "cemtyp", cemtyp, "id(cemtyp)", id(cemtyp))
 
         if (
             not hasattr(cemtyp, "pyomp_patch_installed")
             or not cemtyp.pyomp_patch_installed
         ):
             cemtyp.pyomp_patch_installed = True
-            # print("update_context", "id(cemtyp.return_user_exec)", id(cemtyp.fp_zero_division), "id(context)", id(context))
             setattr(cemtyp, "orig_fp_zero_division", cemtyp.fp_zero_division)
 
             def pyomp_fp_zero_division(self, builder, *args, **kwargs):
@@ -1031,10 +1014,6 @@ class openmp_region_start(ir.Stmt):
             if isinstance(v, Dispatcher) and not isinstance(
                 v, numba_cuda.types.CUDADispatcher
             ):
-                # targetoptions = v.targetoptions.copy()
-                # targetoptions['device'] = True
-                # targetoptions['debug'] = targetoptions.get('debug', False)
-                # targetoptions['opt'] = targetoptions.get('opt', True)
                 vdispatcher = v.dispatcher
                 vdispatcher.targetoptions.pop("nopython", None)
                 vdispatcher.targetoptions.pop("boundscheck", None)
@@ -1103,7 +1082,6 @@ class openmp_region_start(ir.Stmt):
             )
         )
         assert count_alloca_instr == 0
-        # self.tags = list(filter(lambda x: not isinstance(x.arg, lir.instructions.AllocaInstr), self.tags))
         if DEBUG_OPENMP >= 1:
             print("after LLVM tag filter", self.tags, len(self.tags))
             for otag in self.tags:
@@ -1308,7 +1286,9 @@ class openmp_region_start(ir.Stmt):
                 if isinstance(device_tag.arg, int):
                     selected_device = device_tag.arg
                 else:
-                    assert False
+                    raise ValueError(
+                        "Device tag argument must be an integer device number."
+                    )
                 if DEBUG_OPENMP >= 1:
                     print("new selected device:", selected_device)
             else:
@@ -1412,7 +1392,6 @@ class openmp_region_start(ir.Stmt):
                         start_region.tags.append(openmp_tag("OMP.DEVICE"))
                     end_region = blocks[end_block].body[ebindex]
                     # assert(start_region.omp_region_var is None)
-                    assert len(start_region.alloca_queue) == 0
                     # Make start and end copies point at each other.
                     end_region.start_region = start_region
                     start_region.end_region = end_region
@@ -1502,16 +1481,9 @@ class openmp_region_start(ir.Stmt):
             if DEBUG_OPENMP >= 1:
                 print("region_info:", region_info)
             transforms._loop_lift_prepare_loop_func(region_info, region_blocks)
-            # exit_block_label = max(region_blocks.keys())
-            # region_blocks[exit_block_label].body = []
-            # exit_scope = region_blocks[exit_block_label].scope
-            # tmp = exit_scope.make_temp(loc=func_ir.loc)
-            # region_blocks[exit_block_label].append(ir.Assign(value=ir.Const(0, func_ir.loc), target=tmp, loc=func_ir.loc))
-            # region_blocks[exit_block_label].append(ir.Return(value=tmp, loc=func_ir.loc))
 
             target_args = []
             outline_arg_typs = []
-            # outline_arg_typs = [None] * len(target_args_unordered)
             for tag in self.tags:
                 if DEBUG_OPENMP >= 1:
                     print(1, "target_arg?", tag, tag.non_arg, is_target_arg(tag.name))
@@ -1528,7 +1500,6 @@ class openmp_region_start(ir.Stmt):
                         if DEBUG_OPENMP >= 1:
                             print(1, "found cpointer target_arg", tag, atyp, id(atyp))
                     else:
-                        # outline_arg_typs[target_arg_index] = atyp
                         outline_arg_typs.append(atyp)
                         if DEBUG_OPENMP >= 1:
                             print(1, "found target_arg", tag, atyp, id(atyp))
@@ -1647,7 +1618,6 @@ class openmp_region_start(ir.Stmt):
                         for k in targetctx.__dict__.keys() - {"call_conv"}
                     }
                 )
-                # subtarget.install_registry(imputils.builtin_registry)
                 # Turn off the Numba runtime (incref and decref mostly) for the target compilation.
                 subtarget.enable_nrt = False
                 typingctx_outlined = targetctx.typing_context
@@ -1677,7 +1647,6 @@ class openmp_region_start(ir.Stmt):
                     device_func_name, typingctx_outlined
                 )
                 device_target.fndesc = fndesc
-                # device_target = cuda_descriptor.cuda_target.target_context
 
                 device_lowerer_pipeline = OnlyLowerCUDA
                 openmp_cuda_target = numba_cuda.descriptor.CUDATarget("openmp_cuda")
@@ -1851,50 +1820,15 @@ class openmp_region_start(ir.Stmt):
                     f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
                 )
 
-            # if cuda then run ptxas on the cres and pass that
-
-            # bytes_array_typ = lir.ArrayType(cgutils.voidptr_t, len(target_elf))
-            # bytes_array_typ = lir.ArrayType(cgutils.int8_t, len(target_elf))
-            # dev_image = cgutils.add_global_variable(mod, bytes_array_typ, ".omp_offloading.device_image")
-            # dev_image.initializer = lir.Constant.array(cgutils.int8_t, target_elf)
-            # dev_image.initializer = lir.Constant.array(cgutils.int8_t, target_elf)
-            add_target_globals_in_numba = int(
-                os.environ.get("NUMBA_OPENMP_ADD_TARGET_GLOBALS", 0)
+            host_side_target_tags.append(
+                openmp_tag(
+                    "QUAL.OMP.TARGET.DEV_FUNC",
+                    StringLiteral(cres.fndesc.mangled_name.encode("utf-8")),
+                )
             )
-            if add_target_globals_in_numba != 0:
-                elftext = cgutils.make_bytearray(target_elf)
-                dev_image = targetctx.insert_unique_const(
-                    mod, ".omp_offloading.device_image", elftext
-                )
-                mangled_name = cgutils.make_bytearray(
-                    cres.fndesc.mangled_name.encode("utf-8") + b"\x00"
-                )
-                mangled_var = targetctx.insert_unique_const(
-                    mod, ".omp_offloading.entry_name", mangled_name
-                )
-
-                llvmused_typ = lir.ArrayType(cgutils.voidptr_t, 2)
-                llvmused_gv = cgutils.add_global_variable(
-                    mod, llvmused_typ, "llvm.used"
-                )
-                llvmused_syms = [
-                    lir.Constant.bitcast(dev_image, cgutils.voidptr_t),
-                    lir.Constant.bitcast(mangled_var, cgutils.voidptr_t),
-                ]
-                llvmused_gv.initializer = lir.Constant.array(
-                    cgutils.voidptr_t, llvmused_syms
-                )
-                llvmused_gv.linkage = "appending"
-            else:
-                host_side_target_tags.append(
-                    openmp_tag(
-                        "QUAL.OMP.TARGET.DEV_FUNC",
-                        StringLiteral(cres.fndesc.mangled_name.encode("utf-8")),
-                    )
-                )
-                host_side_target_tags.append(
-                    openmp_tag("QUAL.OMP.TARGET.ELF", StringLiteral(target_elf))
-                )
+            host_side_target_tags.append(
+                openmp_tag("QUAL.OMP.TARGET.ELF", StringLiteral(target_elf))
+            )
 
             if DEBUG_OPENMP >= 1:
                 dprint_func_ir(func_ir, "target after outline compiled func_ir")
@@ -1902,7 +1836,6 @@ class openmp_region_start(ir.Stmt):
         llvm_token_t = TokenType()
         fnty = lir.FunctionType(llvm_token_t, [])
         tags_to_include = self.tags + host_side_target_tags
-        # tags_to_include = list(filter(lambda x: x.name != "DIR.OMP.TARGET", tags_to_include))
         self.filtered_tag_length = len(tags_to_include)
         if DEBUG_OPENMP >= 1:
             print("filtered_tag_length:", self.filtered_tag_length)
@@ -1986,9 +1919,6 @@ class openmp_region_end(ir.Stmt):
             # which only happens if tag length > 0.
             pop_alloca_callback(lowerer, builder)
 
-            # Process the accumulated allocas in the start region.
-            self.start_region.process_alloca_queue()
-
             assert self.start_region.omp_region_var is not None
             if DEBUG_OPENMP >= 2:
                 print(
@@ -2060,6 +1990,7 @@ ir_extension_usedefs[openmp_region_start] = openmp_region_start_defs
 ir_extension_usedefs[openmp_region_end] = openmp_region_end_defs
 
 
+# Callbacks for type inference extensions for openmp region start and end.
 def openmp_region_start_infer(prs, typeinferer):
     pass
 

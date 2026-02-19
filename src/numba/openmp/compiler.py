@@ -10,7 +10,6 @@ from numba.core.callconv import (
 )
 
 from numba.core.codegen import AOTCodeLibrary, JITCodeLibrary
-from numba.core.dispatcher import _FunctionCompiler
 from numba.core.compiler_machinery import PassManager
 from numba.core.compiler import DefaultPassBuilder
 from numba.core.untyped_passes import (
@@ -29,7 +28,6 @@ from numba.core.untyped_passes import (
     LiteralPropagationSubPipelinePass,
     WithLifting,
 )
-import llvmlite.binding as ll
 import llvmlite.ir as lir
 
 from .config import DEBUG_OPENMP

@@ -33,7 +33,6 @@ def create_native_np_copy(arg_typ):
     dispatcher = njit(copy_np_array)
     dispatcher.get_function_type()
     atypes = (arg_typ,)
-    # copy_cres = dispatcher.get_compile_result(sig)
     dispatcher.compile(atypes)
     copy_cres = dispatcher.overloads[atypes]
     assert copy_cres is not None
@@ -142,7 +141,6 @@ class openmp_tag(object):
             if "*" in x:
                 xsplit = x.split("*")
                 assert len(xsplit) == 2
-                # xtyp = get_dotted_type(x, typemap, lowerer)
                 xtyp = typemap_lookup(typemap, xsplit[0])
                 if DEBUG_OPENMP >= 1:
                     print("xtyp:", xtyp, type(xtyp))
@@ -158,7 +156,6 @@ class openmp_tag(object):
                     assert len(xsplit) == 1
                 else:
                     arg_str = lowerer.getvar(xsplit[0])
-                    # arg_str = lowerer.getvar(x)
                     if isinstance(arg_str, lir.Argument):
                         decl = str(arg_str)
                     else:
@@ -177,7 +174,6 @@ class openmp_tag(object):
                             field_info.append("i32 " + str(findex))
                         fi_str = ", ".join(field_info)
                         decl += f", {fi_str}"
-                        # decl = f"SCOPE({decl}, {fi_str})"
             else:
                 xtyp = typemap_lookup(typemap, x)
                 if DEBUG_OPENMP >= 1:
@@ -234,7 +230,6 @@ class openmp_tag(object):
             start_slice = handle_var(self.omp_slice[0])
             end_slice = handle_var(self.omp_slice[1])
             decl += f", {start_slice}, {end_slice}"
-            # decl = f"SLICE({decl}, {self.omp_slice[0]}, {self.omp_slice[1]})"
 
         return decl
 
@@ -248,126 +243,6 @@ class openmp_tag(object):
             # fa_res = xarginfo.from_arguments(lowerer.builder,tuple([xarg for xarg in xarginfo_args]))
             assert len(fa_res) == 1
             lowerer.storevar(fa_res[0], x)
-
-    def add_length_firstprivate(self, x, lowerer):
-        if self.name == "QUAL.OMP.FIRSTPRIVATE":
-            return [x]
-            # return [x, self.arg_size(x, lowerer)]
-            # return [x, lowerer.context.get_constant(types.uintp, self.arg_size(x, lowerer))]
-        else:
-            return [x]
-
-    def unpack_arg(self, x, lowerer, xarginfo_list):
-        if isinstance(x, ir.Var):
-            return self.add_length_firstprivate(x, lowerer), None
-        elif isinstance(x, lir.instructions.AllocaInstr):
-            return self.add_length_firstprivate(x, lowerer), None
-        elif isinstance(x, str):
-            xtyp = lowerer.fndesc.typemap[x]
-            if DEBUG_OPENMP >= 2:
-                print("xtyp:", xtyp, type(xtyp))
-            if self.load:
-                return self.add_length_firstprivate(x, lowerer), None
-            else:
-                names_to_unpack = []
-                # names_to_unpack = ["QUAL.OMP.FIRSTPRIVATE"]
-                # names_to_unpack = ["QUAL.OMP.PRIVATE", "QUAL.OMP.FIRSTPRIVATE"]
-                if (
-                    isinstance(xtyp, types.npytypes.Array)
-                    and self.name in names_to_unpack
-                ):
-                    # from core/datamodel/packer.py
-                    xarginfo = lowerer.context.get_arg_packer((xtyp,))
-                    xloaded = lowerer.loadvar(x)
-                    xarginfo_args = list(
-                        xarginfo.as_arguments(lowerer.builder, [xloaded])
-                    )
-                    xarg_alloca_vars = []
-                    for xarg in xarginfo_args:
-                        if DEBUG_OPENMP >= 2:
-                            print(
-                                "xarg:",
-                                type(xarg),
-                                xarg,
-                                "agg:",
-                                xarg.aggregate,
-                                type(xarg.aggregate),
-                                "ind:",
-                                xarg.indices,
-                            )
-                            print(xarg.aggregate.type.elements[xarg.indices[0]])
-                        alloca_name = "$alloca_" + xarg.name
-                        alloca_typ = xarg.aggregate.type.elements[xarg.indices[0]]
-                        alloca_res = lowerer.alloca_lltype(alloca_name, alloca_typ)
-                        if DEBUG_OPENMP >= 2:
-                            print(
-                                "alloca:",
-                                alloca_name,
-                                alloca_typ,
-                                alloca_res,
-                                alloca_res.get_reference(),
-                            )
-                        xarg_alloca_vars.append((alloca_name, alloca_typ, alloca_res))
-                        lowerer.builder.store(xarg, alloca_res)
-                    xarginfo_list.append((xarginfo, xarginfo_args, x, xarg_alloca_vars))
-                    rets = []
-                    for i, xarg in enumerate(xarg_alloca_vars):
-                        rets.append(xarg[2])
-                        if i == 4:
-                            alloca_name = "$alloca_total_size_" + str(x)
-                            if DEBUG_OPENMP >= 2:
-                                print("alloca_name:", alloca_name)
-                            alloca_typ = lowerer.context.get_value_type(
-                                types.intp
-                            )  # lir.Type.int(64)
-                            alloca_res = lowerer.alloca_lltype(alloca_name, alloca_typ)
-                            if DEBUG_OPENMP >= 2:
-                                print(
-                                    "alloca:",
-                                    alloca_name,
-                                    alloca_typ,
-                                    alloca_res,
-                                    alloca_res.get_reference(),
-                                )
-                            mul_res = lowerer.builder.mul(
-                                lowerer.builder.load(xarg_alloca_vars[2][2]),
-                                lowerer.builder.load(xarg_alloca_vars[3][2]),
-                            )
-                            lowerer.builder.store(mul_res, alloca_res)
-                            rets.append(alloca_res)
-                        else:
-                            rets.append(self.arg_size(xarg[2], lowerer))
-                    return rets, [x]
-                else:
-                    return self.add_length_firstprivate(x, lowerer), None
-        elif isinstance(x, int):
-            return self.add_length_firstprivate(x, lowerer), None
-        else:
-            print("unknown arg type:", x, type(x))
-
-        return self.add_length_firstprivate(x, lowerer), None
-
-    def unpack_arrays(self, lowerer):
-        if isinstance(self.arg, list):
-            arg_list = self.arg
-        elif self.arg is not None:
-            arg_list = [self.arg]
-        else:
-            return [self]
-        new_xarginfo = []
-        unpack_res = [self.unpack_arg(arg, lowerer, new_xarginfo) for arg in arg_list]
-        new_args = [x[0] for x in unpack_res]
-        arrays_to_private = []
-        for x in unpack_res:
-            if x[1]:
-                arrays_to_private.append(x[1])
-        ot_res = openmp_tag(self.name, sum(new_args, []), self.load)
-        ot_res.xarginfo = new_xarginfo
-        return [ot_res] + (
-            []
-            if len(arrays_to_private) == 0
-            else [openmp_tag("QUAL.OMP.PRIVATE", sum(arrays_to_private, []), self.load)]
-        )
 
     def lower(self, lowerer, debug):
         decl = ""
