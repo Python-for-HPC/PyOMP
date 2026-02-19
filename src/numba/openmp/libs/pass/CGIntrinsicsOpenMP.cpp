@@ -523,7 +523,7 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
   DEBUG_ENABLE(dbgs() << "=== Dump OutlinedFn\n"
                       << *OutlinedFn << "=== End of Dump OutlinedFn\n");
 
-  if (verifyFunction(*OutlinedFn, &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*OutlinedFn, &errs()))
     FATAL_ERROR("Verification of OutlinedFn failed!");
 
   CapturedVars.append(CapturedShared);
@@ -680,7 +680,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelHostRuntime(
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
                       << *Fn << "=== End of Dump OuterFn\n");
 
-  if (verifyFunction(*Fn, &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
 }
 
@@ -756,7 +756,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
   assert(OutlinedCI && "Expected valid call");
   OMPBuilder.Builder.CreateRetVoid();
 
-  if (verifyFunction(*OutlinedWrapperFn, &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*OutlinedWrapperFn, &errs()))
     FATAL_ERROR("Verification of OutlinedWrapperFn failed!");
 
   DEBUG_ENABLE(dbgs() << "=== Dump OutlinedWrapper\n"
@@ -903,7 +903,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
                       << *Fn << "=== End of Dump OuterFn\n");
 
-  if (verifyFunction(*Fn, &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
 }
 
@@ -1386,7 +1386,7 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
       FATAL_ERROR("Failed to create barrier: " + toString(std::move(E)));
   }
 
-  if (verifyFunction(*PreHeader->getParent(), &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*PreHeader->getParent(), &errs()))
     FATAL_ERROR("Verification of omp for lowering failed!");
 }
 
@@ -2542,7 +2542,7 @@ void CGIntrinsicsOpenMP::emitOMPTeamsDeviceRuntime(
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
                       << *Fn << "=== End of Dump OuterFn\n");
 
-  if (verifyFunction(*Fn, &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
 }
 
@@ -2626,7 +2626,7 @@ void CGIntrinsicsOpenMP::emitOMPTeamsHostRuntime(
   DEBUG_ENABLE(dbgs() << "=== Dump OuterFn\n"
                       << *Fn << "=== End of Dump OuterFn\n");
 
-  if (verifyFunction(*Fn, &errs()))
+  if (DebugOpenMPFlag && verifyFunction(*Fn, &errs()))
     FATAL_ERROR("Verification of OuterFn failed!");
 }
 
