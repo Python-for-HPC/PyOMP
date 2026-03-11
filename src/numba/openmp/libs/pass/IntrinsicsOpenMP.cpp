@@ -164,6 +164,50 @@ collectGlobalizedValues(DirectiveRegion &Directive) {
   return GlobalizedValues;
 }
 
+static DSAValueMapTy collectNestedReductionDSA(DirectiveRegion &Directive) {
+  DSAValueMapTy DSAValueMap;
+
+  auto AddReductionFromRegion = [&DSAValueMap](DirectiveRegion &Nested) {
+    SmallVector<OperandBundleDef, 16> OpBundles;
+    Nested.getEntry()->getOperandBundlesAsDefs(OpBundles);
+    for (OperandBundleDef &O : OpBundles) {
+      auto It = StringToDSA.find(O.getTag());
+      if (It == StringToDSA.end())
+        continue;
+
+      DSAType DSATy = It->second;
+      if (DSATy != DSA_REDUCTION_ADD && DSATy != DSA_REDUCTION_SUB &&
+          DSATy != DSA_REDUCTION_MUL)
+        continue;
+
+      const ArrayRef<Value *> &TagInputs = O.inputs();
+      assert(!TagInputs.empty() && "Expected reduction operand input");
+      Value *V = TagInputs[0];
+
+      if (auto *Alloca = dyn_cast<AllocaInst>(V)) {
+        DSAValueMap[V] = DSATypeInfo(DSATy, Alloca->getAllocatedType());
+      } else {
+        assert(TagInputs.size() == 2 &&
+               "Expected poison helper for opaque pointer reduction DSA");
+        Value *PoisonHelper = TagInputs[1];
+        DSAValueMap[V] = DSATypeInfo(DSATy, PoisonHelper->getType());
+      }
+    }
+  };
+
+  auto VisitNested = [&AddReductionFromRegion](DirectiveRegion *Node,
+                                               auto &&VisitNested) -> void {
+    AddReductionFromRegion(*Node);
+    for (DirectiveRegion *Nested : Node->getNested())
+      VisitNested(Nested, VisitNested);
+  };
+
+  for (DirectiveRegion *Nested : Directive.getNested())
+    VisitNested(Nested, VisitNested);
+
+  return DSAValueMap;
+}
+
 struct IntrinsicsOpenMP {
 
   IntrinsicsOpenMP() { DebugOpenMPInit(); }
@@ -188,6 +232,9 @@ struct IntrinsicsOpenMP {
                         << M << "=== End of Dump Module\n");
 
     CGIntrinsicsOpenMP CGIOMP(M);
+    Triple TargetTriple(M.getTargetTriple());
+    bool IsOpenMPDeviceRuntime =
+        TargetTriple.isNVPTX() || TargetTriple.isAMDGPU();
     // Find all calls to directive intrinsics.
     SmallMapVector<Function *, SmallVector<DirectiveRegion *, 4>, 8>
         FunctionToDirectives;
@@ -304,6 +351,12 @@ struct IntrinsicsOpenMP {
         DEBUG_ENABLE(PrintList());
       }
     }
+
+    SmallMapVector<DirectiveRegion *, DSAValueMapTy, 8> TeamsNestedReductions;
+    for (auto &DirectiveList : DirectiveListVector)
+      for (DirectiveRegion *DR : DirectiveList)
+        if (DR->getTag() == "DIR.OMP.TEAMS")
+          TeamsNestedReductions[DR] = collectNestedReductionDSA(*DR);
 
     // Iterate all directive lists and codegen.
     for (auto &DirectiveList : DirectiveListVector) {
@@ -538,6 +591,14 @@ struct IntrinsicsOpenMP {
         }
 
         assert(Dir != OMPD_unknown && "Expected valid OMP directive");
+
+        if (Dir == OMPD_teams && IsOpenMPDeviceRuntime) {
+          auto ItTeamsReductions = TeamsNestedReductions.find(DR);
+          if (ItTeamsReductions != TeamsNestedReductions.end()) {
+            for (auto &ItReduction : ItTeamsReductions->second)
+              DSAValueMap[ItReduction.first] = ItReduction.second;
+          }
+        }
 
         // Gather info.
         BasicBlock *BBEntry = DR->getEntry()->getParent();

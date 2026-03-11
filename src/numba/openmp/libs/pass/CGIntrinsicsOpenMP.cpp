@@ -7,6 +7,7 @@
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
+#include <llvm/IR/CallingConv.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -31,6 +32,16 @@ using namespace omp;
 using namespace iomp;
 
 namespace iomp::helpers {
+
+// Keep allocas in their natural address space and only normalize pointers
+// when a user or ABI boundary expects a different pointer type.
+Value *normalizePointerCast(IRBuilderBase &Builder, Value *Ptr, Type *DestTy,
+                            const Twine &Name = "") {
+  if (Ptr->getType() == DestTy)
+    return Ptr;
+
+  return Builder.CreateAddrSpaceCast(Ptr, DestTy, Name);
+}
 
 CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
                           ArrayRef<Value *> Args) {
@@ -404,13 +415,16 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     CollectUses(V, Uses);
 
     Type *VTy = getPointeeType(DSAValueMap, V);
-    Value *ReplacementValue =
+    Value *PrivateStorage =
         CreateAllocaAtEntry(VTy, nullptr, V->getName() + ".private");
     // NOTE: We need to zero initialize privates because Numba reference
     // counting breaks when those privates correspond to memory-managed
     // data structures.
-    OMPBuilder.Builder.CreateStore(Constant::getNullValue(VTy),
-                                   ReplacementValue);
+    OMPBuilder.Builder.CreateStore(Constant::getNullValue(VTy), PrivateStorage);
+
+    Value *ReplacementValue =
+        normalizePointerCast(OMPBuilder.Builder, PrivateStorage, V->getType(),
+                             V->getName() + ".private.cast");
 
     if (VMap)
       (*VMap)[V] = ReplacementValue;
@@ -437,16 +451,20 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     CollectUses(V, Uses);
 
     Type *VPtrElemTy = getPointeeType(DSAValueMap, V);
-    Value *ReplacementValue =
+    Value *PrivateStorage =
         CreateAllocaAtEntry(VPtrElemTy, nullptr, V->getName() + ".copy");
     Value *Load =
         OMPBuilder.Builder.CreateLoad(VPtrElemTy, AI, V->getName() + ".reload");
     FunctionCallee CopyConstructor = DSAValueMap[V].CopyConstructor;
     if (CopyConstructor) {
       Value *Copy = OMPBuilder.Builder.CreateCall(CopyConstructor, {Load});
-      OMPBuilder.Builder.CreateStore(Copy, ReplacementValue);
+      OMPBuilder.Builder.CreateStore(Copy, PrivateStorage);
     } else
-      OMPBuilder.Builder.CreateStore(Load, ReplacementValue);
+      OMPBuilder.Builder.CreateStore(Load, PrivateStorage);
+
+    Value *ReplacementValue =
+        normalizePointerCast(OMPBuilder.Builder, PrivateStorage, V->getType(),
+                             V->getName() + ".copy.cast");
 
     if (VMap)
       (*VMap)[V] = ReplacementValue;
@@ -495,7 +513,9 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     }
 
     assert(Priv && "Expected non-null private reduction variable");
-    ReplacementValue = Priv;
+    ReplacementValue =
+        normalizePointerCast(OMPBuilder.Builder, Priv, V->getType(),
+                             V->getName() + ".red.priv.cast");
 
     assert(ReplacementValue && "Expected non-null replacement value");
     if (VMap)
@@ -733,11 +753,17 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
                                  ZeroAddr);
   FunctionCallee KmpcGetSharedVariables = OMPBuilder.getOrCreateRuntimeFunction(
       M, OMPRTL___kmpc_get_shared_variables);
-  OMPBuilder.Builder.CreateCall(KmpcGetSharedVariables, {GlobalArgs});
+  OMPBuilder.Builder.CreateCall(
+      KmpcGetSharedVariables,
+      {OMPBuilder.Builder.CreateAddrSpaceCast(
+          GlobalArgs, KmpcGetSharedVariables.getFunctionType()->getParamType(0),
+          "global_args.cast")});
 
   SmallVector<Value *, 16> OutlinedFnArgs;
-  OutlinedFnArgs.push_back(TIDAddr);
-  OutlinedFnArgs.push_back(ZeroAddr);
+  OutlinedFnArgs.push_back(OMPBuilder.Builder.CreateAddrSpaceCast(
+      TIDAddr, OutlinedFn->getArg(0)->getType(), ".tid.addr.cast"));
+  OutlinedFnArgs.push_back(OMPBuilder.Builder.CreateAddrSpaceCast(
+      ZeroAddr, OutlinedFn->getArg(1)->getType(), ".zero.addr.cast"));
 
   for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx) {
     Value *LoadGlobalArgs =
@@ -810,8 +836,9 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
            "Expected pointer type");
 
     if (DeviceGlobalizedValues.contains(CapturedVars[Idx])) {
-      Value *Bitcast = OMPBuilder.Builder.CreateBitCast(CapturedVars[Idx],
-                                                        OMPBuilder.Int8Ptr);
+      Value *Bitcast = OMPBuilder.Builder.CreateAddrSpaceCast(
+          CapturedVars[Idx], OMPBuilder.Int8Ptr,
+          CapturedVars[Idx]->getName() + ".captured.cast");
       OMPBuilder.Builder.CreateStore(Bitcast, GEP);
     } else {
       Type *AllocTy = getPointeeType(DSAValueMap, CapturedVars[Idx]);
@@ -823,7 +850,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
           llvm::Attribute::get(M.getContext(), llvm::Attribute::Alignment, 16));
       GlobalAllocas.push_back(GlobalAlloc);
       GlobalAllocaTys.push_back(AllocTy);
-      // TODO: this assumes the type is trivally copyable, use the copy
+      // TODO: this assumes the type is trivially copyable, use the copy
       // constructor for more complex types.
       OMPBuilder.Builder.CreateMemCpy(
           GlobalAlloc, GlobalAlloc->getPointerAlignment(M.getDataLayout()),
@@ -868,8 +895,9 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
       OMPBuilder.Builder.CreateBitCast(OutlinedFn, OMPBuilder.VoidPtr);
   Value *OutlinedWrapperFnBitcast =
       OMPBuilder.Builder.CreateBitCast(OutlinedWrapperFn, OMPBuilder.VoidPtr);
-  Value *CapturedVarAddrsBitcast = OMPBuilder.Builder.CreateBitCast(
-      CapturedVarsAddrs, OMPBuilder.VoidPtrPtr);
+  Value *CapturedVarAddrsBitcast = OMPBuilder.Builder.CreateAddrSpaceCast(
+      CapturedVarsAddrs, OMPBuilder.VoidPtrPtr,
+      CapturedVarsAddrs->getName() + ".cast");
 
   SmallVector<Value *, 10> Args = {Ident,
                                    ThreadID,
@@ -1024,6 +1052,8 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
       OMPBuilder.Builder.CreateAlloca(I32Type, nullptr, "omp.for.is_last");
   // Value *PStart = OMPBuilder.Builder.CreateAlloca(IVTy, nullptr,
   // "omp.for.start");
+  // Keep loop-bound storage in the natural private address space and only cast
+  // when we cross a runtime or replacement boundary.
   Value *PLowerBound =
       OMPBuilder.Builder.CreateAlloca(IVTy, nullptr, "omp.for.lb");
   Value *PStride =
@@ -1034,8 +1064,12 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
   // Store distribute LB, UB to be used by combined loop constructs.
   if (IsDistribute)
     if (OMPDistributeInfo) {
-      OMPDistributeInfo->LB = PLowerBound;
-      OMPDistributeInfo->UB = PUpperBound;
+      OMPDistributeInfo->LB = normalizePointerCast(
+          OMPBuilder.Builder, PLowerBound, OMPLoopInfo.LB->getType(),
+          OMPLoopInfo.LB->getName() + ".dist.lb.cast");
+      OMPDistributeInfo->UB = normalizePointerCast(
+          OMPBuilder.Builder, PUpperBound, OMPLoopInfo.UB->getType(),
+          OMPLoopInfo.UB->getName() + ".dist.ub.cast");
     }
 
   // Create BasicBlock structure.
@@ -1068,6 +1102,14 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
   // Extend PreHeader
   {
     OMPBuilder.Builder.SetInsertPoint(PreHeader->getTerminator());
+    // OpenMP runtime entry points still use generic pointers for these loop
+    // state arguments, so normalize only when building the runtime call.
+    auto CastRuntimeArg = [&](Value *Arg, unsigned ParamIdx) {
+      Type *ParamTy = LoopStaticInit.getFunctionType()->getParamType(ParamIdx);
+      return normalizePointerCast(OMPBuilder.Builder, Arg, ParamTy,
+                                  Arg->getName() + ".rt.cast");
+    };
+
     // Store the initial normalized upper bound to PUpperBound.
     Value *LoadUB = OMPBuilder.Builder.CreateLoad(IVTy, OMPLoopInfo.UB);
     OMPBuilder.Builder.CreateStore(LoadUB, PUpperBound);
@@ -1097,8 +1139,10 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
                         << static_cast<int>(OMPLoopInfo.Sched) << "\n");
     DEBUG_ENABLE(dbgs() << "=== Chunk " << *ChunkCast << "\n");
     OMPBuilder.Builder.CreateCall(
-        LoopStaticInit, {SrcLoc, ThreadNum, SchedulingType, PLastIter,
-                         PLowerBound, PUpperBound, PStride, One, ChunkCast});
+        LoopStaticInit,
+        {SrcLoc, ThreadNum, SchedulingType, CastRuntimeArg(PLastIter, 3),
+         CastRuntimeArg(PLowerBound, 4), CastRuntimeArg(PUpperBound, 5),
+         CastRuntimeArg(PStride, 6), One, ChunkCast});
   }
 
   // Create MinUBBlock.
@@ -1234,6 +1278,7 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
   // TODO: De-duplicate privatization code.
   auto PrivatizeWithReductions = [&]() {
     auto CurrentIP = OMPBuilder.Builder.saveIP();
+
     for (auto &It : DSAValueMap) {
       Value *Orig = It.first;
       DSAType DSA = It.second.Type;
@@ -1258,36 +1303,63 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
 
       OMPBuilder.Builder.restoreIP(AllocaIP);
       if (DSA == DSA_PRIVATE) {
-        ReplacementValue = OMPBuilder.Builder.CreateAlloca(
+        Value *PrivateStorage = OMPBuilder.Builder.CreateAlloca(
             VTy, /*ArraySize */ nullptr, Orig->getName() + ".for.priv");
         OMPBuilder.Builder.CreateStore(Constant::getNullValue(VTy),
-                                       ReplacementValue);
+                                       PrivateStorage);
+        ReplacementValue = normalizePointerCast(
+            OMPBuilder.Builder, PrivateStorage, Orig->getType(),
+            Orig->getName() + ".for.priv.cast");
       } else if (DSA == DSA_FIRSTPRIVATE) {
         Value *V = OMPBuilder.Builder.CreateLoad(
             VTy, Orig, Orig->getName() + ".for.firstpriv.reload");
-        ReplacementValue = OMPBuilder.Builder.CreateAlloca(
+        Value *PrivateStorage = OMPBuilder.Builder.CreateAlloca(
             VTy, /*ArraySize */ nullptr,
             Orig->getName() + ".for.firstpriv.copy");
         if (CopyConstructor) {
           Value *Copy = OMPBuilder.Builder.CreateCall(CopyConstructor, {V});
-          OMPBuilder.Builder.CreateStore(Copy, ReplacementValue);
+          OMPBuilder.Builder.CreateStore(Copy, PrivateStorage);
         } else
-          OMPBuilder.Builder.CreateStore(V, ReplacementValue);
+          OMPBuilder.Builder.CreateStore(V, PrivateStorage);
+        ReplacementValue = normalizePointerCast(
+            OMPBuilder.Builder, PrivateStorage, Orig->getType(),
+            Orig->getName() + ".for.firstpriv.copy.cast");
       } else if (DSA == DSA_REDUCTION_ADD) {
+        size_t ReductionInfoCount = ReductionInfos.size();
         ReplacementValue =
             CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_ADD>(
                 OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
                 ReductionInfos, false);
+        assert(ReductionInfos.size() == ReductionInfoCount + 1 &&
+               "Expected a single reduction info entry");
+        ReplacementValue = normalizePointerCast(
+            OMPBuilder.Builder, ReplacementValue, Orig->getType(),
+            Orig->getName() + ".for.red.priv.cast");
+        ReductionInfos.back().PrivateVariable = ReplacementValue;
       } else if (DSA == DSA_REDUCTION_SUB) {
+        size_t ReductionInfoCount = ReductionInfos.size();
         ReplacementValue =
             CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_SUB>(
                 OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
                 ReductionInfos, false);
+        assert(ReductionInfos.size() == ReductionInfoCount + 1 &&
+               "Expected a single reduction info entry");
+        ReplacementValue = normalizePointerCast(
+            OMPBuilder.Builder, ReplacementValue, Orig->getType(),
+            Orig->getName() + ".for.red.priv.cast");
+        ReductionInfos.back().PrivateVariable = ReplacementValue;
       } else if (DSA == DSA_REDUCTION_MUL) {
+        size_t ReductionInfoCount = ReductionInfos.size();
         ReplacementValue =
             CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MUL>(
                 OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
                 ReductionInfos, false);
+        assert(ReductionInfos.size() == ReductionInfoCount + 1 &&
+               "Expected a single reduction info entry");
+        ReplacementValue = normalizePointerCast(
+            OMPBuilder.Builder, ReplacementValue, Orig->getType(),
+            Orig->getName() + ".for.red.priv.cast");
+        ReductionInfos.back().PrivateVariable = ReplacementValue;
       } else
         FATAL_ERROR("Unsupported privatization");
 
@@ -1321,10 +1393,13 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
       Type *VTy = getPointeeType(DSAValueMap, Orig);
 
       OMPBuilder.Builder.restoreIP(AllocaIP);
-      ReplacementValue = OMPBuilder.Builder.CreateAlloca(
+      Value *PrivateStorage = OMPBuilder.Builder.CreateAlloca(
           VTy, /*ArraySize */ nullptr, Orig->getName() + ".for.lastpriv");
       OMPBuilder.Builder.CreateStore(Constant::getNullValue(VTy),
-                                     ReplacementValue);
+                                     PrivateStorage);
+      ReplacementValue = normalizePointerCast(
+          OMPBuilder.Builder, PrivateStorage, Orig->getType(),
+          Orig->getName() + ".for.lastpriv.cast");
       Orig->replaceUsesWithIf(ReplacementValue, ShouldReplace);
 
       BasicBlock *InsertBB = CodeGenIP.getBlock();
@@ -1339,7 +1414,7 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
           SplitBlock(LastPrivThen, LastPrivThen->getTerminator());
       LastPrivEnd->setName("omp.for.lastpriv.end");
       OMPBuilder.Builder.SetInsertPoint(LastPrivThen->getTerminator());
-      Value *Load = OMPBuilder.Builder.CreateLoad(VTy, ReplacementValue);
+      Value *Load = OMPBuilder.Builder.CreateLoad(VTy, PrivateStorage);
       if (CopyConstructor) {
         Value *Copy = OMPBuilder.Builder.CreateCall(CopyConstructor, {Load});
         OMPBuilder.Builder.CreateStore(Copy, Orig);
@@ -2413,9 +2488,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
       AllocaInst *TmpInt64 = Builder.CreateAlloca(OMPBuilder.Int64, nullptr,
                                                   Arg.getName() + ".casted");
       Builder.CreateStore(&Arg, TmpInt64);
-      Value *Cast = Builder.CreateBitCast(
-          TmpInt64, PointerType::getUnqual(M.getContext()));
-      Value *ConvLoad = Builder.CreateLoad(ParamType, Cast);
+      Value *ConvLoad = Builder.CreateLoad(ParamType, TmpInt64);
       DevFuncArgs.push_back(ConvLoad);
     } else
       DevFuncArgs.push_back(&Arg);
@@ -2474,6 +2547,10 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
     // Add a function attribute for the kernel.
     NumbaWrapperFunc->addFnAttr(Attribute::get(M.getContext(), "kernel"));
 
+    if (TargetTriple.isAMDGPU()) {
+      NumbaWrapperFunc->setCallingConv(CallingConv::AMDGPU_KERNEL);
+      NumbaWrapperFunc->setVisibility(GlobalValue::ProtectedVisibility);
+    }
   } else {
     // Generating an offloading entry is required by the x86_64 plugin.
     Constant *OMPOffloadEntry;
@@ -2529,7 +2606,10 @@ void CGIntrinsicsOpenMP::emitOMPTeamsDeviceRuntime(
 
   FunctionCallee TeamsOutlinedFn(OutlinedFn);
   SmallVector<Value *, 8> Args;
-  Args.append({ThreadIDAddr, ZeroAddr});
+  Args.push_back(OMPBuilder.Builder.CreateAddrSpaceCast(
+      ThreadIDAddr, OutlinedFn->getArg(0)->getType(), ".threadid.addr.cast"));
+  Args.push_back(OMPBuilder.Builder.CreateAddrSpaceCast(
+      ZeroAddr, OutlinedFn->getArg(1)->getType(), ".zero.addr.cast"));
 
   for (size_t Idx = 0; Idx < CapturedVars.size(); ++Idx)
     Args.push_back(CapturedVars[Idx]);
@@ -2900,6 +2980,9 @@ bool CGIntrinsicsOpenMP::isOpenMPDeviceRuntime() {
   Triple TargetTriple(M.getTargetTriple());
 
   if (TargetTriple.isNVPTX())
+    return true;
+
+  if (TargetTriple.isAMDGPU())
     return true;
 
   return false;

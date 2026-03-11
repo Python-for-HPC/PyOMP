@@ -180,7 +180,9 @@ class BuildCMakeExt(build_ext):
         if sys.platform.startswith("linux"):
             tgt_libs = list(target_lib_dir.glob("libomptarget.so*"))
             if tgt_libs:
-                assert len(tgt_libs) == 1, "Expected single libomptarget library"
+                assert len(tgt_libs) == 1, (
+                    f"Expected single libomptarget library found {tgt_libs}"
+                )
                 link_tgt = str(tgt_libs[0])
                 print(f"Wrapper linking local libomptarget: {link_tgt}")
             else:

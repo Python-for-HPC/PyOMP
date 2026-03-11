@@ -3,6 +3,7 @@ from numba import cuda as numba_cuda
 from numba.core.controlflow import CFGraph
 from numba.cuda import descriptor as cuda_descriptor
 from numba.cuda.target import CUDACallConv
+
 from numba.core.lowering import Lower
 from functools import cached_property
 from numba.core.callconv import (
@@ -32,6 +33,21 @@ import llvmlite.ir as lir
 
 from .config import DEBUG_OPENMP
 from .llvm_pass import run_intrinsics_openmp_pass
+
+
+_numba_hip_import_error = None
+
+try:
+    import numba.hip as numba_hip
+except Exception as exc:
+    numba_hip = None
+    _numba_hip_import_error = exc
+
+
+def _raise_hip_unavailable():
+    raise ImportError(
+        "numba.hip is required for HIP OpenMP support"
+    ) from _numba_hip_import_error
 
 
 class OnlyLower(compiler.CompilerBase):
@@ -70,6 +86,29 @@ class OnlyLowerCUDA(numba_cuda.compiler.CUDACompiler):
         pm.passes.extend(lowering_passes.passes)
         pm.finalize()
         return [pm]
+
+
+if numba_hip is not None:
+
+    class OnlyLowerHIP(numba_hip.compiler.HIPCompiler):
+        def __init__(self, typingctx, targetctx, library, args, restype, flags, locals):
+            super().__init__(
+                typingctx, targetctx, library, args, restype, flags, locals
+            )
+            self.state.typemap = targetctx.state_copy.typemap
+            self.state.calltypes = targetctx.state_copy.calltypes
+
+        def define_pipelines(self):
+            pm = compiler_machinery.PassManager("hip")
+            lowering_passes = self.define_hip_lowering_pipeline(self.state)
+            pm.passes.extend(lowering_passes.passes)
+            pm.finalize()
+            return [pm]
+else:
+
+    class OnlyLowerHIP:
+        def __init__(self, *args, **kwargs):
+            _raise_hip_unavailable()
 
 
 def compute_cfg_from_llvm_blocks(blocks):
@@ -258,6 +297,28 @@ class OpenmpCUDATargetContext(cuda_descriptor.CUDATargetContext):
         return CUDACallConv(self)
 
 
+if numba_hip is not None:
+
+    class OpenmpHIPTargetContext(numba_hip.descriptor.HIPTargetContext):
+        def __init__(self, name, typingctx, target="hip"):
+            super().__init__(typingctx, target)
+            self.device_func_name = name
+
+        def post_lowering(self, mod, library):
+            if hasattr(library, "openmp") and library.openmp:
+                post_lowering_openmp(mod)
+                super().post_lowering(mod, library)
+
+        @cached_property
+        def call_conv(self):
+            return numba_hip.target.HIPCallConv(self)
+else:
+
+    class OpenmpHIPTargetContext:
+        def __init__(self, *args, **kwargs):
+            _raise_hip_unavailable()
+
+
 class LowerNoSROA(Lower):
     @property
     def _disable_sroa_like_opt(self):
@@ -268,8 +329,10 @@ class LowerNoSROA(Lower):
         # This fixes assignments for Arg instructions when the target is a
         # CPointer. It sets the backing storage to the pointer of the argument
         # itself.
-        if isinstance(self.context, OpenmpCPUTargetContext) or isinstance(
-            self.context, OpenmpCUDATargetContext
+        if (
+            isinstance(self.context, OpenmpCPUTargetContext)
+            or isinstance(self.context, OpenmpCUDATargetContext)
+            or isinstance(self.context, OpenmpHIPTargetContext)
         ):
             value = inst.value
             if isinstance(value, ir.Arg):
@@ -284,7 +347,9 @@ class LowerNoSROA(Lower):
         return orig(self, inst)
 
     def lower_return_inst(self, orig, inst):
-        if isinstance(self.context, OpenmpCUDATargetContext):
+        if isinstance(self.context, OpenmpCUDATargetContext) or isinstance(
+            self.context, OpenmpHIPTargetContext
+        ):
             # This fixes Return instructions for CUDA device functions in an
             # OpenMP target region. It avoids setting a value to the return
             # value pointer argument, which otherwise breaks OpenMP code

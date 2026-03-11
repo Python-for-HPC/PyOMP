@@ -398,8 +398,11 @@ struct CGReduction {
       Value *AddrCast = IRB.CreateAddrSpaceCast(ShmemGV, Orig->getType());
       Priv = AddrCast;
     } else {
-      Priv = IRB.CreateAlloca(ReductionTy, /* ArraySize */ nullptr,
-                              Orig->getName() + ".red.priv");
+      Value *Alloca = IRB.CreateAlloca(ReductionTy, /* ArraySize */ nullptr,
+                                       Orig->getName() + ".red.priv");
+      Value *Cast = IRB.CreateAddrSpaceCast(Alloca, Orig->getType(),
+                                            Orig->getName() + ".red.priv.cast");
+      Priv = Cast;
     }
     IRB.restoreIP(SaveIP);
 

@@ -2970,6 +2970,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
+                # actual num threads is impl. defined, can be 1.
                 with openmp("parallel num_threads(32)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
@@ -2979,8 +2980,9 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams, threads
 
         teams, threads = test_impl()
-        np.testing.assert_equal(teams, 1)
-        np.testing.assert_equal(threads, 32)
+        self.assertEqual(teams, 1)
+        self.assertGreaterEqual(threads, 1)
+        self.assertLessEqual(threads, 32)
 
     def target_nest_teams_default_numteams(self, device):
         target_pragma = f"target device({device}) map(from: teams, threads)"
@@ -3091,6 +3093,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
+                # actual num threads is impl. defined, can be 1.
                 with openmp("teams thread_limit(32)"):
                     with openmp("parallel"):
                         teamno = omp_get_team_num()
@@ -3105,7 +3108,8 @@ class TestOpenmpTarget(TestOpenmpBase):
         device_type = get_device_type(device)
         if device_type == "gpu":
             self.assertGreater(teams, 1)
-            self.assertEqual(threads, 32)
+            self.assertGreaterEqual(threads, 1)
+            self.assertLessEqual(threads, 32)
         # For CPU, impl. creates exactly 1 team.
         elif device_type == "host":
             self.assertEqual(teams, 1)
@@ -3196,6 +3200,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams2 = 0
             threads2 = 0
             with openmp(target_pragma):
+                # actual num threads is impl. defined, can be 1.
                 with openmp("parallel num_threads(32)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
@@ -3211,10 +3216,12 @@ class TestOpenmpTarget(TestOpenmpBase):
             return teams1, threads1, teams2, threads2
 
         teams1, threads1, teams2, threads2 = test_impl()
-        np.testing.assert_equal(teams1, 1)
-        np.testing.assert_equal(threads1, 32)
-        np.testing.assert_equal(teams2, 1)
-        np.testing.assert_equal(threads2, 256)
+        self.assertEqual(teams1, 1)
+        self.assertGreaterEqual(threads1, 1)
+        self.assertLessEqual(threads1, 32)
+        self.assertEqual(teams2, 1)
+        self.assertGreaterEqual(threads2, 1)
+        self.assertLessEqual(threads2, 256)
 
     def target_nest_parallel_multiple_default_numthreads(self, device):
         target_pragma = (
@@ -3285,20 +3292,25 @@ class TestOpenmpTarget(TestOpenmpBase):
         np.testing.assert_equal(threads2, 256)
 
     def target_nest_parallel(self, device):
-        target_pragma = f"target device({device}) map(from: a)"
-        parallel_pragma = "parallel num_threads(32)"
+        target_pragma = f"target device({device}) map(from: num_threads)"
+        # openmp implementation on gpu floors the number of threads to 1 if it's
+        # less than the warp/wavefront size. NVIDIA typical warp size is 32, AMD
+        # typical wavefront size is 64. Execution is suboptimal, output is
+        # surprising, but openmp compliant since choice is impl. defined.
+        parallel_pragma = "parallel"
 
         @njit
         def test_impl():
-            a = np.zeros(32, dtype=np.int64)
+            num_threads = 0
             with openmp(target_pragma):
                 with openmp(parallel_pragma):
                     thread_id = omp_get_thread_num()
-                    a[thread_id] = 1
-            return a
+                    if thread_id == 0:
+                        num_threads = omp_get_num_threads()
+            return num_threads
 
         r = test_impl()
-        np.testing.assert_equal(r, np.full(32, 1))
+        self.assertGreater(r, 0)
 
     def target_parallel_for_range_step_arg(self, device):
         target_pragma = f"target device({device}) map(tofrom: a)"
@@ -3691,22 +3703,25 @@ class TestOpenmpTarget(TestOpenmpBase):
 
     def target_teams_distribute(self, device):
         target_pragma = (
-            f"target teams distribute device({device}) map(tofrom: a, sched)"
+            f"target teams distribute device({device}) map(tofrom: a, sched, num_teams)"
         )
 
         @njit
         def test_impl(a, sched):
+            num_teams = 0
             with openmp(target_pragma):
                 for i in range(len(a)):
                     a[i] = 1
                     team_id = omp_get_team_num()
+                    if team_id == 0 and omp_get_thread_num() == 0:
+                        num_teams = omp_get_num_teams()
                     sched[i] = team_id
-            return a, sched
+            return a, sched, num_teams
 
         n = 1000
         a = np.zeros(n)
         sched = np.zeros(n)
-        r, sched = test_impl(a, sched)
+        r, sched, num_teams = test_impl(a, sched)
         np.testing.assert_array_equal(r, np.ones(n))
         # u = unique teams ids that processed the array, c = number of iters
         # each unique team id has processed.
@@ -3714,10 +3729,11 @@ class TestOpenmpTarget(TestOpenmpBase):
 
         device_type = get_device_type(device)
         if device_type == "gpu":
-            # For GPU, impl. creates as many teams as the number of iterations,
-            # where each team leader executes one iteration.
-            np.testing.assert_equal(len(u), n)
-            np.testing.assert_array_equal(c, np.ones(n))
+            # For GPU without an explicit num_teams clause, the runtime picks
+            # the launch geometry. Verify that the reported team count matches
+            # the observed schedule and that every iteration ran exactly once.
+            np.testing.assert_equal(len(u), num_teams)
+            np.testing.assert_equal(np.sum(c), n)
         elif device_type == "host":
             # For CPU, impl. creates 1 team which processes all iterations.
             np.testing.assert_equal(len(u), 1)

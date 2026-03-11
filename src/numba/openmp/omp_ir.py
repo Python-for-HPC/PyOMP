@@ -29,6 +29,7 @@ import tempfile
 import subprocess
 import operator
 import numpy as np
+from enum import IntEnum
 from pathlib import Path
 import types as python_types
 
@@ -62,14 +63,33 @@ from .llvm_pass import run_intrinsics_openmp_pass
 from .compiler import (
     OnlyLower,
     OnlyLowerCUDA,
+    OnlyLowerHIP,
     OpenmpCPUTargetContext,
     OpenmpCUDATargetContext,
+    OpenmpHIPTargetContext,
     CustomAOTCPUCodeLibrary,
     CustomCPUCodeLibrary,
     CustomContext,
 )
 
+_hip_import_error = None
+try:
+    from numba.hip import descriptor as hip_descriptor, compiler as hip_compiler
+    from numba.hip.typing_lowering.hip import hipstubs
+except Exception as exc:
+    hip_descriptor = None
+    hip_compiler = None
+    hipstubs = None
+    _hip_import_error = exc
+
 unique = 0
+
+
+def _require_numba_hip():
+    if hip_descriptor is None or hip_compiler is None or hipstubs is None:
+        raise ImportError(
+            "numba.hip is required for AMD GPU OpenMP support"
+        ) from _hip_import_error
 
 
 def get_unique():
@@ -289,10 +309,7 @@ class OpenMPCUDACodegen:
 
     def get_target_image(self, cres, ompx_attrs):
         filename_prefix = cres.library.name
-        allmods = cres.library.modules
-        linked_mod = ll.parse_assembly(str(allmods[0]))
-        for mod in allmods[1:]:
-            linked_mod.link_in(ll.parse_assembly(str(mod)))
+        linked_mod = link_llvm_library_modules(cres.library.modules)
         if OPENMP_DEVICE_TOOLCHAIN >= 1:
             return self._get_target_image(
                 linked_mod, filename_prefix, ompx_attrs, use_toolchain=True
@@ -301,7 +318,81 @@ class OpenMPCUDACodegen:
             return self._get_target_image(linked_mod, filename_prefix, ompx_attrs)
 
 
+def link_llvm_library_modules(modules):
+    linked_mod = ll.parse_assembly(str(modules[0]))
+    for mod in modules[1:]:
+        linked_mod.link_in(ll.parse_assembly(str(mod)))
+    return linked_mod
+
+
+class OpenMPHIPCodegen:
+    def __init__(self, amdgpu_arch=None):
+        from numba.hip import codegen as hip_codegen
+
+        self.amdgpu_arch = amdgpu_arch or hip_codegen._get_amdgpu_arch(None)
+        self.libomptarget = libpath / "openmp" / "lib" / "libomptarget-amdgpu.bc"
+        with open(self.libomptarget, "rb") as f:
+            self.libomptarget_bc = f.read()
+        self.runtime_mod = ll.parse_bitcode(self.libomptarget_bc)
+
+    def _get_target_image(self, mod, filename_prefix):
+        from numba.hip.typing_lowering import hipdevicelib
+        from numba.hip.util import comgrutils, llvmutils as hip_llvmutils
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + ".ll", "w") as f:
+                f.write(str(mod))
+
+        mod = run_intrinsics_openmp_pass(mod)
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + "-intrinsics_omp.ll", "w") as f:
+                f.write(str(mod))
+
+        kernel = None
+        for func in mod.functions:
+            if func.is_declaration:
+                continue
+            if func.linkage != ll.Linkage.external:
+                continue
+            if "__omp_offload_numba" in func.name:
+                kernel = func.name
+                continue
+            func.linkage = "internal"
+
+        mod.link_in(self.runtime_mod, preserve=True)
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + "-intrinsics_omp-runtime.ll", "w") as f:
+                f.write(str(mod))
+
+        assert kernel is not None
+        linked_bc = hip_llvmutils.link_modules(
+            [str(mod), hipdevicelib.get_llvm_bc(self.amdgpu_arch)],
+            to_bc=True,
+            name=("_kernel" + kernel),
+        )
+
+        if DEBUG_OPENMP_LLVM_PASS >= 1:
+            with open(filename_prefix + "-intrinsics_omp-runtime-linked.bc", "wb") as f:
+                f.write(linked_bc)
+
+        image, _, _ = comgrutils.compile_bc(
+            linked_bc,
+            isa_name=f"amdgcn-amd-amdhsa--{self.amdgpu_arch}",
+            logging=False,
+        )
+
+        return image
+
+    def get_target_image(self, cres):
+        filename_prefix = cres.library.name
+        linked_mod = link_llvm_library_modules(cres.library.modules)
+        return self._get_target_image(linked_mod, filename_prefix)
+
+
 _omp_cuda_codegen = None
+_omp_hip_codegen = {}
 
 
 # Accessor for the singleton OpenMPCUDACodegen instance. Initializes the
@@ -312,6 +403,13 @@ def get_omp_cuda_codegen(arch=None):
     if _omp_cuda_codegen is None:
         _omp_cuda_codegen = OpenMPCUDACodegen(sm=arch)
     return _omp_cuda_codegen
+
+
+def get_omp_hip_codegen(arch=None):
+    global _omp_hip_codegen
+    if arch not in _omp_hip_codegen:
+        _omp_hip_codegen[arch] = OpenMPHIPCodegen(amdgpu_arch=arch)
+    return _omp_hip_codegen[arch]
 
 
 def copy_one(x, calltypes):
@@ -462,16 +560,56 @@ def copy_ir(input_ir, calltypes, depth=1):
     return cur_ir
 
 
-def replace_np_empty_with_cuda_shared(
-    outlined_ir, typemap, calltypes, prefix, typingctx
+class AllocationContext(IntEnum):
+    OUTSIDE_TARGET = 0
+    TARGET = 1
+    TARGET_TEAMS = 2
+    TARGET_TEAMS_PARALLEL = 3
+
+
+def _enter_allocation_context(context, stmt):
+    tag_name = stmt.tags[0].name
+    new_context = context
+    if "TARGET" in tag_name:
+        assert new_context == AllocationContext.OUTSIDE_TARGET
+        new_context = AllocationContext.TARGET
+    if "TEAMS" in tag_name and new_context == AllocationContext.TARGET:
+        new_context = AllocationContext.TARGET_TEAMS
+    if "PARALLEL" in tag_name and new_context == AllocationContext.TARGET_TEAMS:
+        new_context = AllocationContext.TARGET_TEAMS_PARALLEL
+    return new_context
+
+
+def _exit_allocation_context(context, stmt):
+    tag_name = stmt.tags[0].name
+    new_context = context
+    if (
+        new_context == AllocationContext.TARGET_TEAMS_PARALLEL
+        and "PARALLEL" in tag_name
+    ):
+        new_context = AllocationContext.TARGET_TEAMS
+    if new_context == AllocationContext.TARGET_TEAMS and "TEAMS" in tag_name:
+        new_context = AllocationContext.TARGET
+    if new_context == AllocationContext.TARGET and "TARGET" in tag_name:
+        new_context = AllocationContext.OUTSIDE_TARGET
+    return new_context
+
+
+def replace_np_empty_with_gpu_array(
+    outlined_ir,
+    typemap,
+    calltypes,
+    typingctx,
+    shared_array_module,
+    local_array_module,
 ):
     if DEBUG_OPENMP >= 2:
-        print("starting replace_np_empty_with_cuda_shared")
+        print("starting replace_np_empty_with_gpu_array")
     outlined_ir = outlined_ir.blocks
     converted_arrays = []
     consts = {}
     topo_order = find_topo_order(outlined_ir)
-    mode = 0  # 0 = non-target region, 1 = target region, 2 = teams region, 3 = teams parallel region
+    context = AllocationContext.OUTSIDE_TARGET
     # For each block in topological order...
     for label in topo_order:
         block = outlined_ir[label]
@@ -481,24 +619,11 @@ def replace_np_empty_with_cuda_shared(
         # For each statement in the block.
         while index < blen:
             stmt = block.body[index]
-            # Adjust mode based on the start of an openmp region.
             if isinstance(stmt, openmp_region_start):
-                if "TARGET" in stmt.tags[0].name:
-                    assert mode == 0
-                    mode = 1
-                if "TEAMS" in stmt.tags[0].name and mode == 1:
-                    mode = 2
-                if "PARALLEL" in stmt.tags[0].name and mode == 2:
-                    mode = 3
+                context = _enter_allocation_context(context, stmt)
                 new_block_body.append(stmt)
-            # Adjust mode based on the end of an openmp region.
             elif isinstance(stmt, openmp_region_end):
-                if mode == 3 and "PARALLEL" in stmt.tags[0].name:
-                    mode = 2
-                if mode == 2 and "TEAMS" in stmt.tags[0].name:
-                    mode = 1
-                if mode == 1 and "TARGET" in stmt.tags[0].name:
-                    mode = 0
+                context = _exit_allocation_context(context, stmt)
                 new_block_body.append(stmt)
             # Fix calltype for the np.empty call to have literal as first
             # arg and include explicit dtype.
@@ -603,84 +728,36 @@ def replace_np_empty_with_cuda_shared(
                 lhs = stmt.target
                 index += 1
                 next_stmt = block.body[index]
-                # And the next statement is a getattr for the name "empty" on the numpy module
-                # and we are in a target region.
                 if (
                     isinstance(next_stmt, ir.Assign)
                     and isinstance(next_stmt.value, ir.Expr)
                     and next_stmt.value.value == lhs
                     and next_stmt.value.op == "getattr"
                     and next_stmt.value.attr == "empty"
-                    and mode > 0
+                    and context != AllocationContext.OUTSIDE_TARGET
                 ):
-                    # Remember that we are converting this np.empty into a CUDA call.
+                    # Remember that we are converting this np.empty into a GPU memory allocation call.
                     converted_arrays.append(next_stmt.target)
 
-                    # Create numba.cuda module variable.
-                    new_block_body.append(
-                        ir.Assign(
-                            ir.Global("numba", numba, lhs.loc),
-                            ir.Var(
-                                lhs.scope, mk_unique_var(".cuda_shared_global"), lhs.loc
-                            ),
-                            lhs.loc,
-                        )
-                    )
-                    typemap[new_block_body[-1].target.name] = types.Module(numba)
-                    new_block_body.append(
-                        ir.Assign(
-                            ir.Expr.getattr(new_block_body[-1].target, "cuda", lhs.loc),
-                            ir.Var(
-                                lhs.scope,
-                                mk_unique_var(".cuda_shared_getattr"),
-                                lhs.loc,
-                            ),
-                            lhs.loc,
-                        )
-                    )
-                    typemap[new_block_body[-1].target.name] = types.Module(numba.cuda)
-
-                    if mode == 1:
+                    if context == AllocationContext.TARGET:
                         raise NotImplementedError(
                             "np.empty used in non-teams or parallel target region"
                         )
-                        pass
-                    elif mode == 2:
-                        # Create numba.cuda.shared module variable.
-                        new_block_body.append(
-                            ir.Assign(
-                                ir.Expr.getattr(
-                                    new_block_body[-1].target, "shared", lhs.loc
-                                ),
-                                ir.Var(
-                                    lhs.scope,
-                                    mk_unique_var(".cuda_shared_getattr"),
-                                    lhs.loc,
-                                ),
-                                lhs.loc,
-                            )
+                    elif context == AllocationContext.TARGET_TEAMS:
+                        array_module = shared_array_module
+                        module_var_name = ".gpu_shared_global"
+                    elif context == AllocationContext.TARGET_TEAMS_PARALLEL:
+                        array_module = local_array_module
+                        module_var_name = ".gpu_local_global"
+
+                    new_block_body.append(
+                        ir.Assign(
+                            ir.Global(module_var_name, array_module, lhs.loc),
+                            ir.Var(lhs.scope, mk_unique_var(module_var_name), lhs.loc),
+                            lhs.loc,
                         )
-                        typemap[new_block_body[-1].target.name] = types.Module(
-                            numba.cuda.stubs.shared
-                        )
-                    elif mode == 3:
-                        # Create numba.cuda.local module variable.
-                        new_block_body.append(
-                            ir.Assign(
-                                ir.Expr.getattr(
-                                    new_block_body[-1].target, "local", lhs.loc
-                                ),
-                                ir.Var(
-                                    lhs.scope,
-                                    mk_unique_var(".cuda_local_getattr"),
-                                    lhs.loc,
-                                ),
-                                lhs.loc,
-                            )
-                        )
-                        typemap[new_block_body[-1].target.name] = types.Module(
-                            numba.cuda.stubs.local
-                        )
+                    )
+                    typemap[new_block_body[-1].target.name] = types.Module(array_module)
 
                     # Change the typemap for the original function variable for np.empty.
                     afnty = typingctx.resolve_getattr(
@@ -1659,12 +1736,54 @@ class openmp_region_start(ir.Stmt):
                 typingctx_outlined.refresh()
                 device_target.refresh()
                 dprint_func_ir(outlined_ir, "outlined_ir before replace np.empty")
-                replace_np_empty_with_cuda_shared(
+                replace_np_empty_with_gpu_array(
                     outlined_ir,
                     state_copy.typemap,
                     calltypes,
-                    device_func_name,
                     typingctx_outlined,
+                    numba.cuda.stubs.shared,
+                    numba.cuda.stubs.local,
+                )
+                dprint_func_ir(outlined_ir, "outlined_ir after replace np.empty")
+            elif device_type == "gpu" and device_vendor == "amd":
+                from numba.core import target_extension
+
+                _require_numba_hip()
+
+                orig_target = getattr(
+                    target_extension._active_context,
+                    "target",
+                    target_extension._active_context_default,
+                )
+                target_extension._active_context.target = "hip"
+
+                flags = hip_compiler.HIPFlags()
+
+                typingctx_outlined = hip_descriptor.hip_target.typing_context
+                device_target = OpenmpHIPTargetContext(
+                    device_func_name, typingctx_outlined
+                )
+                device_target.fndesc = fndesc
+                # device_target = cuda_descriptor.cuda_target.target_context
+
+                device_lowerer_pipeline = OnlyLowerHIP
+                openmp_hip_target = hip_descriptor.HIPTarget("openmp_hip")
+                openmp_hip_target._typingctx = typingctx_outlined
+                openmp_hip_target._targetctx = device_target
+                self.fix_dispatchers(
+                    state_copy.typemap, typingctx_outlined, openmp_hip_target
+                )
+
+                typingctx_outlined.refresh()
+                device_target.refresh()
+                dprint_func_ir(outlined_ir, "outlined_ir before replace np.empty")
+                replace_np_empty_with_gpu_array(
+                    outlined_ir,
+                    state_copy.typemap,
+                    calltypes,
+                    typingctx_outlined,
+                    hipstubs.shared,
+                    hipstubs.local,
                 )
                 dprint_func_ir(outlined_ir, "outlined_ir after replace np.empty")
             else:
@@ -1815,6 +1934,10 @@ class openmp_region_start(ir.Stmt):
                 target_extension._active_context.target = orig_target
                 omp_cuda_cg = get_omp_cuda_codegen(get_device_arch(selected_device))
                 target_elf = omp_cuda_cg.get_target_image(cres, ompx_attrs)
+            elif device_type == "gpu" and device_vendor == "amd":
+                target_extension._active_context.target = orig_target
+                omp_hip_cg = get_omp_hip_codegen(get_device_arch(selected_device))
+                target_elf = omp_hip_cg.get_target_image(cres)
             else:
                 raise NotImplementedError(
                     f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
@@ -2010,8 +2133,11 @@ class default_shared_val:
 
 def _lower_openmp_region_start(lowerer, prs):
     # TODO: if we set it always in numba_fixups we can remove from here
-    if isinstance(lowerer.context, OpenmpCPUTargetContext) or isinstance(
-        lowerer.context, OpenmpCUDATargetContext
+    is_hip = isinstance(lowerer.context, OpenmpHIPTargetContext)
+    if (
+        isinstance(lowerer.context, OpenmpCPUTargetContext)
+        or isinstance(lowerer.context, OpenmpCUDATargetContext)
+        or is_hip
     ):
         pass
     else:
@@ -2022,8 +2148,11 @@ def _lower_openmp_region_start(lowerer, prs):
 
 def _lower_openmp_region_end(lowerer, pre):
     # TODO: if we set it always in numba_fixups we can remove from here
-    if isinstance(lowerer.context, OpenmpCPUTargetContext) or isinstance(
-        lowerer.context, OpenmpCUDATargetContext
+    is_hip = isinstance(lowerer.context, OpenmpHIPTargetContext)
+    if (
+        isinstance(lowerer.context, OpenmpCPUTargetContext)
+        or isinstance(lowerer.context, OpenmpCUDATargetContext)
+        or is_hip
     ):
         pass
     else:
