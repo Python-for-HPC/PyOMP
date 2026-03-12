@@ -54,12 +54,41 @@ openmp_grammar = r"""
                     | ordered_construct
     for_simd_construct: for_simd_directive
     for_simd_directive: FOR SIMD [for_simd_clause*]
-    for_simd_clause: for_clause
-                   | simd_clause
+    // LALR: avoid ambiguity from overlapping expansions in for_clause vs simd_clause
+    for_simd_clause: ORDERED
+                   | schedule_clause
+                   | collapse_clause
+                   | private_clause
+                   | copyprivate_clause
+                   | firstprivate_clause
+                   | lastprivate_clause
+                   | data_sharing_clause
+                   | data_default_clause
+                   | copyin_clause
+                   | reduction_clause
+                   | NOWAIT
+                   | aligned_clause
+                   | linear_clause
+                   | uniform_clause
+                   | inbranch_clause
     parallel_for_simd_construct: parallel_for_simd_directive
     parallel_for_simd_directive: PARALLEL FOR SIMD [parallel_for_simd_clause*]
-    parallel_for_simd_clause: parallel_for_clause
-                            | simd_clause
+    // LALR: avoid ambiguity from overlapping expansions in parallel_for_clause vs simd_clause
+    parallel_for_simd_clause: if_clause
+                            | num_threads_clause
+                            | ORDERED
+                            | schedule_clause
+                            | collapse_clause
+                            | data_default_clause
+                            | private_clause
+                            | firstprivate_clause
+                            | lastprivate_clause
+                            | data_sharing_clause
+                            | reduction_clause
+                            | aligned_clause
+                            | linear_clause
+                            | uniform_clause
+                            | inbranch_clause
     distribute_construct: distribute_directive
     distribute_simd_construct: distribute_simd_directive
     distribute_directive: DISTRIBUTE [distribute_clause*]
@@ -509,10 +538,9 @@ openmp_grammar = r"""
                         | device_clause
                         | if_clause
     motion_clause: update_motion_type "(" variable_array_section_list ")"
-    variable_array_section_list: PYTHON_NAME
+    // LALR: name_slice already covers bare PYTHON_NAME, so avoid the ambiguous PYTHON_NAME alternatives.
+    variable_array_section_list: name_slice
                            //    | array_section
-                               | name_slice
-                               | variable_array_section_list "," PYTHON_NAME
                                | variable_array_section_list "," name_slice
                            //    | variable_array_section_list "," array_section
     //array_section: PYTHON_NAME array_section_subscript
@@ -690,7 +718,3 @@ openmp_grammar = r"""
     %import common.WS
     %ignore WS
     """
-
-"""
-    name_slice: PYTHON_NAME [ "[" slice ["," slice]* "]" ]
-"""
