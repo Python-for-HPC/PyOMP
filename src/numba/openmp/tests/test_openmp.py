@@ -1926,7 +1926,14 @@ class TestOpenmpConstraints(TestOpenmpBase):
 
         with self.assertRaises(Exception) as raises:
             test_impl(12)
-        self.assertIn("No terminal matches", str(raises.exception))
+        # Lark error text differs across versions: lexer failure ("No terminal matches")
+        # vs parser failure ("Unexpected token") for unsupported clauses like NOWAIT here.
+        err = str(raises.exception)
+        self.assertIn("nowait", err.lower())
+        self.assertTrue(
+            "No terminal matches" in err or "Unexpected token" in err,
+            err,
+        )
 
     def test_parallel_double_num_threads(self):
         @njit

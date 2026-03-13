@@ -2867,6 +2867,15 @@ class OpenmpVisitor(Transformer):
         else:
             return NameSlice(args[0], args[1:])
 
+    def variable_array_section_list(self, args):
+        if DEBUG_OPENMP >= 1:
+            print("visit variable_array_section_list", args, type(args))
+        if len(args) == 1:
+            return args
+        else:
+            args[0].append(args[1])
+            return args[0]
+
     def var_list(self, args):
         if DEBUG_OPENMP >= 1:
             print("visit var_list", args, type(args))
