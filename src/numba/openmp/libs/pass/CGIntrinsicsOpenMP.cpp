@@ -314,6 +314,7 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     case DSA_REDUCTION_ADD:
     case DSA_REDUCTION_SUB:
     case DSA_REDUCTION_MUL:
+    case DSA_REDUCTION_MAX:
       Reductions.push_back(V);
       break;
     default:
@@ -487,6 +488,11 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
       break;
     case DSA_REDUCTION_MUL:
       Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MUL>(
+          OMPBuilder.Builder, AllocaIP, AI, ReductionTy, ReductionInfos,
+          IsGPUTeamsReduction);
+      break;
+    case DSA_REDUCTION_MAX:
+      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MAX>(
           OMPBuilder.Builder, AllocaIP, AI, ReductionTy, ReductionInfos,
           IsGPUTeamsReduction);
       break;
@@ -1288,6 +1294,11 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
             CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MUL>(
                 OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
                 ReductionInfos, false);
+      } else if (DSA == DSA_REDUCTION_MAX) {
+        ReplacementValue =
+            CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MAX>(
+                OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
+                ReductionInfos, false);
       } else
         FATAL_ERROR("Unsupported privatization");
 
@@ -1773,6 +1784,7 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     case DSA_REDUCTION_ADD:
     case DSA_REDUCTION_SUB:
     case DSA_REDUCTION_MUL:
+    case DSA_REDUCTION_MAX:
     case DSA_MAP_TOFROM:
       MapType = OMP_TGT_MAPTYPE_TO | OMP_TGT_MAPTYPE_FROM;
       if (IsTargetRegion)
@@ -2917,6 +2929,21 @@ Value *CGReduction::emitOperation<DSA_REDUCTION_ADD>(IRBuilderBase &IRB,
     FATAL_ERROR("Unsupported type for reduction operation");
 }
 
+template <>
+Value *CGReduction::emitOperation<DSA_REDUCTION_MAX>(IRBuilderBase &IRB,
+                                                     Value *LHS, Value *RHS) {
+  Type *VTy = RHS->getType();
+  if (VTy->isIntegerTy()) {
+    Value *Cmp = IRB.CreateICmpSGT(LHS, RHS, "red.max.cmp");
+    return IRB.CreateSelect(Cmp, LHS, RHS, "red.max");
+  }
+  if (VTy->isFloatTy() || VTy->isDoubleTy()) {
+    Value *Cmp = IRB.CreateFCmpOGT(LHS, RHS, "red.max.cmp");
+    return IRB.CreateSelect(Cmp, LHS, RHS, "red.max");
+  }
+  FATAL_ERROR("Unsupported type for maximum reduction operation");
+}
+
 // OpenMP 5.1, 2.21.5, sub is the same as add.
 template <>
 Value *CGReduction::emitOperation<DSA_REDUCTION_SUB>(IRBuilderBase &IRB,
@@ -2949,4 +2976,12 @@ template <>
 InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_SUB>(
     IRBuilderBase &IRB, Value *LHS, Value *Partial) {
   return emitAtomicOperationRMW<DSA_REDUCTION_ADD>(IRB, LHS, Partial);
+}
+
+template <>
+InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_MAX>(
+    IRBuilderBase &IRB, Value *LHS, Value *Partial) {
+  IRB.CreateAtomicRMW(AtomicRMWInst::Max, LHS, Partial, MaybeAlign(),
+                      AtomicOrdering::Monotonic);
+  return IRB.saveIP();
 }
