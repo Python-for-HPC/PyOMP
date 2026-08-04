@@ -87,9 +87,11 @@ def target_max_float64(array):
                     result = array[j]
     return result
 
+
 def test_parallel_max_float64_all_positive():
     array = np.array([4.0, 7.0, 1.5, 9.0, 2.0], dtype=np.float64)
     assert parallel_max_float64(array) == 9.0
+
 
 def test_parallel_max_float64_all_negative():
     array = np.array([-4.0, -7.0, -1.5, -9.0, -2.0], dtype=np.float64)
@@ -137,6 +139,7 @@ def test_parallel_min_float64_all_positive():
     array = np.array([4.0, 7.0, 1.5, 9.0, 2.0], dtype=np.float64)
     assert parallel_min_float64(array) == 1.5
 
+
 def test_parallel_min_float64_all_negative():
     array = np.array([-4.0, -7.0, -1.5, -9.0, -2.0], dtype=np.float64)
     assert parallel_min_float64(array) == -9.0
@@ -161,6 +164,7 @@ def test_parallel_min_uint64_above_signed_range():
 def _target_offload_requested():
     return os.environ.get("OMP_TARGET_OFFLOAD", "").upper() == "MANDATORY"
 
+
 @pytest.mark.skipif(
     not _target_offload_requested(),
     reason="need OMP_TARGET_OFFLOAD=MANDATORY",
@@ -168,6 +172,7 @@ def _target_offload_requested():
 def test_target_max_float64_all_positive():
     array = np.array([4.0, 7.0, 1.5, 9.0, 2.0], dtype=np.float64)
     assert target_max_float64(array) == 9.0
+
 
 @pytest.mark.skipif(
     not _target_offload_requested(),
