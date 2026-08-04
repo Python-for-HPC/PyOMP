@@ -263,6 +263,16 @@ class openmp_tag(object):
 
         name_to_use = self.name
 
+        if name_to_use in [
+            "QUAL.OMP.REDUCTION.MAX",
+            "QUAL.OMP.REDUCTION.MIN",
+        ]:
+            reduction_type = typemap_lookup(typemap, self.arg)
+            if isinstance(reduction_type, types.Integer) and not reduction_type.signed:
+                name_to_use = name_to_use.replace(
+                    "QUAL.OMP.REDUCTION.", "QUAL.OMP.REDUCTION.U"
+                )
+
         is_array = self.arg in typemap and isinstance(
             typemap[self.arg], types.npytypes.Array
         )

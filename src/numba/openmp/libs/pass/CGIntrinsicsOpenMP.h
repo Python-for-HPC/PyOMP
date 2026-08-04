@@ -36,6 +36,9 @@ enum DSAType {
   DSA_REDUCTION_SUB,
   DSA_REDUCTION_MUL,
   DSA_REDUCTION_MAX,
+  DSA_REDUCTION_UMAX,
+  DSA_REDUCTION_MIN,
+  DSA_REDUCTION_UMIN,
   DSA_MAP_ALLOC,
   DSA_MAP_TO,
   DSA_MAP_FROM,
@@ -100,6 +103,9 @@ static const DenseMap<StringRef, DSAType> StringToDSA = {
     {"QUAL.OMP.REDUCTION.SUB", DSA_REDUCTION_SUB},
     {"QUAL.OMP.REDUCTION.MUL", DSA_REDUCTION_MUL},
     {"QUAL.OMP.REDUCTION.MAX", DSA_REDUCTION_MAX},
+    {"QUAL.OMP.REDUCTION.UMAX", DSA_REDUCTION_UMAX},
+    {"QUAL.OMP.REDUCTION.MIN", DSA_REDUCTION_MIN},
+    {"QUAL.OMP.REDUCTION.UMIN", DSA_REDUCTION_UMIN},
     {"QUAL.OMP.MAP.ALLOC", DSA_MAP_ALLOC},
     {"QUAL.OMP.MAP.TO", DSA_MAP_TO},
     {"QUAL.OMP.MAP.FROM", DSA_MAP_FROM},
@@ -133,6 +139,12 @@ inline std::string toString(const DSAType &DSA) {
     return "DSA_REDUCTION_MUL";
   case DSA_REDUCTION_MAX:
     return "DSA_REDUCTION_MAX";
+  case DSA_REDUCTION_UMAX:
+    return "DSA_REDUCTION_UMAX";
+  case DSA_REDUCTION_MIN:
+    return "DSA_REDUCTION_MIN";
+  case DSA_REDUCTION_UMIN:
+    return "DSA_REDUCTION_UMIN";
   case DSA_MAP_ALLOC:
     return "DSA_MAP_ALLOC";
   case DSA_MAP_TO:
@@ -351,6 +363,9 @@ struct CGReduction {
       case DSA_REDUCTION_ADD:
       case DSA_REDUCTION_SUB:
       case DSA_REDUCTION_MAX:
+      case DSA_REDUCTION_UMAX:
+      case DSA_REDUCTION_MIN:
+      case DSA_REDUCTION_UMIN:
         return emitAtomicOperationRMW<ReductionOperator>(Builder, LHS, Partial);
         break;
       case DSA_REDUCTION_MUL:
@@ -396,6 +411,24 @@ struct CGReduction {
         }
         if (ReductionTy->isFloatingPointTy())
           return ConstantFP::getInfinity(ReductionTy, true);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_UMAX:
+        if (ReductionTy->isIntegerTy())
+          return Constant::getNullValue(ReductionTy);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_MIN:
+        if (auto *IntegerTy = dyn_cast<IntegerType>(ReductionTy)) {
+          APInt Highest = APInt::getSignedMaxValue(IntegerTy->getBitWidth());
+          return ConstantInt::get(IntegerTy, Highest);
+        }
+        if (ReductionTy->isFloatingPointTy())
+          return ConstantFP::getInfinity(ReductionTy);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_UMIN:
+        if (auto *IntegerTy = dyn_cast<IntegerType>(ReductionTy)) {
+          APInt Highest = APInt::getMaxValue(IntegerTy->getBitWidth());
+          return ConstantInt::get(IntegerTy, Highest);
+        }
         FATAL_ERROR("Invalid value type");
       default:
         FATAL_ERROR("Unknown reduction type");

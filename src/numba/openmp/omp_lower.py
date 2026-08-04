@@ -2927,6 +2927,8 @@ class OpenmpVisitor(Transformer):
             return "MUL"
         elif arg == "max":
             return "MAX"
+        elif arg == "min":
+            return "MIN"
         assert 0
 
     def threadprivate_directive(self, args):

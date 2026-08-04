@@ -699,7 +699,8 @@ openmp_grammar = r"""
     MINUS: "-"
     STAR: "*"
     MAX: "max"
-    reduction_operator: PLUS | "\\" | STAR | MINUS | "&" | "^" | "|" | "&&" | "||" | MAX
+    MIN: "min"
+    reduction_operator: PLUS | "\\" | STAR | MINUS | "&" | "^" | "|" | "&&" | "||" | MAX | MIN
     threadprivate_directive: "threadprivate" "(" var_list ")"
     cancellation_point_directive: "cancellation point" construct_type_clause
     construct_type_clause: PARALLEL

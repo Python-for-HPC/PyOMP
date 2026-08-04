@@ -315,6 +315,9 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
     case DSA_REDUCTION_SUB:
     case DSA_REDUCTION_MUL:
     case DSA_REDUCTION_MAX:
+    case DSA_REDUCTION_UMAX:
+    case DSA_REDUCTION_MIN:
+    case DSA_REDUCTION_UMIN:
       Reductions.push_back(V);
       break;
     default:
@@ -493,6 +496,21 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
       break;
     case DSA_REDUCTION_MAX:
       Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MAX>(
+          OMPBuilder.Builder, AllocaIP, AI, ReductionTy, ReductionInfos,
+          IsGPUTeamsReduction);
+      break;
+    case DSA_REDUCTION_UMAX:
+      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_UMAX>(
+          OMPBuilder.Builder, AllocaIP, AI, ReductionTy, ReductionInfos,
+          IsGPUTeamsReduction);
+      break;
+    case DSA_REDUCTION_MIN:
+      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MIN>(
+          OMPBuilder.Builder, AllocaIP, AI, ReductionTy, ReductionInfos,
+          IsGPUTeamsReduction);
+      break;
+    case DSA_REDUCTION_UMIN:
+      Priv = CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_UMIN>(
           OMPBuilder.Builder, AllocaIP, AI, ReductionTy, ReductionInfos,
           IsGPUTeamsReduction);
       break;
@@ -1299,6 +1317,21 @@ void CGIntrinsicsOpenMP::emitLoop(DSAValueMapTy &DSAValueMap,
             CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MAX>(
                 OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
                 ReductionInfos, false);
+      } else if (DSA == DSA_REDUCTION_UMAX) {
+        ReplacementValue =
+            CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_UMAX>(
+                OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
+                ReductionInfos, false);
+      } else if (DSA == DSA_REDUCTION_MIN) {
+        ReplacementValue =
+            CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_MIN>(
+                OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
+                ReductionInfos, false);
+      } else if (DSA == DSA_REDUCTION_UMIN) {
+        ReplacementValue =
+            CGReduction::emitInitAndAppendInfo<DSA_REDUCTION_UMIN>(
+                OMPBuilder.Builder, OMPBuilder.Builder.saveIP(), Orig, VTy,
+                ReductionInfos, false);
       } else
         FATAL_ERROR("Unsupported privatization");
 
@@ -1785,6 +1818,9 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     case DSA_REDUCTION_SUB:
     case DSA_REDUCTION_MUL:
     case DSA_REDUCTION_MAX:
+    case DSA_REDUCTION_UMAX:
+    case DSA_REDUCTION_MIN:
+    case DSA_REDUCTION_UMIN:
     case DSA_MAP_TOFROM:
       MapType = OMP_TGT_MAPTYPE_TO | OMP_TGT_MAPTYPE_FROM;
       if (IsTargetRegion)
@@ -1834,6 +1870,10 @@ void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
     case DSA_REDUCTION_ADD:
     case DSA_REDUCTION_SUB:
     case DSA_REDUCTION_MUL:
+    case DSA_REDUCTION_MAX:
+    case DSA_REDUCTION_UMAX:
+    case DSA_REDUCTION_MIN:
+    case DSA_REDUCTION_UMIN:
       Size = ConstantInt::get(OMPBuilder.SizeTy,
                               M.getDataLayout().getTypeAllocSize(V->getType()));
       EmitMappingEntry(Size, GetMapType(DSA), V, V);
@@ -2944,6 +2984,43 @@ Value *CGReduction::emitOperation<DSA_REDUCTION_MAX>(IRBuilderBase &IRB,
   FATAL_ERROR("Unsupported type for maximum reduction operation");
 }
 
+template <>
+Value *CGReduction::emitOperation<DSA_REDUCTION_UMAX>(IRBuilderBase &IRB,
+                                                      Value *LHS, Value *RHS) {
+  Type *VTy = RHS->getType();
+  if (VTy->isIntegerTy()) {
+    Value *Cmp = IRB.CreateICmpUGT(LHS, RHS, "red.umax.cmp");
+    return IRB.CreateSelect(Cmp, LHS, RHS, "red.umax");
+  }
+  FATAL_ERROR("Unsupported type for unsigned maximum reduction operation");
+}
+
+template <>
+Value *CGReduction::emitOperation<DSA_REDUCTION_MIN>(IRBuilderBase &IRB,
+                                                     Value *LHS, Value *RHS) {
+  Type *VTy = RHS->getType();
+  if (VTy->isIntegerTy()) {
+    Value *Cmp = IRB.CreateICmpSLT(LHS, RHS, "red.min.cmp");
+    return IRB.CreateSelect(Cmp, LHS, RHS, "red.min");
+  }
+  if (VTy->isFloatTy() || VTy->isDoubleTy()) {
+    Value *Cmp = IRB.CreateFCmpOLT(LHS, RHS, "red.min.cmp");
+    return IRB.CreateSelect(Cmp, LHS, RHS, "red.min");
+  }
+  FATAL_ERROR("Unsupported type for minimum reduction operation");
+}
+
+template <>
+Value *CGReduction::emitOperation<DSA_REDUCTION_UMIN>(IRBuilderBase &IRB,
+                                                      Value *LHS, Value *RHS) {
+  Type *VTy = RHS->getType();
+  if (VTy->isIntegerTy()) {
+    Value *Cmp = IRB.CreateICmpULT(LHS, RHS, "red.umin.cmp");
+    return IRB.CreateSelect(Cmp, LHS, RHS, "red.umin");
+  }
+  FATAL_ERROR("Unsupported type for unsigned minimum reduction operation");
+}
+
 // OpenMP 5.1, 2.21.5, sub is the same as add.
 template <>
 Value *CGReduction::emitOperation<DSA_REDUCTION_SUB>(IRBuilderBase &IRB,
@@ -2982,6 +3059,30 @@ template <>
 InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_MAX>(
     IRBuilderBase &IRB, Value *LHS, Value *Partial) {
   IRB.CreateAtomicRMW(AtomicRMWInst::Max, LHS, Partial, MaybeAlign(),
+                      AtomicOrdering::Monotonic);
+  return IRB.saveIP();
+}
+
+template <>
+InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_UMAX>(
+    IRBuilderBase &IRB, Value *LHS, Value *Partial) {
+  IRB.CreateAtomicRMW(AtomicRMWInst::UMax, LHS, Partial, MaybeAlign(),
+                      AtomicOrdering::Monotonic);
+  return IRB.saveIP();
+}
+
+template <>
+InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_MIN>(
+    IRBuilderBase &IRB, Value *LHS, Value *Partial) {
+  IRB.CreateAtomicRMW(AtomicRMWInst::Min, LHS, Partial, MaybeAlign(),
+                      AtomicOrdering::Monotonic);
+  return IRB.saveIP();
+}
+
+template <>
+InsertPointTy CGReduction::emitAtomicOperationRMW<DSA_REDUCTION_UMIN>(
+    IRBuilderBase &IRB, Value *LHS, Value *Partial) {
+  IRB.CreateAtomicRMW(AtomicRMWInst::UMin, LHS, Partial, MaybeAlign(),
                       AtomicOrdering::Monotonic);
   return IRB.saveIP();
 }
