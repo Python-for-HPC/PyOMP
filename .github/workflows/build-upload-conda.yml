@@ -46,7 +46,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167
         with:
           # Keep Conda and conda-build on conda-forge so its build plugin loads.
-          miniforge-version: latest
+          miniforge-version: "26.3.2-3"
           conda-remove-defaults: true
           python-version: "3.12"
           auto-update-conda: false
