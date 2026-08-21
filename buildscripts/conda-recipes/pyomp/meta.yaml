@@ -52,7 +52,8 @@ requirements:
     - llvmdev {{ LLVM_VERSION }}
     - zlib
     # require llvm-openmp for the openmp cpu runtime.
-    - llvm-openmp {{ LLVM_VERSION }}
+    - llvm-openmp 21.1.8.* # [osx]
+    - llvm-openmp {{ LLVM_VERSION }} # [not osx]
     - elfutils # [linux]
     - libffi # [linux]
   run:
@@ -60,7 +61,8 @@ requirements:
     - setuptools
     - numba >=0.62, <0.64
     # require llvm-openmp for the openmp cpu runtime.
-    - llvm-openmp {{ LLVM_VERSION }}
+    - llvm-openmp 21.1.8.* # [osx]
+    - llvm-openmp {{ LLVM_VERSION }} # [not osx]
     - lark
     - cffi
 
