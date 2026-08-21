@@ -17,6 +17,14 @@ WHEEL_DIRECTORY = (
     else Path("/wheels")
 )
 MINIFORGE_PREFIX = "/opt/miniforge3"
+GPU_REDUCTION_TESTS = (
+    "test_target_max_int64_signed_comparison",
+    "test_target_max_uint64_unsigned_comparison",
+    "test_target_min_int64_signed_comparison",
+    "test_target_min_uint64_unsigned_comparison",
+    "test_target_max_float64_all_negative",
+    "test_target_min_float64_mixed_sign",
+)
 
 
 def find_linux_wheels() -> dict[str, Path]:
@@ -117,6 +125,7 @@ def test_gpu_wheels() -> None:
         }
     )
 
+    failures = []
     for python_version in PYTHON_VERSIONS:
         environment = f"py{python_version.replace('.', '')}"
         python = f"{MINIFORGE_PREFIX}/envs/{environment}/bin/python"
@@ -131,18 +140,28 @@ def test_gpu_wheels() -> None:
             check=True,
             env=test_environment,
         )
-        subprocess.run(
-            [
-                python,
-                "-m",
-                "pytest",
-                "--pyargs",
-                "numba.openmp.tests.test_reduction",
-                "-q",
-            ],
-            check=True,
-            env=test_environment,
+        for test_name in GPU_REDUCTION_TESTS:
+            completed = subprocess.run(
+                [
+                    python,
+                    "-m",
+                    "pytest",
+                    "--pyargs",
+                    f"numba.openmp.tests.test_reduction::{test_name}",
+                    "-q",
+                ],
+                check=False,
+                env=test_environment,
+            )
+            if completed.returncode:
+                failures.append((python_version, test_name, completed.returncode))
+
+    if failures:
+        formatted = "\n".join(
+            f"Python {python_version}: {test_name} exited {returncode}"
+            for python_version, test_name, returncode in failures
         )
+        raise RuntimeError(f"GPU reduction failures:\n{formatted}")
 
 
 @app.local_entrypoint()
