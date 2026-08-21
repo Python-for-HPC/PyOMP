@@ -35,6 +35,10 @@ enum DSAType {
   DSA_REDUCTION_ADD,
   DSA_REDUCTION_SUB,
   DSA_REDUCTION_MUL,
+  DSA_REDUCTION_MAX,
+  DSA_REDUCTION_UMAX,
+  DSA_REDUCTION_MIN,
+  DSA_REDUCTION_UMIN,
   DSA_MAP_ALLOC,
   DSA_MAP_TO,
   DSA_MAP_FROM,
@@ -98,6 +102,10 @@ static const DenseMap<StringRef, DSAType> StringToDSA = {
     {"QUAL.OMP.REDUCTION.ADD", DSA_REDUCTION_ADD},
     {"QUAL.OMP.REDUCTION.SUB", DSA_REDUCTION_SUB},
     {"QUAL.OMP.REDUCTION.MUL", DSA_REDUCTION_MUL},
+    {"QUAL.OMP.REDUCTION.MAX", DSA_REDUCTION_MAX},
+    {"QUAL.OMP.REDUCTION.UMAX", DSA_REDUCTION_UMAX},
+    {"QUAL.OMP.REDUCTION.MIN", DSA_REDUCTION_MIN},
+    {"QUAL.OMP.REDUCTION.UMIN", DSA_REDUCTION_UMIN},
     {"QUAL.OMP.MAP.ALLOC", DSA_MAP_ALLOC},
     {"QUAL.OMP.MAP.TO", DSA_MAP_TO},
     {"QUAL.OMP.MAP.FROM", DSA_MAP_FROM},
@@ -129,6 +137,14 @@ inline std::string toString(const DSAType &DSA) {
     return "DSA_REDUCTION_SUB";
   case DSA_REDUCTION_MUL:
     return "DSA_REDUCTION_MUL";
+  case DSA_REDUCTION_MAX:
+    return "DSA_REDUCTION_MAX";
+  case DSA_REDUCTION_UMAX:
+    return "DSA_REDUCTION_UMAX";
+  case DSA_REDUCTION_MIN:
+    return "DSA_REDUCTION_MIN";
+  case DSA_REDUCTION_UMIN:
+    return "DSA_REDUCTION_UMIN";
   case DSA_MAP_ALLOC:
     return "DSA_MAP_ALLOC";
   case DSA_MAP_TO:
@@ -346,6 +362,10 @@ struct CGReduction {
       switch (ReductionOperator) {
       case DSA_REDUCTION_ADD:
       case DSA_REDUCTION_SUB:
+      case DSA_REDUCTION_MAX:
+      case DSA_REDUCTION_UMAX:
+      case DSA_REDUCTION_MIN:
+      case DSA_REDUCTION_UMIN:
         return emitAtomicOperationRMW<ReductionOperator>(Builder, LHS, Partial);
         break;
       case DSA_REDUCTION_MUL:
@@ -373,13 +393,43 @@ struct CGReduction {
       Type *ReductionTy,
       SmallVectorImpl<OpenMPIRBuilder::ReductionInfo> &ReductionInfos,
       bool IsGPUTeamsReduction) {
-    auto GetIdentityValue = []() {
+    auto GetIdentityValue = [ReductionTy]() -> Constant * {
       switch (ReductionOperator) {
       case DSA_REDUCTION_ADD:
       case DSA_REDUCTION_SUB:
-        return 0;
+        return Constant::getNullValue(ReductionTy);
       case DSA_REDUCTION_MUL:
-        return 1;
+        if (ReductionTy->isIntegerTy())
+          return ConstantInt::get(ReductionTy, 1);
+        if (ReductionTy->isFloatingPointTy())
+          return ConstantFP::get(ReductionTy, 1.0);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_MAX:
+        if (auto *IntegerTy = dyn_cast<IntegerType>(ReductionTy)) {
+          APInt Lowest = APInt::getSignedMinValue(IntegerTy->getBitWidth());
+          return ConstantInt::get(IntegerTy, Lowest);
+        }
+        if (ReductionTy->isFloatingPointTy())
+          return ConstantFP::getInfinity(ReductionTy, true);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_UMAX:
+        if (ReductionTy->isIntegerTy())
+          return Constant::getNullValue(ReductionTy);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_MIN:
+        if (auto *IntegerTy = dyn_cast<IntegerType>(ReductionTy)) {
+          APInt Highest = APInt::getSignedMaxValue(IntegerTy->getBitWidth());
+          return ConstantInt::get(IntegerTy, Highest);
+        }
+        if (ReductionTy->isFloatingPointTy())
+          return ConstantFP::getInfinity(ReductionTy);
+        FATAL_ERROR("Invalid value type");
+      case DSA_REDUCTION_UMIN:
+        if (auto *IntegerTy = dyn_cast<IntegerType>(ReductionTy)) {
+          APInt Highest = APInt::getMaxValue(IntegerTy->getBitWidth());
+          return ConstantInt::get(IntegerTy, Highest);
+        }
+        FATAL_ERROR("Invalid value type");
       default:
         FATAL_ERROR("Unknown reduction type");
       }
@@ -404,12 +454,7 @@ struct CGReduction {
     IRB.restoreIP(SaveIP);
 
     // Store identity value based on operation and type.
-    if (ReductionTy->isIntegerTy()) {
-      IRB.CreateStore(ConstantInt::get(ReductionTy, GetIdentityValue()), Priv);
-    } else if (ReductionTy->isFloatTy() || ReductionTy->isDoubleTy()) {
-      IRB.CreateStore(ConstantFP::get(ReductionTy, GetIdentityValue()), Priv);
-    } else
-      FATAL_ERROR("Unsupported type to init with identity reduction value");
+    IRB.CreateStore(GetIdentityValue(), Priv);
 
 #if LLVM_VERSION_MAJOR <= 16
     ReductionInfos.push_back(
