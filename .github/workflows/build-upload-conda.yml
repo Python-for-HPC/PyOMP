@@ -42,13 +42,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create and activate conda env
-        uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167
+      - name: Setup and activate base conda env
+        uses: conda-incubator/setup-miniconda@8ee1f361103df19b6f8c8655fd3967a8ecb162d5 # v4.0.1
         with:
           # Keep Conda and conda-build on conda-forge so its build plugin loads.
           miniforge-version: "26.3.2-3"
           conda-remove-defaults: true
-          python-version: "3.12"
+          activate-environment: ""
+          auto-activate: true
           auto-update-conda: false
           show-channel-urls: true
 
@@ -73,7 +74,7 @@ jobs:
             buildscripts/conda-recipes/pyomp)
 
           # Upload the package.
-          anaconda -t ${{ secrets.ANACONDA_TOKEN }} upload \
+          conda run -n base anaconda -t ${{ secrets.ANACONDA_TOKEN }} upload \
             --user python-for-hpc --label ${{ env.CONDA_LABEL}} \
             --force "$OUTPUT"
 
