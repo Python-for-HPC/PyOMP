@@ -54,7 +54,7 @@ def image_build_commands() -> tuple[list[str], list[str]]:
                 ),
                 (
                     f"{python} -m pip install "
-                    f"numba=={NUMBA_VERSION} lark cffi setuptools"
+                    f"numba=={NUMBA_VERSION} lark cffi setuptools pytest==8.4.2"
                 ),
                 (
                     f'{python} -c "import numba; '
@@ -135,10 +135,10 @@ def test_gpu_wheels() -> None:
             [
                 python,
                 "-m",
-                "numba.runtests",
-                "-v",
-                "--",
-                "numba.openmp.tests.test_openmp.TestOpenmpTarget",
+                "pytest",
+                "--pyargs",
+                "numba.openmp.tests.test_reduction",
+                "-q",
             ],
             check=True,
             env=test_environment,

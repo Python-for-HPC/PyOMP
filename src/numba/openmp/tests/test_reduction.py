@@ -88,6 +88,61 @@ def target_max_float64(array):
     return result
 
 
+@njit
+def target_max_int64(array):
+    result = np.iinfo(np.int64).min
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(max:result)"):
+            for j in range(array.size):
+                if array[j] > result:
+                    result = array[j]
+    return result
+
+
+@njit
+def target_max_uint64(array):
+    result = np.uint64(0)
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(max:result)"):
+            for j in range(array.size):
+                if array[j] > result:
+                    result = array[j]
+    return result
+
+
+@njit
+def target_min_float64(array):
+    result = np.inf
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(min:result)"):
+            for j in range(array.size):
+                if array[j] < result:
+                    result = array[j]
+    return result
+
+
+@njit
+def target_min_int64(array):
+    result = np.iinfo(np.int64).max
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(min:result)"):
+            for j in range(array.size):
+                if array[j] < result:
+                    result = array[j]
+    return result
+
+
+@njit
+def target_min_uint64(array):
+    result = np.iinfo(np.uint64).max
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(min:result)"):
+            for j in range(array.size):
+                if array[j] < result:
+                    result = array[j]
+    return result
+
+
 def test_parallel_max_float64_all_positive():
     array = np.array([4.0, 7.0, 1.5, 9.0, 2.0], dtype=np.float64)
     assert parallel_max_float64(array) == 9.0
@@ -115,10 +170,10 @@ def test_parallel_max_preserve_original_value():
 
 def test_parallel_max_int64_negative():
     array = np.array(
-        [np.iinfo(np.int64).min, -100, -2, -50],
+        [np.iinfo(np.int64).min, -100, -1, 0],
         dtype=np.int64,
     )
-    assert parallel_max_int64(array) == -2
+    assert parallel_max_int64(array) == 0
 
 
 def test_parallel_max_uint64_above_signed_range():
@@ -153,12 +208,12 @@ def test_parallel_min_int64_extreme():
     assert parallel_min_int64(array) == np.iinfo(np.int64).min
 
 
-def test_parallel_min_uint64_above_signed_range():
+def test_parallel_min_uint64_crosses_signed_range():
     array = np.array(
-        [np.iinfo(np.uint64).max, 2**63 + 5, 2**63 + 100],
+        [1, 2**63 + 5, np.iinfo(np.uint64).max],
         dtype=np.uint64,
     )
-    assert parallel_min_uint64(array) == 2**63 + 5
+    assert parallel_min_uint64(array) == 1
 
 
 def _target_offload_requested():
@@ -190,3 +245,60 @@ def test_target_max_float64_all_negative():
 def test_target_max_float64_non_power_of_two():
     array = np.array([-3.0, 7.0, 1.0, 7.0, -2.0, 4.0, 6.0], dtype=np.float64)
     assert target_max_float64(array) == 7.0
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_max_int64_signed_comparison():
+    array = np.array(
+        [np.iinfo(np.int64).min, -100, -1, 0],
+        dtype=np.int64,
+    )
+    assert target_max_int64(array) == 0
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_max_uint64_unsigned_comparison():
+    array = np.array(
+        [1, 2**63 + 5, np.iinfo(np.uint64).max],
+        dtype=np.uint64,
+    )
+    assert target_max_uint64(array) == np.iinfo(np.uint64).max
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_min_float64_mixed_sign():
+    array = np.array([4.0, -7.0, 1.5, -9.0, 2.0], dtype=np.float64)
+    assert target_min_float64(array) == -9.0
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_min_int64_signed_comparison():
+    array = np.array(
+        [np.iinfo(np.int64).max, -100, np.iinfo(np.int64).min, -50],
+        dtype=np.int64,
+    )
+    assert target_min_int64(array) == np.iinfo(np.int64).min
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_min_uint64_unsigned_comparison():
+    array = np.array(
+        [1, 2**63 + 5, np.iinfo(np.uint64).max],
+        dtype=np.uint64,
+    )
+    assert target_min_uint64(array) == 1
