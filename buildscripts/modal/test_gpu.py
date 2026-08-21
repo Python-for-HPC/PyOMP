@@ -11,8 +11,11 @@ PYTHON_VERSIONS = ("3.10", "3.11", "3.12", "3.13", "3.14")
 NUMBA_VERSION = "0.63.1"
 MINIFORGE_VERSION = "26.3.2-3"
 MINIFORGE_SHA256 = "848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-WHEEL_DIRECTORY = REPOSITORY_ROOT / "dist"
+WHEEL_DIRECTORY = (
+    Path(__file__).resolve().parents[2] / "dist"
+    if modal.is_local()
+    else Path("/wheels")
+)
 MINIFORGE_PREFIX = "/opt/miniforge3"
 
 
