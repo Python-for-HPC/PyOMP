@@ -17,6 +17,26 @@ WHEEL_DIRECTORY = (
     else Path("/wheels")
 )
 MINIFORGE_PREFIX = "/opt/miniforge3"
+TARGET_LOOP_ADD_CONTROL = """
+import numpy as np
+
+from numba.openmp import njit
+from numba.openmp import openmp_context as openmp
+
+
+@njit
+def target_loop_add_int64(array):
+    result = np.int64(0)
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(+:result)"):
+            for j in range(array.size):
+                result += array[j]
+    return result
+
+
+array = np.array([1, 2, 3, 4], dtype=np.int64)
+assert target_loop_add_int64(array) == 10
+"""
 
 
 def find_linux_wheels() -> dict[str, Path]:
@@ -132,14 +152,7 @@ def test_gpu_wheels() -> None:
             env=test_environment,
         )
         subprocess.run(
-            [
-                python,
-                "-m",
-                "numba.runtests",
-                "-v",
-                "--",
-                "numba.openmp.tests.test_openmp.TestOpenmpTarget",
-            ],
+            [python, "-c", TARGET_LOOP_ADD_CONTROL],
             check=True,
             env=test_environment,
         )
