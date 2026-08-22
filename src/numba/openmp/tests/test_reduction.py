@@ -143,6 +143,29 @@ def target_min_uint64(array):
     return result
 
 
+@njit
+def target_loop_add_int64(array):
+    result = np.int64(0)
+    with openmp("target map(to:array) map(tofrom:result)"):
+        with openmp("loop reduction(+:result)"):
+            for j in range(array.size):
+                result += array[j]
+    return result
+
+
+@njit
+def target_teams_distribute_parallel_for_max_int64(array):
+    result = np.iinfo(np.int64).min
+    with openmp(
+        "target teams distribute parallel for "
+        "map(to:array) reduction(max:result)"
+    ):
+        for j in range(array.size):
+            if array[j] > result:
+                result = array[j]
+    return result
+
+
 def test_parallel_max_float64_all_positive():
     array = np.array([4.0, 7.0, 1.5, 9.0, 2.0], dtype=np.float64)
     assert parallel_max_float64(array) == 9.0
@@ -302,3 +325,21 @@ def test_target_min_uint64_unsigned_comparison():
         dtype=np.uint64,
     )
     assert target_min_uint64(array) == 1
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_loop_add_int64_diagnostic_control():
+    array = np.array([1, 2, 3, 4], dtype=np.int64)
+    assert target_loop_add_int64(array) == 10
+
+
+@pytest.mark.skipif(
+    not _target_offload_requested(),
+    reason="need OMP_TARGET_OFFLOAD=MANDATORY",
+)
+def test_target_teams_distribute_parallel_for_max_int64_diagnostic_control():
+    array = np.array([-7, 12, 3, -1], dtype=np.int64)
+    assert target_teams_distribute_parallel_for_max_int64(array) == 12

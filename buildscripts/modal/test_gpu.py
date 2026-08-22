@@ -18,6 +18,8 @@ WHEEL_DIRECTORY = (
 )
 MINIFORGE_PREFIX = "/opt/miniforge3"
 GPU_REDUCTION_TESTS = (
+    "test_target_loop_add_int64_diagnostic_control",
+    "test_target_teams_distribute_parallel_for_max_int64_diagnostic_control",
     "test_target_max_int64_signed_comparison",
     "test_target_max_uint64_unsigned_comparison",
     "test_target_min_int64_signed_comparison",
