@@ -2050,7 +2050,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             with openmp("parallel"):
                 with openmp("barrier"):
                     pass
-                with openmp("for private(p, sum)"):
+                with openmp("for private(p, sum, i)"):
                     for _ in range(iters):
                         with openmp("critical"):
                             p = count
@@ -2074,7 +2074,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_num_threads(N)
             ca = np.zeros(N)
             sum = 0
-            with openmp("parallel private(sum) shared(c)"):
+            with openmp("parallel private(sum, i) shared(c)"):
                 c = N
                 with openmp("barrier"):
                     pass
@@ -2117,7 +2117,7 @@ class TestOpenmpConcurrency(TestOpenmpBase):
             omp_set_num_threads(N)
             a = np.zeros((2, N))
             sa = np.zeros(N)
-            with openmp("parallel private(a0c, sum, tn)"):
+            with openmp("parallel private(a0c, sum, tn, j)"):
                 tn = omp_get_thread_num()
                 with openmp("barrier"):
                     pass
@@ -4610,7 +4610,7 @@ class TestOpenmpPi(TestOpenmpBase):
             omp_set_num_threads(4)
 
             with openmp("parallel"):
-                with openmp("for reduction(+:the_sum) schedule(static)"):
+                with openmp("for private(x) reduction(+:the_sum) schedule(static)"):
                     for j in range(num_steps):
                         x = ((j - 1) - 0.5) * step
                         the_sum += 4.0 / (1.0 + x * x)
@@ -4629,7 +4629,7 @@ class TestOpenmpPi(TestOpenmpBase):
             the_sum = 0.0
             omp_set_num_threads(4)
 
-            with openmp("parallel for reduction(+:the_sum) schedule(static)"):
+            with openmp("parallel for private(x) reduction(+:the_sum) schedule(static)"):
                 for j in range(num_steps):
                     x = ((j - 1) - 0.5) * step
                     the_sum += 4.0 / (1.0 + x * x)
@@ -4647,7 +4647,7 @@ class TestOpenmpPi(TestOpenmpBase):
             the_sum = 0.0
             omp_set_num_threads(4)
 
-            with openmp("loop reduction(+:the_sum) schedule(static)"):
+            with openmp("loop private(x) reduction(+:the_sum) schedule(static)"):
                 for j in range(num_steps):
                     x = ((j - 1) - 0.5) * step
                     the_sum += 4.0 / (1.0 + x * x)

@@ -18,7 +18,7 @@ import operator
 import sys
 import os
 
-from .config import DEBUG_OPENMP
+from .config import DEBUG_OPENMP, SMART_PRIVATIZE
 from .parser import openmp_parser
 from .analysis import (
     remove_ssa,
@@ -304,7 +304,10 @@ class OpenmpVisitor(Transformer):
 
         # All private variables (user-defined and compiler-generated)
         for var_name in sorted(private_to_region):
-            add_clause(var_name, "QUAL.OMP.PRIVATE")
+            if SMART_PRIVATIZE:
+                add_clause(var_name, "QUAL.OMP.PRIVATE")
+            else:
+                add_clause(var_name, "QUAL.OMP.SHARED")
 
     def make_implicit_explicit_target(
         self,

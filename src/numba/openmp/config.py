@@ -25,3 +25,4 @@ DEBUG_OPENMP_LLVM_PASS = _safe_readenv("NUMBA_DEBUG_OPENMP_LLVM_PASS", int, 0)
 OPENMP_DISABLED = _safe_readenv("NUMBA_OPENMP_DISABLED", int, 0)
 # Use toolchain for device code compilation by default to avoid issues with libomptarget compatibility checks.
 OPENMP_DEVICE_TOOLCHAIN = _safe_readenv("NUMBA_OPENMP_DEVICE_TOOLCHAIN", int, 1)
+SMART_PRIVATIZE = _safe_readenv("NUMBA_SMART_PRIVATIZE", int, 0)
