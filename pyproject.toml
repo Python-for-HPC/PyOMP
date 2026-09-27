@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Compilers",
 ]
-dependencies = ["numba>=0.62, <0.64", "lark", "cffi", "setuptools"]
+dependencies = ["numba>=0.62, <0.66", "lark", "cffi", "setuptools"]
 maintainers = [
     { name = "Giorgis Georgakoudis", email = "georgakoudis1@llnl.gov" },
 ]
@@ -42,8 +42,7 @@ archs = ["native"]
 environment-pass = ["LLVM_VERSION"]
 # We use miniconda3 to get the clang/llvm toolchain on Linux.
 before-build = ["rm -rf build dist src/*.egg-info"]
-# Skip building 3.14t wheels as they are not supported by the current numba/llvmlite version.
-skip = ["*-musllinux_*", "cp38-*", "cp314t-*"]
+skip = ["*-musllinux_*", "cp38-*"]
 test-command = [
     # Run host OpenMP tests.
     "RUN_TARGET=0 python -m numba.runtests -v -- numba.openmp.tests.test_openmp",

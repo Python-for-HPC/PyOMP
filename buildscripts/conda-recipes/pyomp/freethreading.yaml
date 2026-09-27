@@ -1,0 +1,4 @@
+# Variant for free-threaded Python (3.14t) builds, passed with -m. Use this
+# instead of --variants, which `conda build --output` ignores.
+is_freethreading:
+  - true

@@ -84,13 +84,24 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
-        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
-        numba-version: ['0.62.0', '0.62.1', '0.63.0', '0.63.1']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', '3.14t']
+        numba-version: ['0.62.0', '0.62.1', '0.63.0', '0.63.1', '0.64.0', '0.65.0', '0.65.1']
         exclude:
           - python-version: '3.14'
             numba-version: '0.62.0'
           - python-version: '3.14'
             numba-version: '0.62.1'
+          # Numba supports free-threaded Python starting with 0.65.
+          - python-version: '3.14t'
+            numba-version: '0.62.0'
+          - python-version: '3.14t'
+            numba-version: '0.62.1'
+          - python-version: '3.14t'
+            numba-version: '0.63.0'
+          - python-version: '3.14t'
+            numba-version: '0.63.1'
+          - python-version: '3.14t'
+            numba-version: '0.64.0'
 
     steps:
       - name: Download built wheels

@@ -45,7 +45,8 @@ requirements:
     - sysroot_linux-aarch64  # [aarch64]
     - setuptools
     - setuptools_scm
-    - numba >=0.62, <0.64
+    - numba >=0.62, <0.66
+    - numba >=0.65, <0.66  # [is_freethreading]
     - clang {{ LLVM_VERSION }}
     - clangxx {{ LLVM_VERSION }}
     - clang-tools {{ LLVM_VERSION }}
@@ -59,7 +60,8 @@ requirements:
   run:
     - python
     - setuptools
-    - numba >=0.62, <0.64
+    - numba >=0.62, <0.66
+    - numba >=0.65, <0.66  # [is_freethreading]
     # require llvm-openmp for the openmp cpu runtime.
     - llvm-openmp 21.1.8.* # [osx]
     - llvm-openmp {{ LLVM_VERSION }} # [not osx]
