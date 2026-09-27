@@ -4670,7 +4670,7 @@ class TestOpenmpPi(TestOpenmpBase):
             omp_set_num_threads(j)
             full_sum = 0.0
 
-            with openmp("parallel private(tid, numthreads, local_sum, x)"):
+            with openmp("parallel private(tid, numthreads, local_sum, x, i)"):
                 tid = omp_get_thread_num()
                 numthreads = omp_get_num_threads()
                 local_sum = 0.0
