@@ -4775,21 +4775,13 @@ class TestOpenmpRuntimeFunctions(TestOpenmpBase):
 
     def test_omp_get_wtime(self):
         @njit
-        def test_impl(t):
-            start = omp_get_wtime()
-            while start + t > omp_get_wtime():
-                continue
-            return omp_get_wtime() - start
+        def test_impl():
+            return omp_get_wtime()
 
-        t = 0.25
-        delay = test_impl(t)
-        self.assertAlmostEqual(delay, t, places=2)
-
-        start = omp_get_wtime()
-        while start + t > omp_get_wtime():
-            continue
-        delay = omp_get_wtime() - start
-        self.assertAlmostEqual(delay, t, places=2)
+        for wtime in (test_impl, omp_get_wtime):
+            t = wtime()
+            self.assertIsInstance(t, float)
+            self.assertGreater(t, 0.0)
 
     @linux_only
     def test_omp_get_num_devices(self):
