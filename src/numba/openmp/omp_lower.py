@@ -304,7 +304,7 @@ class OpenmpVisitor(Transformer):
 
         # All private variables (user-defined and compiler-generated)
         for var_name in sorted(private_to_region):
-            if SMART_PRIVATIZE:
+            if SMART_PRIVATIZE or is_internal_var(ir.Var(scope, var_name, self.loc)):
                 add_clause(var_name, "QUAL.OMP.PRIVATE")
             else:
                 add_clause(var_name, "QUAL.OMP.SHARED")
