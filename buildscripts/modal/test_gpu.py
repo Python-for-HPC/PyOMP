@@ -8,7 +8,7 @@ import modal
 
 
 PYTHON_VERSIONS = ("3.10", "3.11", "3.12", "3.13", "3.14")
-NUMBA_VERSION = "0.63.1"
+NUMBA_VERSION = "0.65.1"
 MINIFORGE_VERSION = "26.3.2-3"
 MINIFORGE_SHA256 = "848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c"
 WHEEL_DIRECTORY = (
@@ -26,7 +26,8 @@ def find_linux_wheels() -> dict[str, Path]:
     wheels = {}
     for python_version in PYTHON_VERSIONS:
         abi = python_version.replace(".", "")
-        matches = sorted(WHEEL_DIRECTORY.glob(f"*cp{abi}-*x86_64.whl"))
+        # Match the ABI tag too, so cp314 does not also match cp314t wheels.
+        matches = sorted(WHEEL_DIRECTORY.glob(f"*-cp{abi}-cp{abi}-*x86_64.whl"))
         if len(matches) != 1:
             raise RuntimeError(
                 f"Expected one cp{abi} Linux x86-64 wheel in {WHEEL_DIRECTORY}, "

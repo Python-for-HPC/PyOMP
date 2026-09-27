@@ -1,3 +1,8 @@
+# --- Free-threading ---
+# Default for the is_freethreading selector in meta.yaml; override for 3.14t.
+is_freethreading:
+  - false
+
 # --- Compilers ---
 c_compiler_version:
   - 9                       # [linux]

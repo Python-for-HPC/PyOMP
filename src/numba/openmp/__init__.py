@@ -1,5 +1,17 @@
 import llvmlite.binding as ll
 import sys
+import sysconfig
+
+import numba
+
+# Numba supports free-threaded Python starting with 0.65.
+if sysconfig.get_config_var("Py_GIL_DISABLED") and tuple(
+    int(x) for x in numba.__version__.split(".")[:2]
+) < (0, 65):
+    raise ImportError(
+        f"PyOMP on free-threaded Python requires numba>=0.65, found {numba.__version__}"
+    )
+
 from ._version import version as __version__  # noqa: F401
 
 from .config import (
