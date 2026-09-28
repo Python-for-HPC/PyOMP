@@ -1,0 +1,12 @@
+diff --git a/offload/CMakeLists.txt b/offload/CMakeLists.txt
+index 81e246d..e94d309 100644
+--- a/offload/CMakeLists.txt
++++ b/offload/CMakeLists.txt
+@@ -391,7 +391,6 @@ add_subdirectory(docs)
+ # Build target agnostic offloading library.
+ add_subdirectory(libomptarget)
+ 
+-add_subdirectory(liboffload)
+ 
+ # Add tests.
+ if(OFFLOAD_INCLUDE_TESTS)

@@ -73,13 +73,9 @@ CallInst *checkCreateCall(IRBuilderBase &Builder, FunctionCallee &Fn,
 // We retrieve the type from the DSAValueMap to store the pointee type for
 // opaque pointer values.
 Type *getPointeeType(DSAValueMapTy &DSAValueMap, Value *V) {
-#if LLVM_VERSION_MAJOR <= 15
-  return V->getType()->getPointerElementType();
-#else
   // assert(V->getType()->isOpaquePointerTy() && "Expected opaque pointer
   // type");
   assert(V->getType()->isPointerTy() && "Expected pointer type");
-#endif
 
   if (auto *Alloca = dyn_cast<AllocaInst>(V)) {
     return Alloca->getAllocatedType();
@@ -103,10 +99,7 @@ using namespace iomp::helpers;
 InsertPointTy CGIntrinsicsOpenMP::emitReductionsHost(
     const OpenMPIRBuilder::LocationDescription &Loc, InsertPointTy AllocaIP,
     ArrayRef<OpenMPIRBuilder::ReductionInfo> ReductionInfos) {
-// If targeting the host runtime, use the OpenMP IR builder.
-#if LLVM_VERSION_MAJOR <= 16
-  return OMPBuilder.createReductions(Loc, AllocaIP, ReductionInfos);
-#else
+  // If targeting the host runtime, use the OpenMP IR builder.
   // TODO: look into the ByRef parameter.
   SmallVector<bool> IsByRef(ReductionInfos.size(), false);
   auto IPOrError =
@@ -115,8 +108,6 @@ InsertPointTy CGIntrinsicsOpenMP::emitReductionsHost(
     FATAL_ERROR("Error in createReductions:" + toString(std::move(E)));
 
   return *IPOrError;
-
-#endif
 }
 
 InsertPointTy CGIntrinsicsOpenMP::emitReductionsDevice(
@@ -167,11 +158,6 @@ InsertPointTy CGIntrinsicsOpenMP::emitReductionsDevice(
     assert(RI.Variable->getType()->isPointerTy() &&
            "Expected variables to be pointers");
 
-#if LLVM_VERSION_MAJOR <= 16
-    OMPBuilder.Builder.restoreIP(
-        RI.AtomicReductionGen(OMPBuilder.Builder.saveIP(), RI.ElementType,
-                              RI.Variable, RI.PrivateVariable));
-#else
     auto IPOrErr =
         RI.AtomicReductionGen(OMPBuilder.Builder.saveIP(), RI.ElementType,
                               RI.Variable, RI.PrivateVariable);
@@ -179,7 +165,6 @@ InsertPointTy CGIntrinsicsOpenMP::emitReductionsDevice(
       FATAL_ERROR("Error in AtomicReductionGen: " + toString(std::move(E)));
 
     OMPBuilder.Builder.restoreIP(*IPOrErr);
-#endif
   }
 
   // Add terminator branch to the continuation block.
@@ -234,9 +219,7 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
                           /* AssumptionCache */ nullptr,
                           /* AllowVarArgs */ true,
                           /* AllowAlloca */ true,
-#if LLVM_VERSION_MAJOR >= 15
                           /* AllocationBlock */ nullptr,
-#endif
                           /* Suffix */ ".");
 
   // Find inputs to, outputs from the code region.
@@ -538,6 +521,15 @@ OutlinedInfoStruct CGIntrinsicsOpenMP::createOutlinedFunction(
 }
 
 CGIntrinsicsOpenMP::CGIntrinsicsOpenMP(Module &M) : OMPBuilder(M), M(M) {
+  // OpenMPIRBuilder methods such as createReductions read the config, which
+  // is unset by default.
+  bool IsGPU = isOpenMPDeviceRuntime();
+  OMPBuilder.Config = OpenMPIRBuilderConfig(
+      /* IsTargetDevice */ IsGPU, IsGPU, /* OpenMPOffloadMandatory */ false,
+      /* HasRequiresReverseOffload */ false,
+      /* HasRequiresUnifiedAddress */ false,
+      /* HasRequiresUnifiedSharedMemory */ false,
+      /* HasRequiresDynamicAllocators */ false);
   OMPBuilder.initialize();
 
   TgtOffloadEntryTy = StructType::create({OMPBuilder.Int8Ptr,
@@ -763,7 +755,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
                       << *OutlinedWrapperFn
                       << "=== End of Dump OutlinedWrapper\n");
 
-  // Setup the call to kmpc_parallel_51
+  // Setup the call to kmpc_parallel_60
   BBEntry->getTerminator()->eraseFromParent();
   OpenMPIRBuilder::LocationDescription Loc(
       InsertPointTy(BBEntry, BBEntry->end()), DL);
@@ -783,7 +775,7 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
   // TODO: Re-think allocas, move to start of caller. If the caller is outlined
   // in an outer OpenMP region, dot naming ensures captured_var_addrs is a
   // private value, since it's only used for setting up the call to
-  // kmpc_parallel_51.
+  // kmpc_parallel_60.
   auto PrevIP = OMPBuilder.Builder.saveIP();
   InsertPointTy AllocaIP(&Fn->getEntryBlock(),
                          Fn->getEntryBlock().getFirstInsertionPt());
@@ -851,8 +843,8 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
 
   assert(NumThreads && "Expected non-null NumThreads");
 
-  FunctionCallee KmpcParallel51 =
-      OMPBuilder.getOrCreateRuntimeFunction(M, OMPRTL___kmpc_parallel_51);
+  FunctionCallee KmpcParallel =
+      OMPBuilder.getOrCreateRuntimeFunction(M, OMPRTL___kmpc_parallel_60);
 
   // Set proc_bind to -1 by default as it is unused.
   assert(Ident && "Expected non-null Ident");
@@ -880,10 +872,12 @@ void CGIntrinsicsOpenMP::emitOMPParallelDeviceRuntime(
                                    OutlinedWrapperFnBitcast,
                                    CapturedVarAddrsBitcast,
                                    NumCapturedArgs};
+  // nt_strict is 0: the strict modifier of num_threads is not supported.
+  Args.push_back(OMPBuilder.Builder.getInt32(0));
 
-  auto *CallKmpcParallel51 =
-      checkCreateCall(OMPBuilder.Builder, KmpcParallel51, Args);
-  assert(CallKmpcParallel51 &&
+  auto *CallKmpcParallel =
+      checkCreateCall(OMPBuilder.Builder, KmpcParallel, Args);
+  assert(CallKmpcParallel &&
          "Expected non-null call instr from code generation");
 
   FunctionCallee KmpcFreeShared =
@@ -1994,12 +1988,7 @@ void CGIntrinsicsOpenMP::emitOMPSingle(Function *Fn, BasicBlock *BBEntry,
   OpenMPIRBuilder::LocationDescription Loc(
       InsertPointTy(BBEntry, BBEntry->end()), DL);
 
-// TODO: handle nowait clause.
-#if LLVM_VERSION_MAJOR <= 16
-  InsertPointTy AfterIP = OMPBuilder.createSingle(
-      Loc, BodyGenCB, FiniCB, /* IsNoWait*/ false, /*DidIt*/ nullptr);
-#else
-
+  // TODO: handle nowait clause.
   auto IPOrError =
       OMPBuilder.createSingle(Loc, BodyGenCB, FiniCB, /* IsNoWait*/ false);
   if (auto E = IPOrError.takeError()) {
@@ -2008,7 +1997,6 @@ void CGIntrinsicsOpenMP::emitOMPSingle(Function *Fn, BasicBlock *BBEntry,
   }
 
   InsertPointTy AfterIP = *IPOrError;
-#endif
   BranchInst::Create(AfterBB, AfterIP.getBlock());
   DEBUG_ENABLE(dbgs() << "=== Single Fn\n" << *Fn << "=== End of Single Fn\n");
 }
@@ -2026,11 +2014,6 @@ void CGIntrinsicsOpenMP::emitOMPCritical(Function *Fn, BasicBlock *BBEntry,
   OpenMPIRBuilder::LocationDescription Loc(
       InsertPointTy(BBEntry, BBEntry->end()), DL);
 
-#if LLVM_VERSION_MAJOR <= 16
-  InsertPointTy AfterIP = OMPBuilder.createCritical(Loc, BodyGenCB, FiniCB, "",
-                                                    /*HintInst*/ nullptr);
-#else
-
   auto IPOrError = OMPBuilder.createCritical(Loc, BodyGenCB, FiniCB, "",
                                              /*HintInst*/ nullptr);
   if (auto E = IPOrError.takeError()) {
@@ -2039,7 +2022,6 @@ void CGIntrinsicsOpenMP::emitOMPCritical(Function *Fn, BasicBlock *BBEntry,
   }
 
   InsertPointTy AfterIP = *IPOrError;
-#endif
   BranchInst::Create(AfterBB, AfterIP.getBlock());
   DEBUG_ENABLE(dbgs() << "=== Critical Fn\n"
                       << *Fn << "=== End of Critical Fn\n");
@@ -2315,7 +2297,8 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
       KernelNumTeams,
       KernelNumThreads,
       Constant::getNullValue(OMPBuilder.VoidPtr),
-      /*TargetInfo.NoWait*/ false};
+      /*TargetInfo.NoWait*/ false,
+      omp::OMPDynGroupprivateFallbackType::Abort};
   OpenMPIRBuilder::getKernelArgsVector(Args, OMPBuilder.Builder, ArgsVector);
 
   assert(TargetInfo.DeviceID && "Expected non-null device id");
@@ -2424,11 +2407,6 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
   bool IsSPMD = (TargetInfo.ExecMode == omp::OMP_TGT_EXEC_MODE_SPMD);
   if (isOpenMPDeviceRuntime()) {
     OpenMPIRBuilder::LocationDescription Loc(Builder);
-#if LLVM_VERSION_MAJOR <= 15
-    auto IP = OMPBuilder.createTargetInit(Loc, IsSPMD, true);
-#elif LLVM_VERSION_MAJOR <= 16
-    auto IP = OMPBuilder.createTargetInit(Loc, IsSPMD);
-#else
     // Note the default for MaxThreads is 0.
     OpenMPIRBuilder::TargetKernelDefaultAttrs Attrs{
         (IsSPMD ? OMP_TGT_EXEC_MODE_SPMD : OMP_TGT_EXEC_MODE_GENERIC),
@@ -2437,7 +2415,6 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
         {0, -1, -1},
         1};
     auto IP = OMPBuilder.createTargetInit(Builder, Attrs);
-#endif
     Builder.restoreIP(IP);
   }
 
@@ -2446,13 +2423,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
 
   if (isOpenMPDeviceRuntime()) {
     OpenMPIRBuilder::LocationDescription Loc(Builder);
-#if LLVM_VERSION_MAJOR <= 15
-    OMPBuilder.createTargetDeinit(Loc, /* IsSPMD */ IsSPMD, true);
-#elif LLVM_VERSION_MAJOR <= 16
-    OMPBuilder.createTargetDeinit(Loc, /* IsSPMD */ IsSPMD);
-#else
     OMPBuilder.createTargetDeinit(Loc);
-#endif
   }
 
   Builder.CreateRetVoid();
@@ -2821,11 +2792,7 @@ void CGIntrinsicsOpenMP::emitOMPDistributeParallelFor(
   BasicBlock *ParAfterBB = ForExitAfter;
   DEBUG_ENABLE(dbgs() << "ParAfterBB " << ParAfterBB->getName() << "\n");
 
-#if LLVM_VERSION_MAJOR <= 16
-  auto FiniCB = [](auto) {};
-#else
   auto FiniCB = [](InsertPointTy) { return Error::success(); };
-#endif
   emitOMPParallel(DSAValueMap, nullptr, DL, Fn, ParEntryBB, ParStartBB,
                   ParEndBB, ParAfterBB, FiniCB, ParRegionInfo);
 

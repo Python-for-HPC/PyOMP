@@ -275,12 +275,6 @@ struct CGReduction {
     unsigned int Bitwidth = VTy->getScalarSizeInBits();
     auto *IntTy =
         (Bitwidth == 64 ? Type::getInt64Ty(Ctx) : Type::getInt32Ty(Ctx));
-#if LLVM_VERSION_MAJOR <= 15
-    auto *IntPtrTy =
-        (Bitwidth == 64 ? Type::getInt64PtrTy(Ctx) : Type::getInt32PtrTy(Ctx));
-#else
-    auto *IntPtrTy = PointerType::getUnqual(IntTy);
-#endif
 
     auto SaveIP = IRB.saveIP();
     // TODO: move alloca to function entry point, may be outlined later, e.g.,
@@ -288,10 +282,8 @@ struct CGReduction {
     Value *AllocaTemp = IRB.CreateAlloca(IntTy, nullptr, "atomic.alloca.tmp");
     IRB.restoreIP(SaveIP);
 
-    Value *CastLHS =
-        IRB.CreateBitCast(LHS, IntPtrTy, LHS->getName() + ".cast.int");
     auto *LoadAtomic =
-        IRB.CreateLoad(IntTy, CastLHS, LHS->getName() + ".load.atomic");
+        IRB.CreateLoad(IntTy, LHS, LHS->getName() + ".load.atomic");
     LoadAtomic->setAtomic(AtomicOrdering::Monotonic);
 
     Value *CastFP = IRB.CreateBitCast(LoadAtomic, VTy, "cast.fp");
@@ -300,7 +292,7 @@ struct CGReduction {
         IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
 
     auto *CmpXchg = IRB.CreateAtomicCmpXchg(
-        CastLHS, LoadAtomic, CastFAdd, MaybeAlign(), AtomicOrdering::Monotonic,
+        LHS, LoadAtomic, CastFAdd, MaybeAlign(), AtomicOrdering::Monotonic,
         AtomicOrdering::Monotonic);
 
     auto *Returned = IRB.CreateExtractValue(CmpXchg, 0);
@@ -322,8 +314,8 @@ struct CGReduction {
     // FAdd = IRB.CreateFAdd(CastLoad, Partial, "retry.add");
     RedOp = emitOperation<ReductionOperator>(IRB, CastLoad, Partial);
     CastFAdd = IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
-    CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadReturned, CastFAdd,
-                                      MaybeAlign(), AtomicOrdering::Monotonic,
+    CmpXchg = IRB.CreateAtomicCmpXchg(LHS, LoadReturned, CastFAdd, MaybeAlign(),
+                                      AtomicOrdering::Monotonic,
                                       AtomicOrdering::Monotonic);
     Returned = IRB.CreateExtractValue(CmpXchg, 0);
     StoreTemp = IRB.CreateStore(Returned, AllocaTemp);
@@ -411,19 +403,14 @@ struct CGReduction {
     } else
       FATAL_ERROR("Unsupported type to init with identity reduction value");
 
-#if LLVM_VERSION_MAJOR <= 16
-    ReductionInfos.push_back(
-        {ReductionTy, Orig, Priv,
-         CGReduction::reductionNonAtomic<ReductionOperator>,
-         CGReduction::reductionAtomic<ReductionOperator>});
-#else
     // TODO: Support more evaluation kinds besides scalar.
+    // DataPtrPtrGen is only used for by-ref reductions, which are unused.
     ReductionInfos.push_back(
         {ReductionTy, Orig, Priv, OpenMPIRBuilder::EvalKind::Scalar,
          CGReduction::reductionNonAtomic<ReductionOperator>,
          /* ReductionGenClang */ nullptr,
-         CGReduction::reductionAtomic<ReductionOperator>});
-#endif
+         CGReduction::reductionAtomic<ReductionOperator>,
+         /* DataPtrPtrGen */ nullptr});
 
     return Priv;
   }

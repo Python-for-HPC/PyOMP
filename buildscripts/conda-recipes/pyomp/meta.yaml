@@ -1,5 +1,5 @@
 {% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0').lstrip('v') %}
-{% set LLVM_VERSION = environ.get('LLVM_VERSION', '20.1.8') %}
+{% set LLVM_VERSION = environ.get('LLVM_VERSION', '22.1.8') %}
 {% set LLVM_VERSION_MAJOR = LLVM_VERSION.split('.')[0] %}
 {% set LLVM_VERSION_MINOR = LLVM_VERSION.split('.')[1] %}
 
@@ -45,26 +45,24 @@ requirements:
     - sysroot_linux-aarch64  # [aarch64]
     - setuptools
     - setuptools_scm
-    - numba >=0.62, <0.66
-    - numba >=0.65, <0.66  # [is_freethreading]
+    - numba >=0.66, <0.68
     - clang {{ LLVM_VERSION }}
     - clangxx {{ LLVM_VERSION }}
     - clang-tools {{ LLVM_VERSION }}
     - llvmdev {{ LLVM_VERSION }}
+    # lld links the AMDGPU device runtime.
+    - lld {{ LLVM_VERSION }} # [linux]
     - zlib
     # require llvm-openmp for the openmp cpu runtime.
-    - llvm-openmp 21.1.8.* # [osx]
-    - llvm-openmp {{ LLVM_VERSION }} # [not osx]
+    - llvm-openmp {{ LLVM_VERSION }}
     - elfutils # [linux]
     - libffi # [linux]
   run:
     - python
     - setuptools
-    - numba >=0.62, <0.66
-    - numba >=0.65, <0.66  # [is_freethreading]
+    - numba >=0.66, <0.68
     # require llvm-openmp for the openmp cpu runtime.
-    - llvm-openmp 21.1.8.* # [osx]
-    - llvm-openmp {{ LLVM_VERSION }} # [not osx]
+    - llvm-openmp {{ LLVM_VERSION }}
     - lark
     - cffi
 

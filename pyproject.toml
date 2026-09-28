@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Compilers",
 ]
-dependencies = ["numba>=0.62, <0.66", "lark", "cffi", "setuptools"]
+dependencies = ["numba>=0.66, <0.68", "lark", "cffi", "setuptools"]
 maintainers = [
     { name = "Giorgis Georgakoudis", email = "georgakoudis1@llnl.gov" },
 ]
@@ -55,16 +55,23 @@ USE_CXX11_ABI = "1"
 PIP_NO_INPUT = "1"
 
 [tool.cibuildwheel.linux]
+# The manylinux image has no LLVM_VERSION packages, so use the conda-forge
+# toolchain. libzstd-devel is needed by the conda LLVM cmake exports.
 before-all = [
-    "yum install -y elfutils-libelf-devel libffi-devel clang-devel-20.1.8 llvm-devel-20.1.8",
+    "yum install -y elfutils-libelf-devel libffi-devel libzstd-devel",
+    "bash buildscripts/cibuildwheel/setup-miniforge3.sh",
 ]
 
 [tool.cibuildwheel.linux.environment]
 ENABLE_BUNDLED_LIBOMP = "1"
 ENABLE_BUNDLED_LIBOMPTARGET = "1"
-LLVM_DIR = "/usr/lib64/cmake/llvm"
-CC = "/usr/bin/clang"
-CXX = "/usr/bin/clang++"
+LLVM_DIR = "${PWD}/_stage/miniforge3/envs/llvmdev-${LLVM_VERSION}/lib/cmake/llvm"
+CC = "${PWD}/_stage/miniforge3/envs/llvmdev-${LLVM_VERSION}/bin/clang"
+CXX = "${PWD}/_stage/miniforge3/envs/llvmdev-${LLVM_VERSION}/bin/clang++"
+# Compile against the image's gcc-toolset libstdc++ instead of the conda one
+# that clang selects by default, so the libraries stay manylinux compatible.
+CFLAGS = "--gcc-toolchain=/opt/rh/gcc-toolset-14/root/usr"
+CXXFLAGS = "--gcc-toolchain=/opt/rh/gcc-toolset-14/root/usr"
 
 [tool.cibuildwheel.macos]
 before-all = ["bash buildscripts/cibuildwheel/setup-miniforge3.sh"]
