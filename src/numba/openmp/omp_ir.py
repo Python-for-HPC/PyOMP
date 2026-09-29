@@ -47,7 +47,6 @@ from .tags import (
     openmp_tag_list_to_str,
     list_vars_from_tags,
     get_tags_of_type,
-    StringLiteral,
     openmp_tag,
     NameSlice,
 )
@@ -133,6 +132,22 @@ def add_offload_info_metadata(module, entry):
             i32(entry["count"]),
             i32(entry["order"]),
         ],
+    )
+
+
+def add_offload_image(module, entry, image):
+    """Embed a target region's device image in the host module. The pass
+    registers each image listed in pyomp.offload_images with libomptarget."""
+    data = lir.Constant(lir.ArrayType(lir.IntType(8), len(image)), bytearray(image))
+    image_gv = lir.GlobalVariable(
+        module, data.type, name=f".pyomp.offload_image.{entry['order']}"
+    )
+    image_gv.linkage = "private"
+    image_gv.global_constant = True
+    image_gv.initializer = data
+    module.add_named_metadata(
+        "pyomp.offload_images",
+        [lir.Constant(lir.IntType(32), entry["order"]), image_gv],
     )
 
 
@@ -1894,9 +1909,7 @@ class openmp_region_start(ir.Stmt):
                     f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
                 )
 
-            host_side_target_tags.append(
-                openmp_tag("QUAL.OMP.TARGET.ELF", StringLiteral(target_elf))
-            )
+            add_offload_image(mod, self.offload_entry, target_elf)
 
             if DEBUG_OPENMP >= 1:
                 dprint_func_ir(func_ir, "target after outline compiled func_ir")

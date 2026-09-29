@@ -225,7 +225,6 @@ struct OMPDistributeInfoStruct {
 struct TargetInfoStruct {
   // Order of the region's omp_offload.info record.
   std::optional<unsigned> OffloadEntryIdx;
-  ConstantDataArray *ELF = nullptr;
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
   OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
@@ -510,8 +509,11 @@ public:
                           StructMapTy &StructMappingInfoMap,
                           bool IsDeviceTargetRegion);
 
-  GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName,
-                                        ConstantDataArray *ELF);
+  GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName);
+
+  // Wrap each device image listed in the module's pyomp.offload_images into a
+  // binary descriptor registered with libomptarget.
+  void emitOffloadImageDescriptors();
 
   // Kernel and entry name of a target region, built from the module's
   // omp_offload.info record for the region's QUAL.OMP.OFFLOAD.ENTRY.IDX.

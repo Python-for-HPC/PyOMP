@@ -35,7 +35,7 @@ if(DEFINED ENV{USE_CXX11_ABI})
 endif()
 
 # Use static library components to avoid issues with shared library dependencies.
-set(llvm_libs LLVMPasses)
+set(llvm_libs LLVMPasses LLVMFrontendOffloading)
 
 if(NOT APPLE)
   target_link_options(IntrinsicsOpenMP PRIVATE "-Wl,--no-undefined")

@@ -3633,6 +3633,40 @@ class TestOpenmpTarget(TestOpenmpBase):
         r = test_impl(a)
         np.testing.assert_array_equal(r, np.full(n, 43))
 
+    def target_two_regions(self, device):
+        target_pragma = f"target device({device}) map(tofrom: a)"
+
+        @njit
+        def test_impl(a):
+            with openmp(target_pragma):
+                for i in range(len(a)):
+                    a[i] += 1
+            with openmp(target_pragma):
+                for i in range(len(a)):
+                    a[i] *= 2
+            return a
+
+        n = 10
+        a = np.full(n, 42)
+        r = test_impl(a)
+        np.testing.assert_array_equal(r, np.full(n, 86))
+
+    def target_two_signatures(self, device):
+        target_pragma = f"target device({device}) map(tofrom: a)"
+
+        @njit
+        def test_impl(a):
+            with openmp(target_pragma):
+                for i in range(len(a)):
+                    a[i] += 1
+            return a
+
+        n = 10
+        r_int = test_impl(np.full(n, 42))
+        r_float = test_impl(np.full(n, 42.5))
+        np.testing.assert_array_equal(r_int, np.full(n, 43))
+        np.testing.assert_array_equal(r_float, np.full(n, 43.5))
+
     def target_nest_parallel_for(self, device):
         target_pragma = f"target device({device}) map(tofrom: a, sched)"
 
