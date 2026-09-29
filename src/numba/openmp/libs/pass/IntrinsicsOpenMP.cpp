@@ -389,21 +389,12 @@ struct IntrinsicsOpenMP {
               assert(O.input_size() == 1 &&
                      "Expected single if condition value");
               ParRegionInfo.IfCondition = TagInputs[0];
-            } else if (Tag.starts_with("QUAL.OMP.TARGET.DEV_FUNC")) {
+            } else if (Tag.starts_with("QUAL.OMP.OFFLOAD.ENTRY.IDX")) {
               assert(O.input_size() == 1 &&
-                     "Expected a single device function name");
-              ConstantDataArray *DevFuncArray =
-                  dyn_cast<ConstantDataArray>(TagInputs[0]);
-              assert(DevFuncArray &&
-                     "Expected constant string for the device function");
-              TargetInfo.DevFuncName = DevFuncArray->getAsString();
-            } else if (Tag.starts_with("QUAL.OMP.TARGET.ELF")) {
-              assert(O.input_size() == 1 &&
-                     "Expected a single elf image string");
-              ConstantDataArray *ELF =
-                  dyn_cast<ConstantDataArray>(TagInputs[0]);
-              assert(ELF && "Expected constant string for ELF");
-              TargetInfo.ELF = ELF;
+                     "Expected a single offload entry index");
+              auto *EntryIdx = dyn_cast<ConstantInt>(TagInputs[0]);
+              assert(EntryIdx && "Expected constant offload entry index");
+              TargetInfo.OffloadEntryIdx = EntryIdx->getZExtValue();
             } else if (Tag.starts_with("QUAL.OMP.DEVICE")) {
               assert(O.input_size() == 1 &&
                      "Expected a single device id value");
@@ -706,6 +697,8 @@ struct IntrinsicsOpenMP {
           FATAL_ERROR("Verification of IntrinsicsOpenMP lowering failed!");
       }
     }
+
+    CGIOMP.emitOffloadImageDescriptors();
 
     DEBUG_ENABLE(dbgs() << "=== Dump Lowered Module\n"
                         << M << "=== End of Dump Lowered Module\n");

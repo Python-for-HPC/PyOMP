@@ -4,6 +4,7 @@
 #include "DebugOpenMP.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -223,8 +224,8 @@ struct OMPDistributeInfoStruct {
 };
 
 struct TargetInfoStruct {
-  StringRef DevFuncName;
-  ConstantDataArray *ELF = nullptr;
+  // Order of the region's omp_offload.info record.
+  std::optional<unsigned> OffloadEntryIdx;
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
   OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
@@ -422,9 +423,6 @@ public:
 
   OpenMPIRBuilder OMPBuilder;
   Module &M;
-  StructType *TgtOffloadEntryTy;
-
-  StructType *getTgtOffloadEntryTy() { return TgtOffloadEntryTy; }
 
   void emitOMPParallel(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,
                        const DebugLoc &DL, Function *Fn, BasicBlock *BBEntry,
@@ -440,8 +438,8 @@ public:
                    BasicBlock *BBEntry, BasicBlock *StartBB, BasicBlock *EndBB,
                    BasicBlock *AfterBB);
 
-  void emitOMPOffloadingEntry(const Twine &DevFuncName, Value *EntryPtr,
-                              Constant *&OMPOffloadEntry);
+  GlobalVariable *emitOMPOffloadingEntry(StringRef DevFuncName,
+                                         Constant *Addr);
 
   void emitOMPOffloadingMappings(InsertPointTy AllocaIP,
                                  DSAValueMapTy &DSAValueMap,
@@ -509,10 +507,17 @@ public:
                           StructMapTy &StructMappingInfoMap,
                           bool IsDeviceTargetRegion);
 
-  GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName,
-                                        ConstantDataArray *ELF);
+  GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName);
 
-  Twine getDevWrapperFuncPrefix() { return "__omp_offload_numba_"; }
+  // Wrap each device image listed in the module's pyomp.offload_images into a
+  // binary descriptor registered with libomptarget.
+  void emitOffloadImageDescriptors();
+
+  // Kernel and entry name of a target region, built from the module's
+  // omp_offload.info record for the region's QUAL.OMP.OFFLOAD.ENTRY.IDX.
+  std::string getOffloadEntryName(const TargetInfoStruct &TargetInfo);
+  DenseMap<unsigned, std::string> OffloadEntryNames;
+  StringMap<GlobalVariable *> OffloadEntryGVs;
 
   OutlinedInfoStruct
   createOutlinedFunction(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,

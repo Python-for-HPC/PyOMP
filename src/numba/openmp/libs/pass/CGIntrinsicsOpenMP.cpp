@@ -2,6 +2,8 @@
 #include "DebugOpenMP.h"
 
 #include <llvm/ADT/StringExtras.h>
+#include <llvm/Frontend/Offloading/OffloadWrapper.h>
+#include <llvm/Frontend/Offloading/Utility.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -13,6 +15,7 @@
 #include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Value.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/Alignment.h>
@@ -532,10 +535,18 @@ CGIntrinsicsOpenMP::CGIntrinsicsOpenMP(Module &M) : OMPBuilder(M), M(M) {
       /* HasRequiresDynamicAllocators */ false);
   OMPBuilder.initialize();
 
-  TgtOffloadEntryTy = StructType::create({OMPBuilder.Int8Ptr,
-                                          OMPBuilder.Int8Ptr, OMPBuilder.SizeTy,
-                                          OMPBuilder.Int32, OMPBuilder.Int32},
-                                         "struct.__tgt_offload_entry");
+  OMPBuilder.loadOffloadInfoMetadata(M);
+  OMPBuilder.OffloadInfoManager.actOnTargetRegionEntriesInfo(
+      [&](const TargetRegionEntryInfo &EntryInfo,
+          const OffloadEntriesInfoManager::OffloadEntryInfoTargetRegion
+              &Entry) {
+        SmallString<128> Name;
+        TargetRegionEntryInfo::getTargetRegionEntryFnName(
+            Name, EntryInfo.ParentName, EntryInfo.DeviceID, EntryInfo.FileID,
+            EntryInfo.Line, EntryInfo.Count);
+        OffloadEntryNames[Entry.getOrder()] = std::string(Name);
+      });
+
   // OpenMP device runtime expects this global that controls debugging, default
   // to 0 (no debugging enabled).
   if (isOpenMPDeviceRuntime()) {
@@ -1679,35 +1690,14 @@ void CGIntrinsicsOpenMP::emitOMPTask(DSAValueMapTy &DSAValueMap, Function *Fn,
   }
 }
 
-void CGIntrinsicsOpenMP::emitOMPOffloadingEntry(const Twine &DevFuncName,
-                                                Value *EntryPtr,
-                                                Constant *&OMPOffloadEntry) {
-
-  Constant *DevFuncNameConstant =
-      ConstantDataArray::getString(M.getContext(), DevFuncName.str());
-  auto *GV = new GlobalVariable(
-      M, DevFuncNameConstant->getType(),
-      /* isConstant */ true, GlobalValue::InternalLinkage, DevFuncNameConstant,
-      ".omp_offloading.entry_name", nullptr, GlobalVariable::NotThreadLocal,
-      /* AddressSpace */ 0);
-  GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-
-  Constant *EntryConst = dyn_cast<Constant>(EntryPtr);
-  assert(EntryConst && "Expected constant entry pointer");
-  OMPOffloadEntry = ConstantStruct::get(
-      TgtOffloadEntryTy,
-      ConstantExpr::getPointerBitCastOrAddrSpaceCast(EntryConst,
-                                                     OMPBuilder.VoidPtr),
-      ConstantExpr::getPointerBitCastOrAddrSpaceCast(GV, OMPBuilder.Int8Ptr),
-      ConstantInt::get(OMPBuilder.SizeTy, 0),
-      ConstantInt::get(OMPBuilder.Int32, 0),
-      ConstantInt::get(OMPBuilder.Int32, 0));
-  auto *OMPOffloadEntryGV = new GlobalVariable(
-      M, TgtOffloadEntryTy,
-      /* isConstant */ true, GlobalValue::WeakAnyLinkage, OMPOffloadEntry,
-      ".omp_offloading.entry." + DevFuncName);
-  OMPOffloadEntryGV->setSection("omp_offloading_entries");
-  OMPOffloadEntryGV->setAlignment(Align(1));
+GlobalVariable *
+CGIntrinsicsOpenMP::emitOMPOffloadingEntry(StringRef DevFuncName,
+                                           Constant *Addr) {
+  GlobalVariable *EntryGV = offloading::emitOffloadingEntry(
+      M, object::OffloadKind::OFK_OpenMP, Addr, DevFuncName, /* Size */ 0,
+      /* Flags */ 0, /* Data */ 0);
+  OffloadEntryGVs[DevFuncName] = EntryGV;
+  return EntryGV;
 }
 
 void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
@@ -2055,150 +2045,80 @@ void CGIntrinsicsOpenMP::emitOMPTaskwait(BasicBlock *BBEntry) {
 }
 
 GlobalVariable *
-CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
-                                          ConstantDataArray *ELF) {
-  GlobalVariable *OMPRegionId = nullptr;
-  GlobalVariable *OMPOffloadEntries = nullptr;
-
-  OMPRegionId = new GlobalVariable(
+CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName) {
+  GlobalVariable *OMPRegionId = new GlobalVariable(
       M, OMPBuilder.Int8, /* isConstant */ true, GlobalValue::WeakAnyLinkage,
       ConstantInt::get(OMPBuilder.Int8, 0), DevWrapperFuncName + ".region_id",
       nullptr, GlobalVariable::NotThreadLocal,
       /* AddressSpace */ 0);
 
-  Constant *OMPOffloadEntry;
-  CGIntrinsicsOpenMP::emitOMPOffloadingEntry(DevWrapperFuncName, OMPRegionId,
-                                             OMPOffloadEntry);
-
-  // TODO: do this at finalization when all entries have been
-  // found.
-  // TODO: assumes 1 device image, can we call tgt_register_lib
-  // multiple times?
-  auto *ArrayTy = ArrayType::get(TgtOffloadEntryTy, 1);
-  OMPOffloadEntries =
-      new GlobalVariable(M, ArrayTy,
-                         /* isConstant */ true, GlobalValue::InternalLinkage,
-                         ConstantArray::get(ArrayTy, {OMPOffloadEntry}),
-                         ".omp_offloading.entries");
-
-  assert(OMPRegionId && "Expected non-null omp region id global");
-  assert(OMPOffloadEntries &&
-         "Expected non-null omp offloading entries constant");
-
-  auto EmitOffloadingBinaryGlobals = [&]() {
-    auto *GV = new GlobalVariable(M, ELF->getType(), /* isConstant */ true,
-                                  GlobalValue::InternalLinkage, ELF,
-                                  ".omp_offloading.device_image");
-    GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-
-    auto &Ctx = M.getContext();
-
-    StructType *TgtDeviceImageTy = StructType::create(
-        {OMPBuilder.Int8Ptr, OMPBuilder.Int8Ptr, PointerType::getUnqual(Ctx),
-         PointerType::getUnqual(Ctx)},
-        "struct.__tgt_device_image");
-
-    StructType *TgtBinDescTy = StructType::create(
-        {OMPBuilder.Int32, PointerType::getUnqual(Ctx),
-         PointerType::getUnqual(Ctx), PointerType::getUnqual(Ctx)},
-        "struct.__tgt_bin_desc");
-
-    auto *ArrayTy = ArrayType::get(TgtDeviceImageTy, 1);
-    auto *Zero = ConstantInt::get(OMPBuilder.SizeTy, 0);
-    auto *One = ConstantInt::get(OMPBuilder.SizeTy, 1);
-    auto *Size = ConstantInt::get(OMPBuilder.SizeTy, ELF->getNumElements());
-    Constant *ZeroZero[] = {Zero, Zero};
-    Constant *ZeroOne[] = {Zero, One};
-    Constant *ZeroSize[] = {Zero, Size};
-
-    auto *ImageB =
-        ConstantExpr::getGetElementPtr(GV->getValueType(), GV, ZeroZero);
-    auto *ImageE =
-        ConstantExpr::getGetElementPtr(GV->getValueType(), GV, ZeroSize);
-    auto *EntriesB = ConstantExpr::getGetElementPtr(
-        OMPOffloadEntries->getValueType(), OMPOffloadEntries, ZeroZero);
-    auto *EntriesE = ConstantExpr::getGetElementPtr(
-        OMPOffloadEntries->getValueType(), OMPOffloadEntries, ZeroOne);
-
-    auto *DeviceImageEntry = ConstantStruct::get(TgtDeviceImageTy, ImageB,
-                                                 ImageE, EntriesB, EntriesE);
-    auto *DeviceImages =
-        new GlobalVariable(M, ArrayTy,
-                           /* isConstant */ true, GlobalValue::InternalLinkage,
-                           ConstantArray::get(ArrayTy, {DeviceImageEntry}),
-                           ".omp_offloading.device_images");
-
-    auto *ImagesB = ConstantExpr::getGetElementPtr(DeviceImages->getValueType(),
-                                                   DeviceImages, ZeroZero);
-    auto *DescInit =
-        ConstantStruct::get(TgtBinDescTy,
-                            ConstantInt::get(OMPBuilder.Int32,
-                                             /* number of images */ 1),
-                            ImagesB, EntriesB, EntriesE);
-    auto *BinDesc =
-        new GlobalVariable(M, DescInit->getType(),
-                           /* isConstant */ true, GlobalValue::InternalLinkage,
-                           DescInit, ".omp_offloading.descriptor");
-
-    // Add tgt_register_lib in global ctors and tgt_unregister_lib in atexit.
-    auto CreateUnregFunction = [&]() {
-      auto *FuncTy = FunctionType::get(OMPBuilder.Void, /*isVarArg*/ false);
-      auto *Func = Function::Create(FuncTy, GlobalValue::InternalLinkage,
-                                    ".omp_offloading.descriptor_unreg", &M);
-      Func->setSection(".text.startup");
-
-      // Get __tgt_unregister_lib function declaration.
-      auto *UnRegFuncTy =
-          FunctionType::get(OMPBuilder.Void, PointerType::getUnqual(Ctx),
-                            /*isVarArg*/ false);
-      FunctionCallee UnRegFuncC =
-          M.getOrInsertFunction("__tgt_unregister_lib", UnRegFuncTy);
-
-      // Construct function body
-      IRBuilder<> Builder(BasicBlock::Create(M.getContext(), "entry", Func));
-      Builder.CreateCall(UnRegFuncC, BinDesc);
-      Builder.CreateRetVoid();
-
-      return Func;
-    };
-
-    // Create the registration function constructor.
-    auto *FuncTy = FunctionType::get(OMPBuilder.Void, /*isVarArg*/ false);
-    auto *Func = Function::Create(FuncTy, GlobalValue::InternalLinkage,
-                                  ".omp_offloading.descriptor_reg", &M);
-    Func->setSection(".text.startup");
-
-    // Get __tgt_register_lib function declaration.
-    auto *RegFuncTy =
-        FunctionType::get(OMPBuilder.Void, PointerType::getUnqual(Ctx),
-                          /*isVarArg*/ false);
-    FunctionCallee RegFuncC =
-        M.getOrInsertFunction("__tgt_register_lib", RegFuncTy);
-
-    // Get atexit function declaration.
-    auto *AtExitTy =
-        FunctionType::get(OMPBuilder.Int32, PointerType::getUnqual(Ctx),
-                          /*isVarArg=*/false);
-    FunctionCallee AtExit = M.getOrInsertFunction("atexit", AtExitTy);
-
-    // Construct function body.
-    IRBuilder<> Builder(BasicBlock::Create(M.getContext(), "entry", Func));
-    Builder.CreateCall(RegFuncC, BinDesc);
-
-    Function *UnregFunc = CreateUnregFunction();
-    Builder.CreateCall(AtExit, UnregFunc);
-
-    Builder.CreateRetVoid();
-
-    // Add this function to constructors.
-    // Set priority to 101 so that __tgt_register_lib is executed after system
-    // constructors but before user constructors.
-    appendToGlobalCtors(M, Func, /*Priority*/ 101);
-  };
-
-  EmitOffloadingBinaryGlobals();
+  emitOMPOffloadingEntry(DevWrapperFuncName, OMPRegionId);
 
   return OMPRegionId;
+}
+
+void CGIntrinsicsOpenMP::emitOffloadImageDescriptors() {
+  NamedMDNode *ImagesMD = M.getNamedMetadata("pyomp.offload_images");
+  if (!ImagesMD)
+    return;
+
+  SmallVector<std::pair<unsigned, GlobalVariable *>> Images;
+  for (MDNode *Image : ImagesMD->operands())
+    Images.emplace_back(
+        mdconst::extract<ConstantInt>(Image->getOperand(0))->getZExtValue(),
+        mdconst::extract<GlobalVariable>(Image->getOperand(1)));
+  ImagesMD->eraseFromParent();
+
+  for (auto [Order, ImageGV] : Images) {
+    TargetInfoStruct TargetInfo;
+    TargetInfo.OffloadEntryIdx = Order;
+    std::string EntryName = getOffloadEntryName(TargetInfo);
+    GlobalVariable *EntryGV = OffloadEntryGVs.lookup(EntryName);
+    if (!EntryGV)
+      FATAL_ERROR("Missing offload entry for " + EntryName);
+
+    // Each image is compiled from one target region, so its descriptor holds
+    // that region's entry only.
+    std::string Suffix = "." + std::to_string(Order);
+    auto *ArrayTy = ArrayType::get(EntryGV->getValueType(), 1);
+    auto *Entries = new GlobalVariable(
+        M, ArrayTy, /* isConstant */ true, GlobalValue::InternalLinkage,
+        ConstantArray::get(ArrayTy, {EntryGV->getInitializer()}),
+        ".omp_offloading.entries" + Suffix);
+    // The wrapper takes the entry bounds as globals. No linker defines them
+    // under JIT, so pass a placeholder end and replace it with the address
+    // one past the array.
+    auto *EntriesEnd = new GlobalVariable(
+        M, EntryGV->getValueType(), /* isConstant */ true,
+        GlobalValue::ExternalLinkage, nullptr,
+        ".omp_offloading.entries_end" + Suffix);
+
+    StringRef Bytes =
+        cast<ConstantDataArray>(ImageGV->getInitializer())->getRawDataValues();
+    ArrayRef<char> Image(Bytes.data(), Bytes.size());
+    if (Error Err = offloading::wrapOpenMPBinaries(M, {Image},
+                                                   {Entries, EntriesEnd}, Suffix))
+      FATAL_ERROR("Error wrapping the offload image: " +
+                  toString(std::move(Err)));
+
+    EntriesEnd->replaceAllUsesWith(ConstantExpr::getGetElementPtr(
+        ArrayTy, Entries,
+        ArrayRef<Constant *>{ConstantInt::get(OMPBuilder.Int64, 0),
+                             ConstantInt::get(OMPBuilder.Int64, 1)}));
+    EntriesEnd->eraseFromParent();
+    ImageGV->eraseFromParent();
+  }
+}
+
+std::string
+CGIntrinsicsOpenMP::getOffloadEntryName(const TargetInfoStruct &TargetInfo) {
+  if (!TargetInfo.OffloadEntryIdx)
+    FATAL_ERROR("Expected QUAL.OMP.OFFLOAD.ENTRY.IDX on the target region");
+  auto It = OffloadEntryNames.find(*TargetInfo.OffloadEntryIdx);
+  if (It == OffloadEntryNames.end())
+    FATAL_ERROR("Missing omp_offload.info record for offload entry " +
+                std::to_string(*TargetInfo.OffloadEntryIdx));
+  return It->second;
 }
 
 void CGIntrinsicsOpenMP::emitOMPTarget(Function *Fn, BasicBlock *EntryBB,
@@ -2221,10 +2141,10 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
     DSAValueMapTy &DSAValueMap, StructMapTy &StructMappingInfoMap,
     TargetInfoStruct &TargetInfo, OMPLoopInfoStruct *OMPLoopInfo) {
 
-  Twine DevWrapperFuncName = getDevWrapperFuncPrefix() + TargetInfo.DevFuncName;
+  std::string EntryName = getOffloadEntryName(TargetInfo);
 
   GlobalVariable *OMPRegionId =
-      emitOffloadingGlobals(DevWrapperFuncName.str(), TargetInfo.ELF);
+      emitOffloadingGlobals(EntryName);
 
   const DebugLoc DL = EntryBB->getTerminator()->getDebugLoc();
   OpenMPIRBuilder::LocationDescription Loc(
@@ -2347,7 +2267,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
     }
   }
 
-  Twine DevWrapperFuncName = getDevWrapperFuncPrefix() + Fn->getName();
+  std::string DevWrapperFuncName = getOffloadEntryName(TargetInfo);
   FunctionType *NumbaWrapperFnTy =
       FunctionType::get(OMPBuilder.Void, WrapperArgsTypes,
                         /* isVarArg */ false);
@@ -2447,9 +2367,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
 
   } else {
     // Generating an offloading entry is required by the x86_64 plugin.
-    Constant *OMPOffloadEntry;
-    emitOMPOffloadingEntry(DevWrapperFuncName, NumbaWrapperFunc,
-                           OMPOffloadEntry);
+    emitOMPOffloadingEntry(DevWrapperFuncName, NumbaWrapperFunc);
   }
   // Add llvm.module.flags for "openmp", "openmp-device" to enable
   // OpenMPOpt.
