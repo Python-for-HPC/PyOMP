@@ -1,5 +1,3 @@
-diff --git a/offload/include/device.h b/offload/include/device.h
-index 3132d35..8e70851 100644
 --- a/offload/include/device.h
 +++ b/offload/include/device.h
 @@ -18,6 +18,7 @@
@@ -10,7 +8,7 @@ index 3132d35..8e70851 100644
  #include <map>
  #include <memory>
  #include <mutex>
-@@ -122,7 +123,7 @@ struct DeviceTy {
+@@ -128,7 +129,7 @@
    int32_t queryAsync(AsyncInfoTy &AsyncInfo);
  
    /// Calls the corresponding print device info function in the plugin.
@@ -19,48 +17,75 @@ index 3132d35..8e70851 100644
  
    /// Event related interfaces.
    /// {
-diff --git a/offload/plugins-nextgen/common/include/PluginInterface.h b/offload/plugins-nextgen/common/include/PluginInterface.h
-index eb266e8..241d132 100644
 --- a/offload/plugins-nextgen/common/include/PluginInterface.h
 +++ b/offload/plugins-nextgen/common/include/PluginInterface.h
-@@ -158,10 +158,13 @@ public:
-   const std::deque<InfoQueueEntryTy> &getQueue() const { return Queue; }
+@@ -247,43 +247,46 @@
+   }
  
-   /// Print all info entries added to the queue.
+   /// Print all info entries in the tree
 -  void print() const {
 +  void print(llvm::raw_ostream *OS = nullptr) const {
-     // We print four spances for each level.
-     constexpr uint64_t IndentSize = 4;
- 
 +    // Choose output stream: provided one or llvm::outs().
 +    llvm::raw_ostream &Out = OS ? *OS : llvm::outs();
 +
-     // Find the maximum key length (level + key) to compute the individual
-     // indentation of each entry.
-     uint64_t MaxKeySize = 0;
-@@ -178,9 +181,9 @@ public:
-       uint64_t ValIndentSize =
-           MaxKeySize - (Entry.Key.size() + KeyIndentSize) + IndentSize;
- 
--      llvm::outs() << std::string(KeyIndentSize, ' ') << Entry.Key
--                   << std::string(ValIndentSize, ' ') << Entry.Value
--                   << (Entry.Units.empty() ? "" : " ") << Entry.Units << "\n";
-+      Out << std::string(KeyIndentSize, ' ') << Entry.Key
-+          << std::string(ValIndentSize, ' ') << Entry.Value
-+          << (Entry.Units.empty() ? "" : " ") << Entry.Units << "\n";
-     }
+     // Fake an additional indent so that values are offset from the keys
+-    doPrint(0, maxKeySize(1));
++    doPrint(0, maxKeySize(1), Out);
    }
- };
-@@ -866,7 +869,7 @@ struct GenericDeviceTy : public DeviceAllocatorTy {
-   virtual Error syncEventImpl(void *EventPtr) = 0;
+ 
+ private:
+-  void doPrint(int Level, uint64_t MaxKeySize) const {
++  void doPrint(int Level, uint64_t MaxKeySize, llvm::raw_ostream &Out) const {
+     if (Key.size()) {
+       // Compute the indentations for the current entry.
+       uint64_t KeyIndentSize = Level * IndentSize;
+       uint64_t ValIndentSize =
+           MaxKeySize - (Key.size() + KeyIndentSize) + IndentSize;
+ 
+-      llvm::outs() << std::string(KeyIndentSize, ' ') << Key
++      Out << std::string(KeyIndentSize, ' ') << Key
+                    << std::string(ValIndentSize, ' ');
+       std::visit(
+-          [](auto &&V) {
++          [&Out](auto &&V) {
+             using T = std::decay_t<decltype(V)>;
+             if constexpr (std::is_same_v<T, std::string>)
+-              llvm::outs() << V;
++              Out << V;
+             else if constexpr (std::is_same_v<T, bool>)
+-              llvm::outs() << (V ? "Yes" : "No");
++              Out << (V ? "Yes" : "No");
+             else if constexpr (std::is_same_v<T, uint64_t>)
+-              llvm::outs() << V;
++              Out << V;
+             else if constexpr (std::is_same_v<T, std::monostate>) {
+               // Do nothing
+             } else
+               static_assert(false, "doPrint visit not exhaustive");
+           },
+           Value);
+-      llvm::outs() << (Units.empty() ? "" : " ") << Units << "\n";
++      Out << (Units.empty() ? "" : " ") << Units << "\n";
+     }
+ 
+     // Print children
+     if (Children)
+       for (const auto &Entry : *Children)
+-        Entry.doPrint(Level + 1, MaxKeySize);
++        Entry.doPrint(Level + 1, MaxKeySize, Out);
+   }
+ 
+   // Recursively calculates the maximum width of each key, including indentation
+@@ -999,7 +1002,7 @@
+   virtual Expected<InfoTreeNode> obtainInfoImpl() = 0;
  
    /// Print information about the device.
 -  Error printInfo();
 +  Error printInfo(llvm::raw_ostream *OS = nullptr);
-   virtual Error obtainInfoImpl(InfoQueueTy &Info) = 0;
  
-   /// Getters of the grid values.
-@@ -1295,7 +1298,7 @@ public:
+   /// Return true if the device has work that is either queued or currently
+   /// running
+@@ -1499,7 +1502,7 @@
    int32_t query_async(int32_t DeviceId, __tgt_async_info *AsyncInfoPtr);
  
    /// Prints information about the given devices supported by the plugin.
@@ -69,29 +94,27 @@ index eb266e8..241d132 100644
  
    /// Creates an event in the given plugin if supported.
    int32_t create_event(int32_t DeviceId, void **EventPtr);
-diff --git a/offload/plugins-nextgen/common/src/PluginInterface.cpp b/offload/plugins-nextgen/common/src/PluginInterface.cpp
-index 57672b0..b8c84e6 100644
 --- a/offload/plugins-nextgen/common/src/PluginInterface.cpp
 +++ b/offload/plugins-nextgen/common/src/PluginInterface.cpp
-@@ -1546,7 +1546,7 @@ Error GenericDeviceTy::initDeviceInfo(__tgt_device_info *DeviceInfo) {
-   return initDeviceInfoImpl(DeviceInfo);
+@@ -1451,7 +1451,7 @@
+   return InfoOrErr;
  }
  
 -Error GenericDeviceTy::printInfo() {
 +Error GenericDeviceTy::printInfo(llvm::raw_ostream *OS) {
-   InfoQueueTy InfoQueue;
+   auto InfoOrErr = obtainInfo();
  
    // Get the vendor-specific info entries describing the device properties.
-@@ -1554,7 +1554,7 @@ Error GenericDeviceTy::printInfo() {
+@@ -1459,7 +1459,7 @@
      return Err;
  
    // Print all info entries.
--  InfoQueue.print();
-+  InfoQueue.print(OS);
+-  InfoOrErr->print();
++  InfoOrErr->print(OS);
  
    return Plugin::success();
  }
-@@ -2036,8 +2036,8 @@ int32_t GenericPluginTy::query_async(int32_t DeviceId,
+@@ -1974,8 +1974,8 @@
    return OFFLOAD_SUCCESS;
  }
  
@@ -99,13 +122,11 @@ index 57672b0..b8c84e6 100644
 -  if (auto Err = getDevice(DeviceId).printInfo())
 +void GenericPluginTy::print_device_info(int32_t DeviceId, raw_ostream *OS) {
 +  if (auto Err = getDevice(DeviceId).printInfo(OS))
-     REPORT("Failure to print device %d info: %s\n", DeviceId,
-            toString(std::move(Err)).data());
+     REPORT() << "Failure to print device " << DeviceId
+              << " info: " << toString(std::move(Err));
  }
-diff --git a/offload/src/device.cpp b/offload/src/device.cpp
-index 943c778..e2640f2 100644
---- a/offload/src/device.cpp
-+++ b/offload/src/device.cpp
+--- a/offload/libomptarget/device.cpp
++++ b/offload/libomptarget/device.cpp
 @@ -24,6 +24,7 @@
  
  #include "Shared/EnvironmentVar.h"
@@ -114,7 +135,7 @@ index 943c778..e2640f2 100644
  
  #include <cassert>
  #include <climits>
-@@ -221,8 +222,8 @@ int32_t DeviceTy::launchKernel(void *TgtEntryPtr, void **TgtVarsPtr,
+@@ -345,8 +346,8 @@
  }
  
  // Run region on device
@@ -125,11 +146,9 @@ index 943c778..e2640f2 100644
    return true;
  }
  
-diff --git a/offload/src/exports b/offload/src/exports
-index 2406776..f43f9a5 100644
---- a/offload/src/exports
-+++ b/offload/src/exports
-@@ -62,6 +62,7 @@ VERS1.0 {
+--- a/offload/libomptarget/exports
++++ b/offload/libomptarget/exports
+@@ -66,6 +66,7 @@
      llvm_omp_target_unlock_mem;
      __tgt_set_info_flag;
      __tgt_print_device_info;
@@ -137,10 +156,8 @@ index 2406776..f43f9a5 100644
      omp_get_interop_ptr;
      omp_get_interop_str;
      omp_get_interop_int;
-diff --git a/offload/src/interface.cpp b/offload/src/interface.cpp
-index ad84a43..ed25c85 100644
---- a/offload/src/interface.cpp
-+++ b/offload/src/interface.cpp
+--- a/offload/libomptarget/interface.cpp
++++ b/offload/libomptarget/interface.cpp
 @@ -25,6 +25,7 @@
  #include "Utils/ExponentialBackoff.h"
  
@@ -149,16 +166,7 @@ index ad84a43..ed25c85 100644
  
  #include <cassert>
  #include <cstdint>
-@@ -294,7 +295,7 @@ static KernelArgsTy *upgradeKernelArgs(KernelArgsTy *KernelArgs,
- 
-   // FIXME: This is a WA to "calibrate" the bad work done in the front end.
-   // Delete this ugly code after the front end emits proper values.
--  auto CorrectMultiDim = [](uint32_t(&Val)[3]) {
-+  auto CorrectMultiDim = [](uint32_t (&Val)[3]) {
-     if (Val[1] == 0)
-       Val[1] = 1;
-     if (Val[2] == 0)
-@@ -512,6 +513,21 @@ EXTERN int __tgt_print_device_info(int64_t DeviceId) {
+@@ -530,6 +531,21 @@
    return DeviceOrErr->printDeviceInfo();
  }
  

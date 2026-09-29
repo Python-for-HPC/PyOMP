@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import shlex
 import shutil
 import tarfile
 import urllib
@@ -133,6 +134,9 @@ class BuildCMakeExt(build_ext):
             include_dir = install_dir / "lib/cmake"
             if include_dir.exists():
                 shutil.rmtree(include_dir)
+        # Keep only the device runtime bitcode, not its static archive.
+        if ext.name.startswith("devicertl"):
+            (install_dir / "lib/libompdevice.a").unlink(missing_ok=True)
         # Remove symlinks in the install directory to avoid copies.
         for file in install_dir.rglob("*"):
             if file.is_symlink():
@@ -209,9 +213,11 @@ class BuildCMakeExt(build_ext):
         loader_so = target_lib_dir / f"libpyomp_loader{lib_ext}"
         cc = os.environ.get("CC", "gcc")
 
-        # Compile the wrapper.
+        # Compile the wrapper. Pass CFLAGS so it uses the same toolchain as the
+        # other libraries, e.g., the manylinux --gcc-toolchain.
         cmd = [
             cc,
+            *shlex.split(os.environ.get("CFLAGS", "")),
             "-shared",
             "-fPIC",
             str(loader_c),
@@ -359,12 +365,42 @@ if _check_true("ENABLE_BUNDLED_LIBOMPTARGET"):
             cmake_args=[
                 "-DOPENMP_STANDALONE_BUILD=ON",
                 "-DLLVM_ENABLE_RUNTIMES=offload",
+                # Tests depend on liboffload, which is not built.
+                "-DOFFLOAD_INCLUDE_TESTS=OFF",
                 # Avoid conflicts in manylinux builds with packaged clang/llvm
                 # under /usr/include and its gcc-toolset provided header files.
                 "-DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON",
             ],
         )
     )
+
+    # Build the device runtime bitcode (libomptarget-<target>.bc) for each GPU
+    # target, compiled by clang from openmp/device.
+    for triple in ("nvptx64-nvidia-cuda", "amdgcn-amd-amdhsa"):
+        ext_modules.append(
+            CMakeExtension(
+                f"devicertl-{triple}",
+                setup=PrepareOpenMP,
+                source_dir=PrepareOpenMP.get_source_dir(),
+                install_dir="openmp",
+                cmake_args=[
+                    "-DOPENMP_STANDALONE_BUILD=ON",
+                    "-DLLVM_ENABLE_RUNTIMES=openmp",
+                    f"-DLLVM_RUNTIMES_TARGET={triple}",
+                    f"-DLLVM_DEFAULT_TARGET_TRIPLE={triple}",
+                    f"-DCMAKE_C_COMPILER_TARGET={triple}",
+                    f"-DCMAKE_CXX_COMPILER_TARGET={triple}",
+                    # The compiler cannot link host test programs for GPU
+                    # targets.
+                    "-DCMAKE_C_COMPILER_WORKS=ON",
+                    "-DCMAKE_CXX_COMPILER_WORKS=ON",
+                    # Ignore host flags from CFLAGS and CXXFLAGS, such as
+                    # conda's -march, which fail for GPU targets.
+                    "-DCMAKE_C_FLAGS=",
+                    "-DCMAKE_CXX_FLAGS=",
+                ],
+            )
+        )
 
 
 setup(

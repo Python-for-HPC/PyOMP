@@ -33,7 +33,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Pass.h>
 #include <llvm/Passes/PassBuilder.h>
-#include <llvm/Passes/PassPlugin.h>
+#include <llvm/Plugins/PassPlugin.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
@@ -571,17 +571,11 @@ struct IntrinsicsOpenMP {
           CGStartBB->getTerminator()->setSuccessor(0, StartBB);
           assert(EndBB != nullptr && "EndBB should not be null");
           EndBB->getTerminator()->setSuccessor(0, CGEndBB);
-#if LLVM_VERSION_MAJOR > 16
           return Error::success();
-#endif
         };
 
 // Define the default FiniCB lambda.
-#if LLVM_VERSION_MAJOR <= 16
-        auto FiniCB = [&](InsertPointTy CodeGenIP) {};
-#else
         auto FiniCB = [&](InsertPointTy) { return Error::success(); };
-#endif
 
         // Remove intrinsics of OpenMP tags, first CBExit to also remove use
         // of CBEntry, then CBEntry.

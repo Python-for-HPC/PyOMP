@@ -1,0 +1,24 @@
+diff --git a/offload/libomptarget/CMakeLists.txt b/offload/libomptarget/CMakeLists.txt
+index 93e684e..22b35a2 100644
+--- a/offload/libomptarget/CMakeLists.txt
++++ b/offload/libomptarget/CMakeLists.txt
+@@ -8,6 +8,7 @@ endif()
+ 
+ add_llvm_library(omptarget
+   SHARED
++  DISABLE_LLVM_LINK_LLVM_DYLIB
+ 
+   device.cpp
+   interface.cpp
+diff --git a/offload/plugins-nextgen/CMakeLists.txt b/offload/plugins-nextgen/CMakeLists.txt
+index a72befd..c83ebb8 100644
+--- a/offload/plugins-nextgen/CMakeLists.txt
++++ b/offload/plugins-nextgen/CMakeLists.txt
+@@ -4,6 +4,7 @@ set(common_bin_dir ${CMAKE_CURRENT_BINARY_DIR}/common)
+ add_subdirectory(common)
+ function(add_target_library target_name lib_name)
+   add_llvm_library(${target_name} STATIC
++    DISABLE_LLVM_LINK_LLVM_DYLIB
+     LINK_COMPONENTS
+       AggressiveInstCombine
+       Analysis

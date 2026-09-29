@@ -64,7 +64,7 @@ jobs:
 
           # Select the python variant; 3.14t needs the free-threaded ABI.
           if [[ "${{ matrix.python-version }}" == "3.14t" ]]; then
-            PY_ARGS=(--python "3.14.* *_cp314t" -m buildscripts/conda-recipes/pyomp/freethreading.yaml)
+            PY_ARGS=(--python "3.14.* *_cp314t")
           else
             PY_ARGS=(--python ${{ matrix.python-version }})
           fi
