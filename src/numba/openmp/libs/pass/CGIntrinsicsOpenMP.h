@@ -4,6 +4,7 @@
 #include "DebugOpenMP.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -422,9 +423,6 @@ public:
 
   OpenMPIRBuilder OMPBuilder;
   Module &M;
-  StructType *TgtOffloadEntryTy;
-
-  StructType *getTgtOffloadEntryTy() { return TgtOffloadEntryTy; }
 
   void emitOMPParallel(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,
                        const DebugLoc &DL, Function *Fn, BasicBlock *BBEntry,
@@ -440,8 +438,8 @@ public:
                    BasicBlock *BBEntry, BasicBlock *StartBB, BasicBlock *EndBB,
                    BasicBlock *AfterBB);
 
-  void emitOMPOffloadingEntry(const Twine &DevFuncName, Value *EntryPtr,
-                              Constant *&OMPOffloadEntry);
+  GlobalVariable *emitOMPOffloadingEntry(StringRef DevFuncName,
+                                         Constant *Addr);
 
   void emitOMPOffloadingMappings(InsertPointTy AllocaIP,
                                  DSAValueMapTy &DSAValueMap,
@@ -519,6 +517,7 @@ public:
   // omp_offload.info record for the region's QUAL.OMP.OFFLOAD.ENTRY.IDX.
   std::string getOffloadEntryName(const TargetInfoStruct &TargetInfo);
   DenseMap<unsigned, std::string> OffloadEntryNames;
+  StringMap<GlobalVariable *> OffloadEntryGVs;
 
   OutlinedInfoStruct
   createOutlinedFunction(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,

@@ -3,6 +3,7 @@
 
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Frontend/Offloading/OffloadWrapper.h>
+#include <llvm/Frontend/Offloading/Utility.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -546,10 +547,6 @@ CGIntrinsicsOpenMP::CGIntrinsicsOpenMP(Module &M) : OMPBuilder(M), M(M) {
         OffloadEntryNames[Entry.getOrder()] = std::string(Name);
       });
 
-  TgtOffloadEntryTy = StructType::create({OMPBuilder.Int8Ptr,
-                                          OMPBuilder.Int8Ptr, OMPBuilder.SizeTy,
-                                          OMPBuilder.Int32, OMPBuilder.Int32},
-                                         "struct.__tgt_offload_entry");
   // OpenMP device runtime expects this global that controls debugging, default
   // to 0 (no debugging enabled).
   if (isOpenMPDeviceRuntime()) {
@@ -1693,35 +1690,14 @@ void CGIntrinsicsOpenMP::emitOMPTask(DSAValueMapTy &DSAValueMap, Function *Fn,
   }
 }
 
-void CGIntrinsicsOpenMP::emitOMPOffloadingEntry(const Twine &DevFuncName,
-                                                Value *EntryPtr,
-                                                Constant *&OMPOffloadEntry) {
-
-  Constant *DevFuncNameConstant =
-      ConstantDataArray::getString(M.getContext(), DevFuncName.str());
-  auto *GV = new GlobalVariable(
-      M, DevFuncNameConstant->getType(),
-      /* isConstant */ true, GlobalValue::InternalLinkage, DevFuncNameConstant,
-      ".omp_offloading.entry_name", nullptr, GlobalVariable::NotThreadLocal,
-      /* AddressSpace */ 0);
-  GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-
-  Constant *EntryConst = dyn_cast<Constant>(EntryPtr);
-  assert(EntryConst && "Expected constant entry pointer");
-  OMPOffloadEntry = ConstantStruct::get(
-      TgtOffloadEntryTy,
-      ConstantExpr::getPointerBitCastOrAddrSpaceCast(EntryConst,
-                                                     OMPBuilder.VoidPtr),
-      ConstantExpr::getPointerBitCastOrAddrSpaceCast(GV, OMPBuilder.Int8Ptr),
-      ConstantInt::get(OMPBuilder.SizeTy, 0),
-      ConstantInt::get(OMPBuilder.Int32, 0),
-      ConstantInt::get(OMPBuilder.Int32, 0));
-  auto *OMPOffloadEntryGV = new GlobalVariable(
-      M, TgtOffloadEntryTy,
-      /* isConstant */ true, GlobalValue::WeakAnyLinkage, OMPOffloadEntry,
-      ".omp_offloading.entry." + DevFuncName);
-  OMPOffloadEntryGV->setSection("omp_offloading_entries");
-  OMPOffloadEntryGV->setAlignment(Align(1));
+GlobalVariable *
+CGIntrinsicsOpenMP::emitOMPOffloadingEntry(StringRef DevFuncName,
+                                           Constant *Addr) {
+  GlobalVariable *EntryGV = offloading::emitOffloadingEntry(
+      M, object::OffloadKind::OFK_OpenMP, Addr, DevFuncName, /* Size */ 0,
+      /* Flags */ 0, /* Data */ 0);
+  OffloadEntryGVs[DevFuncName] = EntryGV;
+  return EntryGV;
 }
 
 void CGIntrinsicsOpenMP::emitOMPOffloadingMappings(
@@ -2076,9 +2052,7 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName) {
       nullptr, GlobalVariable::NotThreadLocal,
       /* AddressSpace */ 0);
 
-  Constant *OMPOffloadEntry;
-  CGIntrinsicsOpenMP::emitOMPOffloadingEntry(DevWrapperFuncName, OMPRegionId,
-                                             OMPOffloadEntry);
+  emitOMPOffloadingEntry(DevWrapperFuncName, OMPRegionId);
 
   return OMPRegionId;
 }
@@ -2099,8 +2073,7 @@ void CGIntrinsicsOpenMP::emitOffloadImageDescriptors() {
     TargetInfoStruct TargetInfo;
     TargetInfo.OffloadEntryIdx = Order;
     std::string EntryName = getOffloadEntryName(TargetInfo);
-    GlobalVariable *EntryGV =
-        M.getNamedGlobal(".omp_offloading.entry." + EntryName);
+    GlobalVariable *EntryGV = OffloadEntryGVs.lookup(EntryName);
     if (!EntryGV)
       FATAL_ERROR("Missing offload entry for " + EntryName);
 
@@ -2394,9 +2367,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
 
   } else {
     // Generating an offloading entry is required by the x86_64 plugin.
-    Constant *OMPOffloadEntry;
-    emitOMPOffloadingEntry(DevWrapperFuncName, NumbaWrapperFunc,
-                           OMPOffloadEntry);
+    emitOMPOffloadingEntry(DevWrapperFuncName, NumbaWrapperFunc);
   }
   // Add llvm.module.flags for "openmp", "openmp-device" to enable
   // OpenMPOpt.
