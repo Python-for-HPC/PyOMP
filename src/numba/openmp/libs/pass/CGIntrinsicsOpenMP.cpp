@@ -532,6 +532,18 @@ CGIntrinsicsOpenMP::CGIntrinsicsOpenMP(Module &M) : OMPBuilder(M), M(M) {
       /* HasRequiresDynamicAllocators */ false);
   OMPBuilder.initialize();
 
+  OMPBuilder.loadOffloadInfoMetadata(M);
+  OMPBuilder.OffloadInfoManager.actOnTargetRegionEntriesInfo(
+      [&](const TargetRegionEntryInfo &EntryInfo,
+          const OffloadEntriesInfoManager::OffloadEntryInfoTargetRegion
+              &Entry) {
+        SmallString<128> Name;
+        TargetRegionEntryInfo::getTargetRegionEntryFnName(
+            Name, EntryInfo.ParentName, EntryInfo.DeviceID, EntryInfo.FileID,
+            EntryInfo.Line, EntryInfo.Count);
+        OffloadEntryNames[Entry.getOrder()] = std::string(Name);
+      });
+
   TgtOffloadEntryTy = StructType::create({OMPBuilder.Int8Ptr,
                                           OMPBuilder.Int8Ptr, OMPBuilder.SizeTy,
                                           OMPBuilder.Int32, OMPBuilder.Int32},
@@ -2201,6 +2213,17 @@ CGIntrinsicsOpenMP::emitOffloadingGlobals(StringRef DevWrapperFuncName,
   return OMPRegionId;
 }
 
+std::string
+CGIntrinsicsOpenMP::getOffloadEntryName(const TargetInfoStruct &TargetInfo) {
+  if (!TargetInfo.OffloadEntryIdx)
+    FATAL_ERROR("Expected QUAL.OMP.OFFLOAD.ENTRY.IDX on the target region");
+  auto It = OffloadEntryNames.find(*TargetInfo.OffloadEntryIdx);
+  if (It == OffloadEntryNames.end())
+    FATAL_ERROR("Missing omp_offload.info record for offload entry " +
+                std::to_string(*TargetInfo.OffloadEntryIdx));
+  return It->second;
+}
+
 void CGIntrinsicsOpenMP::emitOMPTarget(Function *Fn, BasicBlock *EntryBB,
                                        BasicBlock *StartBB, BasicBlock *EndBB,
                                        DSAValueMapTy &DSAValueMap,
@@ -2221,10 +2244,10 @@ void CGIntrinsicsOpenMP::emitOMPTargetHost(
     DSAValueMapTy &DSAValueMap, StructMapTy &StructMappingInfoMap,
     TargetInfoStruct &TargetInfo, OMPLoopInfoStruct *OMPLoopInfo) {
 
-  Twine DevWrapperFuncName = getDevWrapperFuncPrefix() + TargetInfo.DevFuncName;
+  std::string EntryName = getOffloadEntryName(TargetInfo);
 
   GlobalVariable *OMPRegionId =
-      emitOffloadingGlobals(DevWrapperFuncName.str(), TargetInfo.ELF);
+      emitOffloadingGlobals(EntryName, TargetInfo.ELF);
 
   const DebugLoc DL = EntryBB->getTerminator()->getDebugLoc();
   OpenMPIRBuilder::LocationDescription Loc(
@@ -2347,7 +2370,7 @@ void CGIntrinsicsOpenMP::emitOMPTargetDevice(Function *Fn, BasicBlock *EntryBB,
     }
   }
 
-  Twine DevWrapperFuncName = getDevWrapperFuncPrefix() + Fn->getName();
+  std::string DevWrapperFuncName = getOffloadEntryName(TargetInfo);
   FunctionType *NumbaWrapperFnTy =
       FunctionType::get(OMPBuilder.Void, WrapperArgsTypes,
                         /* isVarArg */ false);

@@ -223,7 +223,8 @@ struct OMPDistributeInfoStruct {
 };
 
 struct TargetInfoStruct {
-  StringRef DevFuncName;
+  // Order of the region's omp_offload.info record.
+  std::optional<unsigned> OffloadEntryIdx;
   ConstantDataArray *ELF = nullptr;
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
@@ -512,7 +513,10 @@ public:
   GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName,
                                         ConstantDataArray *ELF);
 
-  Twine getDevWrapperFuncPrefix() { return "__omp_offload_numba_"; }
+  // Kernel and entry name of a target region, built from the module's
+  // omp_offload.info record for the region's QUAL.OMP.OFFLOAD.ENTRY.IDX.
+  std::string getOffloadEntryName(const TargetInfoStruct &TargetInfo);
+  DenseMap<unsigned, std::string> OffloadEntryNames;
 
   OutlinedInfoStruct
   createOutlinedFunction(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,
