@@ -18,7 +18,7 @@ import operator
 import sys
 import os
 
-from .config import DEBUG_OPENMP
+from .config import DEBUG_OPENMP, SMART_PRIVATIZE
 from .parser import openmp_parser
 from .analysis import (
     remove_ssa,
@@ -304,7 +304,10 @@ class OpenmpVisitor(Transformer):
 
         # All private variables (user-defined and compiler-generated)
         for var_name in sorted(private_to_region):
-            add_clause(var_name, "QUAL.OMP.PRIVATE")
+            if SMART_PRIVATIZE or is_internal_var(ir.Var(scope, var_name, self.loc)):
+                add_clause(var_name, "QUAL.OMP.PRIVATE")
+            else:
+                add_clause(var_name, "QUAL.OMP.SHARED")
 
     def make_implicit_explicit_target(
         self,
@@ -649,7 +652,7 @@ class OpenmpVisitor(Transformer):
             )
 
             deconstruct_indices = []
-            new_deconstruct_var = new_var_scope.redefine("deconstruct", self.loc)
+            new_deconstruct_var = new_var_scope.redefine("$deconstruct", self.loc)
             deconstruct_indices.append(
                 ir.Assign(loop_bounds[-1][1], new_deconstruct_var, self.loc)
             )
@@ -665,7 +668,7 @@ class OpenmpVisitor(Transformer):
                     operator.floordiv, new_deconstruct_var, cur_iterspace_var, self.loc
                 )
                 new_deconstruct_var_loop = new_var_scope.redefine(
-                    "deconstruct" + str(deconstruct_index), self.loc
+                    "$deconstruct" + str(deconstruct_index), self.loc
                 )
                 deconstruct_indices.append(
                     ir.Assign(deconstruct_div, cur_loop_bound, self.loc)
@@ -673,7 +676,7 @@ class OpenmpVisitor(Transformer):
                 # if DEBUG_OPENMP >= 1:
                 #    deconstruct_indices.append(ir.Print([cur_loop_bound], None, self.loc))
                 new_deconstruct_var_mul = new_var_scope.redefine(
-                    "deconstruct_mul" + str(deconstruct_index), self.loc
+                    "$deconstruct_mul" + str(deconstruct_index), self.loc
                 )
                 deconstruct_indices.append(
                     ir.Assign(
@@ -935,7 +938,7 @@ class OpenmpVisitor(Transformer):
                     if latest_index.name not in vars_in_explicit_clauses:
                         new_index_clause = openmp_tag(
                             "QUAL.OMP.PRIVATE",
-                            ir.Var(loop_index.scope, latest_index.name, inst.loc),
+                            latest_index.name,
                         )
                         clauses.append(new_index_clause)
                         vars_in_explicit_clauses[latest_index.name] = new_index_clause
