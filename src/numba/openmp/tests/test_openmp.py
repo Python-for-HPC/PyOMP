@@ -4524,7 +4524,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
     def target_teams_reduction(self, device):
         target_pragma = (
-            f"""target teams device({device}) map(from: nteams) reduction(+:sum)"""
+            f"""target teams device({device}) map(from: nteams) reduction(+:sum) private(tid)"""
         )
 
         @njit
@@ -4552,7 +4552,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             sum = 0
             nteams = 0
             with openmp(target_pragma):
-                with openmp("teams reduction(+:sum)"):
+                with openmp("teams private(tid) reduction(+:sum)"):
                     sum += 1
                     tid = omp_get_thread_num()
                     if tid == 0:
@@ -4838,7 +4838,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
     def test_omp_jit_const_string(self):
         @njit
         def test_impl(x):
-            with openmp("parallel num_threads(4)"):
+            with openmp("parallel private(tid) num_threads(4)"):
                 tid = omp_get_thread_num()
                 x[tid] = x[tid] + 1
             return x
@@ -4848,7 +4848,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
         np.testing.assert_array_equal(x, np.ones(4))
 
     def test_omp_py_const_string(self):
-        omp_string = "parallel num_threads(4)"
+        omp_string = "parallel private(tid) num_threads(4)"
 
         @njit
         def test_impl(x):
@@ -4865,7 +4865,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
         @njit
         def test_impl(x):
             num_threads = 4
-            with openmp(f"parallel num_threads({num_threads})"):
+            with openmp(f"parallel private(tid) num_threads({num_threads})"):
                 tid = omp_get_thread_num()
                 x[tid] = x[tid] + 1
             return x
@@ -4876,7 +4876,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
 
     def test_omp_py_fstring(self):
         num_threads = 4
-        omp_string = f"parallel num_threads({num_threads})"
+        omp_string = f"parallel private(tid) num_threads({num_threads})"
 
         @njit
         def test_impl(x):
@@ -4892,7 +4892,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
     def test_omp_string_concat_literals(self):
         @njit
         def test_impl(x):
-            with openmp("parallel " + "num_threads(4)"):
+            with openmp("parallel private(tid) " + "num_threads(4)"):
                 tid = omp_get_thread_num()
                 x[tid] = x[tid] + 1
             return x
@@ -4904,7 +4904,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
     def test_omp_string_concat_jit_variables(self):
         @njit
         def test_impl(x):
-            prefix = "parallel "
+            prefix = "parallel private(tid) "
             suffix = "num_threads(4)"
             with openmp(prefix + suffix):
                 tid = omp_get_thread_num()
@@ -4917,7 +4917,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
 
     def test_omp_string_concat_variables(self):
         num_threads = 4
-        omp_string = "parallel num_threads(" + str(num_threads) + ")"
+        omp_string = "parallel private(tid) num_threads(" + str(num_threads) + ")"
 
         @njit
         def test_impl(x):
@@ -4931,7 +4931,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
         np.testing.assert_array_equal(x, np.ones(4))
 
     def test_omp_nested_concat(self):
-        prefix = "parallel "
+        prefix = "parallel private(tid) "
         suffix = "num_threads(4)"
         omp_string = prefix + suffix
 
@@ -4948,7 +4948,7 @@ class TestOpenmpStringPatterns(TestOpenmpBase):
 
     def test_omp_explicit_str_call(self):
         num_threads = 4
-        omp_string = "parallel " + "num_threads(" + str(num_threads) + ")"
+        omp_string = "parallel private(tid) " + "num_threads(" + str(num_threads) + ")"
 
         @njit
         def test_impl(x):
