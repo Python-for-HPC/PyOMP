@@ -4,6 +4,7 @@
 #include "DebugOpenMP.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/Frontend/OpenMP/OMP.h.inc>
 #include <llvm/Frontend/OpenMP/OMPConstants.h>
 #include <llvm/Frontend/OpenMP/OMPIRBuilder.h>
@@ -223,8 +224,8 @@ struct OMPDistributeInfoStruct {
 };
 
 struct TargetInfoStruct {
-  StringRef DevFuncName;
-  ConstantDataArray *ELF = nullptr;
+  // Order of the region's omp_offload.info record.
+  std::optional<unsigned> OffloadEntryIdx;
   Value *NumTeams = nullptr;
   Value *ThreadLimit = nullptr;
   OMPTgtExecModeFlags ExecMode = OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC;
@@ -275,12 +276,6 @@ struct CGReduction {
     unsigned int Bitwidth = VTy->getScalarSizeInBits();
     auto *IntTy =
         (Bitwidth == 64 ? Type::getInt64Ty(Ctx) : Type::getInt32Ty(Ctx));
-#if LLVM_VERSION_MAJOR <= 15
-    auto *IntPtrTy =
-        (Bitwidth == 64 ? Type::getInt64PtrTy(Ctx) : Type::getInt32PtrTy(Ctx));
-#else
-    auto *IntPtrTy = PointerType::getUnqual(IntTy);
-#endif
 
     auto SaveIP = IRB.saveIP();
     // TODO: move alloca to function entry point, may be outlined later, e.g.,
@@ -288,10 +283,8 @@ struct CGReduction {
     Value *AllocaTemp = IRB.CreateAlloca(IntTy, nullptr, "atomic.alloca.tmp");
     IRB.restoreIP(SaveIP);
 
-    Value *CastLHS =
-        IRB.CreateBitCast(LHS, IntPtrTy, LHS->getName() + ".cast.int");
     auto *LoadAtomic =
-        IRB.CreateLoad(IntTy, CastLHS, LHS->getName() + ".load.atomic");
+        IRB.CreateLoad(IntTy, LHS, LHS->getName() + ".load.atomic");
     LoadAtomic->setAtomic(AtomicOrdering::Monotonic);
 
     Value *CastFP = IRB.CreateBitCast(LoadAtomic, VTy, "cast.fp");
@@ -300,7 +293,7 @@ struct CGReduction {
         IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
 
     auto *CmpXchg = IRB.CreateAtomicCmpXchg(
-        CastLHS, LoadAtomic, CastFAdd, MaybeAlign(), AtomicOrdering::Monotonic,
+        LHS, LoadAtomic, CastFAdd, MaybeAlign(), AtomicOrdering::Monotonic,
         AtomicOrdering::Monotonic);
 
     auto *Returned = IRB.CreateExtractValue(CmpXchg, 0);
@@ -322,8 +315,8 @@ struct CGReduction {
     // FAdd = IRB.CreateFAdd(CastLoad, Partial, "retry.add");
     RedOp = emitOperation<ReductionOperator>(IRB, CastLoad, Partial);
     CastFAdd = IRB.CreateBitCast(RedOp, IntTy, RedOp->getName() + ".cast.int");
-    CmpXchg = IRB.CreateAtomicCmpXchg(CastLHS, LoadReturned, CastFAdd,
-                                      MaybeAlign(), AtomicOrdering::Monotonic,
+    CmpXchg = IRB.CreateAtomicCmpXchg(LHS, LoadReturned, CastFAdd, MaybeAlign(),
+                                      AtomicOrdering::Monotonic,
                                       AtomicOrdering::Monotonic);
     Returned = IRB.CreateExtractValue(CmpXchg, 0);
     StoreTemp = IRB.CreateStore(Returned, AllocaTemp);
@@ -411,19 +404,14 @@ struct CGReduction {
     } else
       FATAL_ERROR("Unsupported type to init with identity reduction value");
 
-#if LLVM_VERSION_MAJOR <= 16
-    ReductionInfos.push_back(
-        {ReductionTy, Orig, Priv,
-         CGReduction::reductionNonAtomic<ReductionOperator>,
-         CGReduction::reductionAtomic<ReductionOperator>});
-#else
     // TODO: Support more evaluation kinds besides scalar.
+    // DataPtrPtrGen is only used for by-ref reductions, which are unused.
     ReductionInfos.push_back(
         {ReductionTy, Orig, Priv, OpenMPIRBuilder::EvalKind::Scalar,
          CGReduction::reductionNonAtomic<ReductionOperator>,
          /* ReductionGenClang */ nullptr,
-         CGReduction::reductionAtomic<ReductionOperator>});
-#endif
+         CGReduction::reductionAtomic<ReductionOperator>,
+         /* DataPtrPtrGen */ nullptr});
 
     return Priv;
   }
@@ -435,9 +423,6 @@ public:
 
   OpenMPIRBuilder OMPBuilder;
   Module &M;
-  StructType *TgtOffloadEntryTy;
-
-  StructType *getTgtOffloadEntryTy() { return TgtOffloadEntryTy; }
 
   void emitOMPParallel(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,
                        const DebugLoc &DL, Function *Fn, BasicBlock *BBEntry,
@@ -453,8 +438,8 @@ public:
                    BasicBlock *BBEntry, BasicBlock *StartBB, BasicBlock *EndBB,
                    BasicBlock *AfterBB);
 
-  void emitOMPOffloadingEntry(const Twine &DevFuncName, Value *EntryPtr,
-                              Constant *&OMPOffloadEntry);
+  GlobalVariable *emitOMPOffloadingEntry(StringRef DevFuncName,
+                                         Constant *Addr);
 
   void emitOMPOffloadingMappings(InsertPointTy AllocaIP,
                                  DSAValueMapTy &DSAValueMap,
@@ -522,10 +507,17 @@ public:
                           StructMapTy &StructMappingInfoMap,
                           bool IsDeviceTargetRegion);
 
-  GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName,
-                                        ConstantDataArray *ELF);
+  GlobalVariable *emitOffloadingGlobals(StringRef DevWrapperFuncName);
 
-  Twine getDevWrapperFuncPrefix() { return "__omp_offload_numba_"; }
+  // Wrap each device image listed in the module's pyomp.offload_images into a
+  // binary descriptor registered with libomptarget.
+  void emitOffloadImageDescriptors();
+
+  // Kernel and entry name of a target region, built from the module's
+  // omp_offload.info record for the region's QUAL.OMP.OFFLOAD.ENTRY.IDX.
+  std::string getOffloadEntryName(const TargetInfoStruct &TargetInfo);
+  DenseMap<unsigned, std::string> OffloadEntryNames;
+  StringMap<GlobalVariable *> OffloadEntryGVs;
 
   OutlinedInfoStruct
   createOutlinedFunction(DSAValueMapTy &DSAValueMap, ValueToValueMapTy *VMap,

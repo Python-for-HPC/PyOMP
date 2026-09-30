@@ -25,6 +25,7 @@ import llvmlite.binding as ll
 import sys
 import os
 import copy
+import zlib
 import tempfile
 import subprocess
 import operator
@@ -46,7 +47,6 @@ from .tags import (
     openmp_tag_list_to_str,
     list_vars_from_tags,
     get_tags_of_type,
-    StringLiteral,
     openmp_tag,
     NameSlice,
 )
@@ -77,6 +77,78 @@ def get_unique():
     ret = unique
     unique += 1
     return ret
+
+
+def reserve_offload_entry(module, parent_name, loc):
+    """Reserve the offload entry of a target region in the host module.
+
+    The entry is identified as clang identifies it: device id,
+    file id, parent function, line, and a count that separates regions on the
+    same line, plus the region's order in the module. The LLVM pass derives
+    the kernel and entry names from the omp_offload.info record.
+    """
+    state = getattr(module, "_pyomp_offload_state", None)
+    if state is None:
+        state = {"next_order": 0, "line_counts": {}}
+        module._pyomp_offload_state = state
+
+    line = max(int(getattr(loc, "line", 0) or 0), 0)
+    key = (parent_name, line)
+    count = state["line_counts"].get(key, 0)
+    state["line_counts"][key] = count + 1
+    order = state["next_order"]
+    state["next_order"] = order + 1
+
+    filename = getattr(loc, "filename", None) or "<unknown>"
+    return {
+        "device_id": 0,
+        "file_id": zlib.crc32(filename.encode("utf-8")),
+        "parent_name": parent_name,
+        "line": line,
+        "count": count,
+        "order": order,
+    }
+
+
+def add_offload_info_metadata(module, entry):
+    """Add the entry's omp_offload.info record, in the layout that
+    OpenMPIRBuilder::loadOffloadInfoMetadata reads: kind (0 = target region),
+    device id, file id, parent name, line, count, order."""
+
+    def i32(value):
+        # The pass reads the fields zero-extended, so emit the signed form.
+        if value >= 2**31:
+            value -= 2**32
+        return lir.Constant(lir.IntType(32), value)
+
+    module.add_named_metadata(
+        "omp_offload.info",
+        [
+            i32(0),
+            i32(entry["device_id"]),
+            i32(entry["file_id"]),
+            entry["parent_name"],
+            i32(entry["line"]),
+            i32(entry["count"]),
+            i32(entry["order"]),
+        ],
+    )
+
+
+def add_offload_image(module, entry, image):
+    """Embed a target region's device image in the host module. The pass
+    registers each image listed in pyomp.offload_images with libomptarget."""
+    data = lir.Constant(lir.ArrayType(lir.IntType(8), len(image)), bytearray(image))
+    image_gv = lir.GlobalVariable(
+        module, data.type, name=f".pyomp.offload_image.{entry['order']}"
+    )
+    image_gv.linkage = "private"
+    image_gv.global_constant = True
+    image_gv.initializer = data
+    module.add_named_metadata(
+        "pyomp.offload_images",
+        [lir.Constant(lir.IntType(32), entry["order"]), image_gv],
+    )
 
 
 def openmp_region_alloca(obj, alloca_instr, typ):
@@ -166,7 +238,7 @@ class OpenMPCUDACodegen:
                     continue
                 if func.linkage != ll.Linkage.external:
                     continue
-                if "__omp_offload_numba" in func.name:
+                if func.name.startswith("__omp_offloading_"):
                     continue
                 func.linkage = "internal"
 
@@ -1271,6 +1343,16 @@ class openmp_region_start(ir.Stmt):
         elif target_num is not None and not self.target_copy:
             var_table = get_name_var_table(lowerer.func_ir.blocks)
 
+            # The device copy made below carries the same entry, so both
+            # modules describe this region with the same omp_offload.info record.
+            self.offload_entry = reserve_offload_entry(
+                mod, lowerer.fndesc.mangled_name, self.loc
+            )
+            add_offload_info_metadata(mod, self.offload_entry)
+            host_side_target_tags.append(
+                openmp_tag("QUAL.OMP.OFFLOAD.ENTRY.IDX", self.offload_entry["order"])
+            )
+
             ompx_attrs = list(
                 filter(lambda x: x.name == "QUAL.OMP.OMPX_ATTRIBUTE", self.tags)
             )
@@ -1390,6 +1472,13 @@ class openmp_region_start(ir.Stmt):
                     # extraneous arguments in the kernel function.
                     if start_region.has_target() == target_num:
                         start_region.tags.append(openmp_tag("OMP.DEVICE"))
+                        start_region.offload_entry = self.offload_entry
+                        start_region.tags.append(
+                            openmp_tag(
+                                "QUAL.OMP.OFFLOAD.ENTRY.IDX",
+                                self.offload_entry["order"],
+                            )
+                        )
                     end_region = blocks[end_block].body[ebindex]
                     # assert(start_region.omp_region_var is None)
                     # Make start and end copies point at each other.
@@ -1820,18 +1909,15 @@ class openmp_region_start(ir.Stmt):
                     f"Unsupported OpenMP device number {selected_device}, type {device_type}, vendor {device_vendor}, arch {get_device_arch(selected_device)}"
                 )
 
-            host_side_target_tags.append(
-                openmp_tag(
-                    "QUAL.OMP.TARGET.DEV_FUNC",
-                    StringLiteral(cres.fndesc.mangled_name.encode("utf-8")),
-                )
-            )
-            host_side_target_tags.append(
-                openmp_tag("QUAL.OMP.TARGET.ELF", StringLiteral(target_elf))
-            )
+            add_offload_image(mod, self.offload_entry, target_elf)
 
             if DEBUG_OPENMP >= 1:
                 dprint_func_ir(func_ir, "target after outline compiled func_ir")
+
+        # The device copy of a target region records the host's entry in the
+        # device module, so the pass derives the same kernel name on both sides.
+        if self.target_copy and get_tags_of_type(self.tags, "OMP.DEVICE"):
+            add_offload_info_metadata(mod, self.offload_entry)
 
         llvm_token_t = TokenType()
         fnty = lir.FunctionType(llvm_token_t, [])

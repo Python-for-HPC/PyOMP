@@ -24,7 +24,7 @@ jobs:
       matrix:
         # TODO: Add windows.
         os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.14t"]
     steps:
       - name: Determine conda label
         run: |
@@ -62,15 +62,22 @@ jobs:
           conda config --set anaconda_upload no
           conda build --version
 
+          # Select the python variant; 3.14t needs the free-threaded ABI.
+          if [[ "${{ matrix.python-version }}" == "3.14t" ]]; then
+            PY_ARGS=(--python "3.14.* *_cp314t")
+          else
+            PY_ARGS=(--python ${{ matrix.python-version }})
+          fi
+
           # Build the package.
           conda build \
             -c conda-forge \
-            --python ${{ matrix.python-version }} \
+            "${PY_ARGS[@]}" \
             buildscripts/conda-recipes/pyomp
 
           # Get the output file path.
           OUTPUT=$(conda build -c conda-forge --output \
-            --python ${{ matrix.python-version }} \
+            "${PY_ARGS[@]}" \
             buildscripts/conda-recipes/pyomp)
 
           # Upload the package.

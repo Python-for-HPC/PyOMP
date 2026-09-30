@@ -356,7 +356,8 @@ The following table shows tested combinations of PyOMP, Numba, Python, LLVM, and
    ===================== ==================== ==================== ============ ================================
    PyOMP                 Numba                Python               LLVM         Supported Platforms
    ===================== ==================== ==================== ============ ================================
-   0.5.x                 0.62.x - 0.63.x      3.10 - 3.14          20.x         linux-64, osx-arm64, linux-arm64
+   0.6.x                 0.66.x - 0.67.x      3.10 - 3.14          22.x         linux-64, osx-arm64, linux-arm64
+   0.5.x                 0.62.x - 0.65.x      3.10 - 3.14          20.x         linux-64, osx-arm64, linux-arm64
    0.4.x                 0.61.x               3.10 - 3.13          15.x         linux-64, osx-arm64, linux-arm64
    0.3.x                 0.57.x - 0.60.x      3.9 - 3.12           14.x         linux-64, osx-arm64, linux-arm64
    ===================== ==================== ==================== ============ ================================
@@ -384,7 +385,9 @@ Platform details
 Notes
 ^^^^^
 
-* Python 3.14 free-threaded build (cp314t) is not supported with the current Numba/llvmlite version.
-* LLVM version 20.1.8 is used for the current PyOMP 0.5.x releases.
+* Python 3.14 free-threaded builds (cp314t) are supported starting with PyOMP
+  0.5.2 (Numba 0.65.x).
+* LLVM version 22.1.8 is used for the current PyOMP 0.6.x releases, and LLVM
+  version 20.1.8 for the PyOMP 0.5.x releases.
 * For GPU offloading support, NVIDIA GPU and NVIDIA driver are required on supported Linux platforms.
 * AMD GPU support is in active development.
