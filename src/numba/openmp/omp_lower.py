@@ -652,7 +652,7 @@ class OpenmpVisitor(Transformer):
             )
 
             deconstruct_indices = []
-            new_deconstruct_var = new_var_scope.redefine("deconstruct", self.loc)
+            new_deconstruct_var = new_var_scope.redefine("$deconstruct", self.loc)
             deconstruct_indices.append(
                 ir.Assign(loop_bounds[-1][1], new_deconstruct_var, self.loc)
             )
@@ -668,7 +668,7 @@ class OpenmpVisitor(Transformer):
                     operator.floordiv, new_deconstruct_var, cur_iterspace_var, self.loc
                 )
                 new_deconstruct_var_loop = new_var_scope.redefine(
-                    "deconstruct" + str(deconstruct_index), self.loc
+                    "$deconstruct" + str(deconstruct_index), self.loc
                 )
                 deconstruct_indices.append(
                     ir.Assign(deconstruct_div, cur_loop_bound, self.loc)
@@ -676,7 +676,7 @@ class OpenmpVisitor(Transformer):
                 # if DEBUG_OPENMP >= 1:
                 #    deconstruct_indices.append(ir.Print([cur_loop_bound], None, self.loc))
                 new_deconstruct_var_mul = new_var_scope.redefine(
-                    "deconstruct_mul" + str(deconstruct_index), self.loc
+                    "$deconstruct_mul" + str(deconstruct_index), self.loc
                 )
                 deconstruct_indices.append(
                     ir.Assign(

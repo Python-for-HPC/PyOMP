@@ -4477,8 +4477,8 @@ class TestOpenmpTarget(TestOpenmpBase):
             b = np.ones((n, n))
             c = np.zeros((n, n))
             with openmp(target_pragma):
-                with openmp("teams"):
-                    with openmp("loop collapse(2)"):
+                with openmp("teams private(i,j)"):
+                    with openmp("loop collapse(2) private(i,j)"):
                         for i in range(n):
                             for j in range(n):
                                 c[i, j] = a[i, j] + b[i, j]
