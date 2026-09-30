@@ -2957,7 +2957,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
-                with openmp("parallel"):
+                with openmp("parallel private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -2977,7 +2977,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
-                with openmp("parallel num_threads(32)"):
+                with openmp("parallel num_threads(32) private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -2997,7 +2997,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
-                with openmp("teams"):
+                with openmp("teams private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3026,7 +3026,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
-                with openmp("teams num_teams(32)"):
+                with openmp("teams num_teams(32) private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3047,7 +3047,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads = 0
             with openmp(target_pragma):
                 with openmp("teams"):
-                    with openmp("parallel"):
+                    with openmp("parallel private(teamno, threadno)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3077,7 +3077,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads = 0
             with openmp(target_pragma):
                 with openmp("teams num_teams(32)"):
-                    with openmp("parallel"):
+                    with openmp("parallel private(teamno, threadno)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3099,7 +3099,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads = 0
             with openmp(target_pragma):
                 with openmp("teams thread_limit(32)"):
-                    with openmp("parallel"):
+                    with openmp("parallel private(teamno, threadno)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3129,7 +3129,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads = 0
             with openmp(target_pragma):
                 with openmp("teams num_teams(32) thread_limit(32)"):
-                    with openmp("parallel"):
+                    with openmp("parallel private(teamno, threadno)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3153,7 +3153,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads = 0
             with openmp(target_pragma):
                 with openmp("teams num_teams(32) thread_limit(64)"):
-                    with openmp("parallel num_threads(32)"):
+                    with openmp("parallel num_threads(32) private(teamno, threadno)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3178,7 +3178,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             with openmp(target_pragma):
                 # THREAD_LIMIT takes precedence over NUM_THREADS.
                 with openmp("teams num_teams(32) thread_limit(64)"):
-                    with openmp("parallel num_threads(128)"):
+                    with openmp("parallel num_threads(128) private(teamno, threadno)"):
                         teamno = omp_get_team_num()
                         threadno = omp_get_thread_num()
                         if teamno == 0 and threadno == 0:
@@ -3203,13 +3203,13 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams2 = 0
             threads2 = 0
             with openmp(target_pragma):
-                with openmp("parallel num_threads(32)"):
+                with openmp("parallel num_threads(32) private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
                         teams1 = omp_get_num_teams()
                         threads1 = omp_get_num_threads()
-                with openmp("parallel num_threads(256)"):
+                with openmp("parallel num_threads(256) private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3235,13 +3235,13 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams2 = 0
             threads2 = 0
             with openmp(target_pragma):
-                with openmp("parallel"):
+                with openmp("parallel private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
                         teams1 = omp_get_num_teams()
                         threads1 = omp_get_num_threads()
-                with openmp("parallel"):
+                with openmp("parallel private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -3267,13 +3267,13 @@ class TestOpenmpTarget(TestOpenmpBase):
             threads2 = 0
             with openmp(target_pragma):
                 max_threads = omp_get_max_threads()
-                with openmp("parallel"):
+                with openmp("parallel private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
                         teams1 = omp_get_num_teams()
                         threads1 = omp_get_num_threads()
-                with openmp("parallel num_threads(256)"):
+                with openmp("parallel num_threads(256) private(teamno, threadno)"):
                     teamno = omp_get_team_num()
                     threadno = omp_get_thread_num()
                     if teamno == 0 and threadno == 0:
@@ -4327,7 +4327,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             s = np.float32(42.0)
             r = np.float32(0.0)
             with openmp(target_pragma):
-                with openmp("teams firstprivate(s)"):
+                with openmp("teams firstprivate(s) private(teamno)"):
                     teamno = omp_get_thread_num()
                     if teamno == 0:
                         r = s + 1
@@ -4347,7 +4347,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = np.zeros(32)
             with openmp(target_pragma):
-                with openmp("parallel firstprivate(s)"):
+                with openmp("parallel firstprivate(s) private(teamno, threadno)"):
                     print("parallel s", s[0])
                     teams = omp_get_num_teams()
                     threads = omp_get_num_threads()
@@ -4425,7 +4425,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.zeros((32, 10), dtype=np.int32)
             nthreads = 0
             with openmp(target_pragma):
-                with openmp("parallel num_threads(32)"):
+                with openmp("parallel num_threads(32) private(local_array, tid)"):
                     local_array = np.empty(10, dtype=np.int32)
                     tid = omp_get_thread_num()
                     if tid == 0:
@@ -4461,7 +4461,7 @@ class TestOpenmpTarget(TestOpenmpBase):
                     nteams = omp_get_num_teams()
                     nthreads = omp_get_num_threads()
 
-                with openmp("parallel num_threads(32)"):
+                with openmp("parallel num_threads(32) private(thread_local_array, lasum)"):
                     thread_local_array = np.empty(10, dtype=np.int32)
                     for i in range(10):
                         thread_local_array[i] = omp_get_thread_num()
