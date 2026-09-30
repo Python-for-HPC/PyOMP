@@ -3347,7 +3347,7 @@ class TestOpenmpTarget(TestOpenmpBase):
 
     def target_teams(self, device):
         target_pragma = (
-            f"target teams num_teams(100) device({device}) map(from: a, nteams)"
+            f"target teams num_teams(100) device({device}) map(from: a, nteams) private(team_id)"
         )
 
         @njit
@@ -3372,7 +3372,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             a = np.zeros(100, dtype=np.int64)
             nteams = 0
             with openmp(target_pragma):
-                with openmp("teams num_teams(100)"):
+                with openmp("teams num_teams(100) private(team_id)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         nteams = omp_get_num_teams()
@@ -3389,7 +3389,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = 0
             with openmp(target_pragma):
-                with openmp("teams num_teams(100) shared(s)"):
+                with openmp("teams num_teams(100) shared(s) private(team_id)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3421,7 +3421,7 @@ class TestOpenmpTarget(TestOpenmpBase):
         def test_impl():
             s = 0
             with openmp(target_pragma):
-                with openmp("teams num_teams(100) shared(s)"):
+                with openmp("teams num_teams(100) shared(s) private(team_id)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3438,7 +3438,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             s = 0
             ss = np.zeros(1)
             with openmp(target_pragma):
-                with openmp("teams num_teams(100)"):
+                with openmp("teams num_teams(100) private(team_id)"):
                     team_id = omp_get_team_num()
                     if team_id == 0:
                         s = 1
@@ -3457,7 +3457,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
-                with openmp("parallel"):
+                with openmp("parallel private(team_id, thread_id)"):
                     team_id = omp_get_team_num()
                     thread_id = omp_get_thread_num()
                     if team_id == 0 and thread_id == 0:
@@ -3477,7 +3477,7 @@ class TestOpenmpTarget(TestOpenmpBase):
             teams = 0
             threads = 0
             with openmp(target_pragma):
-                with openmp("teams num_teams(10) thread_limit(32)"):
+                with openmp("teams num_teams(10) thread_limit(32) private(team_id, thread_id)"):
                     with openmp("parallel"):
                         team_id = omp_get_team_num()
                         thread_id = omp_get_thread_num()
