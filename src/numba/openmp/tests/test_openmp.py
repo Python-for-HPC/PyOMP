@@ -2371,7 +2371,7 @@ class TestOpenmpTask(TestOpenmpBase):
         @njit
         def test_impl(ntsks):
             a = np.zeros(ntsks)
-            with openmp("parallel"):
+            with openmp("parallel private(i)"):
                 with openmp("single"):
                     for i in range(ntsks):
                         with openmp("task"):
