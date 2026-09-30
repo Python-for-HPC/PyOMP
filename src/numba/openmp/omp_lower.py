@@ -938,7 +938,7 @@ class OpenmpVisitor(Transformer):
                     if latest_index.name not in vars_in_explicit_clauses:
                         new_index_clause = openmp_tag(
                             "QUAL.OMP.PRIVATE",
-                            ir.Var(loop_index.scope, latest_index.name, inst.loc),
+                            latest_index.name,
                         )
                         clauses.append(new_index_clause)
                         vars_in_explicit_clauses[latest_index.name] = new_index_clause
